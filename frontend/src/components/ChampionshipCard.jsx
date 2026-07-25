@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { TrophyIcon, CalendarIcon, FlagIcon, UserIcon } from '@heroicons/react/24/outline';
 
 const statusConfig = {
-  upcoming: { label: 'Proximo', className: 'badge-upcoming' },
+  upcoming: { label: 'Próximo', className: 'badge-upcoming' },
   active: { label: 'En curso', className: 'badge-active' },
   completed: { label: 'Finalizado', className: 'badge-completed' },
 };
@@ -50,7 +50,7 @@ export default function ChampionshipCard({ championship }) {
         <div className="flex items-center gap-2 bg-racing-red/10 border border-racing-red/25 rounded-lg px-4 py-2">
           <UserIcon className="w-4 h-4 text-racing-red" />
           <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Campeon</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wider">Campeón</p>
             <p className="text-racing-highlight font-racing font-bold">{championship.campeon_nombre}</p>
           </div>
         </div>

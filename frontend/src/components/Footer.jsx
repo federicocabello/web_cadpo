@@ -25,11 +25,11 @@ export default function Footer() {
           </div>
 
           <div>
-            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Navegacion</h3>
+            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Navegación</h3>
             <ul className="space-y-2">
               {[
                 { to: '/', label: 'Inicio' },
-                { to: '/eventos', label: 'Proximas fechas' },
+                { to: '/eventos', label: 'Próximas fechas' },
                 { to: '/campeonatos', label: 'Campeonatos' },
                 { to: '/pilotos', label: 'Pilotos' },
               ].map(({ to, label }) => (
@@ -43,8 +43,8 @@ export default function Footer() {
           </div>
 
           <div>
-            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Participa</h3>
-            <p className="text-gray-400 text-sm mb-4">Inscribite a un campeonato activo o proximo de la liga.</p>
+            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Participá</h3>
+            <p className="text-gray-400 text-sm mb-4">Inscribite a un campeonato activo o próximo de la liga.</p>
             <Link to="/inscripcion" className="btn-primary !text-xs">
               Inscribirme ahora
             </Link>
@@ -53,7 +53,7 @@ export default function Footer() {
 
         <div className="border-t border-racing-border pt-6 flex flex-col sm:flex-row justify-between items-center gap-3">
           <p className="text-gray-500 text-xs">© {year} Liga CADPO. Todos los derechos reservados.</p>
-          <p className="text-gray-600 text-xs">Simracing - Competencia y pasion</p>
+          <p className="text-gray-600 text-xs">Simracing - Competencia y pasión</p>
         </div>
       </div>
     </footer>

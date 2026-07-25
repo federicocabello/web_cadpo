@@ -5,14 +5,14 @@ import { eventsApi } from '../services/api';
 
 const STATUSES = [
   { value: '', label: 'Todas' },
-  { value: 'upcoming', label: 'Proximas' },
+  { value: 'upcoming', label: 'Próximas' },
   { value: 'completed', label: 'Pasadas' },
 ];
 
-export default function Events() {
+export default function Events({ initialStatus = '' }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -38,7 +38,7 @@ export default function Events() {
           <h1 className="section-title text-4xl md:text-5xl mb-2">
             Fechas y <span className="gradient-text">Carreras</span>
           </h1>
-          <p className="text-gray-400 max-w-xl">Todas las rondas cargadas en la tabla calendario, separadas entre proximas y pasadas.</p>
+          <p className="text-gray-400 max-w-xl">Todas las rondas cargadas en la tabla calendario, separadas entre próximas y pasadas.</p>
         </div>
       </div>
 

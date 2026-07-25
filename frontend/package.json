@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "@svg-maps/world": "^2.0.0",
     "autoprefixer": "^10.5.2",
     "axios": "^1.18.1",
+    "flag-icons": "^7.5.0",
     "postcss": "^8.5.16",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

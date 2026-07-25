@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
-import { CalendarIcon, MapPinIcon, TrophyIcon, FlagIcon } from '@heroicons/react/24/outline';
+import { CountryFlag } from './CountryFlag';
+import { getCountryName } from '../data/countries';
+import { CalendarIcon, MapPinIcon, TrophyIcon, FlagIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 
 const statusConfig = {
-  upcoming: { label: 'Proxima', className: 'badge-upcoming' },
+  upcoming: { label: 'Próxima', className: 'badge-upcoming' },
   completed: { label: 'Finalizada', className: 'badge-completed' },
 };
 
@@ -20,8 +22,8 @@ const formatDate = value => {
 
 export default function EventCard({ event }) {
   const cfg = statusConfig[event.status] || statusConfig.upcoming;
-  const title = `${event.categoria || 'Categoria'} T${event.temporada || '-'} - Ronda ${event.ronda}`;
-  const location = [event.localidad, event.provincia, event.pais].filter(Boolean).join(', ');
+  const title = `${event.categoria || 'Categoría'} T${event.temporada || '-'} - Ronda ${event.ronda}`;
+  const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
 
   return (
     <article className="card-glass p-6 flex flex-col gap-4 animate-slide-up group">
@@ -44,6 +46,7 @@ export default function EventCard({ event }) {
         </div>
         <div className="flex items-center gap-2 text-gray-300">
           <MapPinIcon className="w-4 h-4 text-racing-red flex-shrink-0" />
+          <CountryFlag country={event.pais} className="text-base" />
           <span className="truncate">{event.circuito}</span>
         </div>
         {location && (
@@ -61,16 +64,24 @@ export default function EventCard({ event }) {
         {event.coronacion ? (
           <span className="inline-flex items-center gap-1 rounded-md border border-racing-red/40 bg-racing-red/10 px-2 py-1 text-xs text-racing-highlight">
             <TrophyIcon className="w-3 h-3" />
-            Coronacion
+            Coronación
           </span>
         ) : null}
       </div>
 
-      {event.status === 'upcoming' && (
-        <Link to="/inscripcion" className="btn-primary w-full justify-center mt-auto">
-          Inscribirme
-        </Link>
-      )}
+      <div className="mt-auto grid gap-2">
+        {event.transmision ? (
+          <a href={event.transmision} target="_blank" rel="noreferrer" className="btn-primary w-full justify-center">
+            <PlayCircleIcon className="h-5 w-5" />
+            Ver transmisión
+          </a>
+        ) : null}
+        {event.status === 'upcoming' ? (
+          <Link to="/inscripcion" className="btn-secondary w-full justify-center">
+            Inscribirme
+          </Link>
+        ) : null}
+      </div>
     </article>
   );
 }

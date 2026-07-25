@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UserGroupIcon } from '@heroicons/react/24/outline';
 import { driversApi } from '../services/api';
+import { CountryFlag } from '../components/CountryFlag';
 
 export default function Drivers() {
   const [drivers, setDrivers] = useState([]);
@@ -51,7 +52,12 @@ export default function Drivers() {
                 <tbody className="divide-y divide-racing-border">
                   {drivers.map(driver => (
                     <tr key={driver.id} className="hover:bg-racing-card/60 transition-colors">
-                      <td className="px-4 py-3 text-white font-medium">{driver.nombre}</td>
+                      <td className="px-4 py-3 text-white font-medium">
+                        <span className="flex items-center gap-2">
+                          <CountryFlag country={driver.nacionalidad} className="text-lg" />
+                          {driver.nombre}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-gray-400">{driver.localidad || '-'}</td>
                       <td className="px-4 py-3 text-right font-racing text-white">{driver.campeonatos_disputados}</td>
                     </tr>
@@ -64,7 +70,7 @@ export default function Drivers() {
           <div className="card-glass p-16 text-center">
             <UserGroupIcon className="w-14 h-14 mx-auto mb-4 text-gray-600" />
             <h3 className="font-racing text-xl text-gray-300 mb-2">Sin pilotos</h3>
-            <p className="text-gray-500 text-sm">Todavia no hay pilotos registrados.</p>
+            <p className="text-gray-500 text-sm">Todavía no hay pilotos registrados.</p>
           </div>
         )}
       </div>

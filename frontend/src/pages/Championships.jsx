@@ -6,14 +6,14 @@ import { championshipsApi } from '../services/api';
 const STATUSES = [
   { value: '', label: 'Todos' },
   { value: 'active', label: 'En curso' },
-  { value: 'completed', label: 'Historicos' },
-  { value: 'upcoming', label: 'Proximos' },
+  { value: 'completed', label: 'Históricos' },
+  { value: 'upcoming', label: 'Próximos' },
 ];
 
-export default function Championships() {
+export default function Championships({ initialStatus = '' }) {
   const [championships, setChampionships] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
 
   useEffect(() => {
     const fetch = async () => {
@@ -38,7 +38,7 @@ export default function Championships() {
     ? [{ title: STATUSES.find(s => s.value === statusFilter)?.label || 'Campeonatos', items: championships }]
     : [
         { title: 'Temporada actual', items: active },
-        { title: 'Proximos campeonatos', items: upcoming },
+        { title: 'Próximos campeonatos', items: upcoming },
         { title: 'Historial de temporadas', items: historical },
       ];
 

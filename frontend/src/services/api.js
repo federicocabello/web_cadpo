@@ -8,6 +8,14 @@ const api = axios.create({
   timeout: 10000,
 });
 
+api.interceptors.request.use(config => {
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+
+  return config;
+});
+
 api.interceptors.response.use(
   response => response,
   error => {
@@ -17,10 +25,20 @@ api.interceptors.response.use(
   }
 );
 
+export const healthApi = {
+  check: () => api.get('/health', { validateStatus: () => true }),
+};
+
+export const authApi = {
+  adminLogin: password => api.post('/auth/admin-login', { password }),
+};
+
 export const eventsApi = {
   getAll: params => api.get('/events', { params }),
   getUpcoming: () => api.get('/events/proximas'),
   create: data => api.post('/events', data),
+  createBatch: events => api.post('/events/batch', { events }),
+  update: (idcampeonato, ronda, data) => api.put(`/events/${idcampeonato}/${ronda}`, data),
   remove: (idcampeonato, ronda) => api.delete(`/events/${idcampeonato}/${ronda}`),
 };
 
@@ -54,10 +72,42 @@ export const driversApi = {
 
 export const carsApi = {
   getAll: () => api.get('/cars'),
+  getById: id => api.get(`/cars/${id}`),
+  create: data => api.post('/cars', data),
+  update: (id, data) => api.put(`/cars/${id}`, data),
+  remove: id => api.delete(`/cars/${id}`),
+};
+
+export const categoriesApi = {
+  getAll: () => api.get('/categories'),
+  getById: id => api.get(`/categories/${id}`),
+  create: data => api.post('/categories', data),
+  update: (id, data) => api.put(`/categories/${id}`, data),
+  remove: id => api.delete(`/categories/${id}`),
+};
+
+export const circuitsApi = {
+  getAll: () => api.get('/circuits'),
+  getGeography: () => api.get('/circuits/geography'),
+  getById: id => api.get(`/circuits/${id}`),
+  create: data => api.post('/circuits', data),
+  update: (id, data) => api.put(`/circuits/${id}`, data),
+  remove: id => api.delete(`/circuits/${id}`),
 };
 
 export const mediaApi = {
   getChampionshipImages: params => api.get('/media/championship-images', { params }),
+};
+
+export const resultsApi = {
+  getAll: params => api.get('/results', { params }),
+  create: data => api.post('/results', data),
+  update: (id, data) => api.put(`/results/${id}`, data),
+  remove: id => api.delete(`/results/${id}`),
+};
+
+export const liveTimingApi = {
+  get: championshipId => api.get('/live-timing', { params: { championshipId }, timeout: 12000 }),
 };
 
 export default api;

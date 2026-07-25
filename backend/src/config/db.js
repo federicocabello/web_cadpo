@@ -11,6 +11,20 @@ const pool = mysql2.createPool({
   queueLimit: 0,
 });
 
+const checkDatabase = async () => {
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.query('SELECT 1');
+    return {
+      connected: true,
+      database: process.env.DB_NAME || 'web_cadpo',
+    };
+  } finally {
+    conn.release();
+  }
+};
+
 pool.getConnection()
   .then(conn => {
     console.log('Conectado a MySQL');
@@ -20,5 +34,7 @@ pool.getConnection()
     console.error('Error de conexion a MySQL:', err.message);
     console.warn('El servidor continua sin base de datos. Configura el .env con tus credenciales.');
   });
+
+pool.checkDatabase = checkDatabase;
 
 module.exports = pool;

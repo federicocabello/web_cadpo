@@ -1,16 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRightIcon, TrophyIcon, CalendarIcon, UserGroupIcon, FlagIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import { ArrowRightIcon, TrophyIcon, CalendarIcon, UserGroupIcon, FlagIcon, MapPinIcon, ClockIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 import EventCard from '../components/EventCard';
 import ChampionshipCard from '../components/ChampionshipCard';
 import { eventsApi, championshipsApi, driversApi, mediaApi } from '../services/api';
+import { CountryFlag } from '../components/CountryFlag';
+import { getCountryName } from '../data/countries';
+import ServerJoinButton from '../components/ServerJoinButton';
+import { getEventPhase, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
 
 const shuffle = items => [...items].sort(() => Math.random() - 0.5);
+
+const parseEventDate = value => {
+  if (!value) return null;
+  const parsed = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 const formatDate = value => {
   if (!value) return 'Por confirmar';
 
-  return new Date(value).toLocaleDateString('es-AR', {
+  return parseEventDate(value)?.toLocaleDateString('es-AR', {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -21,32 +31,56 @@ const formatDate = value => {
 const formatTime = value => {
   if (!value) return '';
 
-  return new Date(value).toLocaleTimeString('es-AR', {
+  return parseEventDate(value)?.toLocaleTimeString('es-AR', {
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   });
+};
+
+const getCountdown = (value, now) => {
+  const eventDate = parseEventDate(value);
+  if (!eventDate) return null;
+
+  const difference = eventDate.getTime() - now;
+  if (difference <= 0) return { started: true, days: 0, hours: 0, minutes: 0, seconds: 0 };
+
+  return {
+    started: false,
+    days: Math.floor(difference / 86400000),
+    hours: Math.floor((difference / 3600000) % 24),
+    minutes: Math.floor((difference / 60000) % 60),
+    seconds: Math.floor((difference / 1000) % 60),
+  };
 };
 
 export default function Home() {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [allEvents, setAllEvents] = useState([]);
+  const [selectedChampionshipId, setSelectedChampionshipId] = useState(null);
   const [latestChampionships, setLatestChampionships] = useState([]);
   const [driversCount, setDriversCount] = useState(0);
   const [carouselImages, setCarouselImages] = useState([]);
   const [activeImage, setActiveImage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
 
-  const nextEvent = upcomingEvents[0];
+  const weeklyEvents = useMemo(() => getWeeklyChampionshipEvents(allEvents, new Date(now)), [allEvents, now]);
+  const nextEvent = weeklyEvents.find(event => event.idcampeonato === selectedChampionshipId)
+    || weeklyEvents[0];
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [eventsRes, champsRes, driversRes] = await Promise.all([
-          eventsApi.getUpcoming(),
+          eventsApi.getAll(),
           championshipsApi.getAll(),
           driversApi.getAll(),
         ]);
 
-        setUpcomingEvents(eventsRes.data.data?.slice(0, 3) ?? []);
+        const loadedEvents = eventsRes.data.data ?? [];
+        setAllEvents(loadedEvents);
+        setUpcomingEvents(loadedEvents.filter(event => event.status === 'upcoming').slice(0, 3));
         setLatestChampionships(champsRes.data.data?.slice(0, 3) ?? []);
         setDriversCount(driversRes.data.total ?? 0);
       } catch (err) {
@@ -58,6 +92,12 @@ export default function Home() {
 
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (weeklyEvents.length && !weeklyEvents.some(event => event.idcampeonato === selectedChampionshipId)) {
+      setSelectedChampionshipId(weeklyEvents[0].idcampeonato);
+    }
+  }, [selectedChampionshipId, weeklyEvents]);
 
   useEffect(() => {
     const fetchCarouselImages = async () => {
@@ -74,7 +114,7 @@ export default function Home() {
         setCarouselImages(shuffle(res.data.data ?? []));
         setActiveImage(0);
       } catch (err) {
-        console.error('Error cargando imagenes del campeonato:', err);
+        console.error('Error cargando imágenes del campeonato:', err);
         setCarouselImages([]);
       }
     };
@@ -92,124 +132,155 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [carouselImages.length]);
 
-  const heroBackground = carouselImages[activeImage] || nextEvent?.circuito_foto_url || '';
-  const nextEventTitle = nextEvent
-    ? `${nextEvent.categoria} - Temporada ${nextEvent.temporada}`
-    : 'Liga CADPO';
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const heroBackground = nextEvent?.circuito_foto_url || carouselImages[activeImage] || '';
   const location = nextEvent
-    ? [nextEvent.localidad, nextEvent.provincia, nextEvent.pais].filter(Boolean).join(', ')
+    ? [nextEvent.localidad, nextEvent.provincia, getCountryName(nextEvent.pais)].filter(Boolean).join(', ')
     : '';
+  const countdown = getCountdown(nextEvent?.fecha, now);
+  const eventPhase = getEventPhase(nextEvent, new Date(now));
+  const countdownParts = countdown ? [
+    { value: countdown.days, label: 'Días' },
+    { value: countdown.hours, label: 'Horas' },
+    { value: countdown.minutes, label: 'Minutos' },
+    { value: countdown.seconds, label: 'Segundos' },
+  ] : [];
 
   const stats = useMemo(() => [
     { icon: TrophyIcon, value: latestChampionships.length, label: 'Campeonatos' },
     { icon: UserGroupIcon, value: driversCount, label: 'Pilotos' },
-    { icon: CalendarIcon, value: upcomingEvents.length, label: 'Proximas fechas' },
+    { icon: CalendarIcon, value: upcomingEvents.length, label: 'Próximas fechas' },
     { icon: FlagIcon, value: 'CADPO', label: 'Liga' },
   ], [driversCount, latestChampionships.length, upcomingEvents.length]);
 
   return (
     <div className="animate-fade-in">
-      <section className="relative min-h-[86vh] overflow-hidden bg-racing-dark">
+      <section className="race-hero relative min-h-[calc(100vh-4rem)] overflow-hidden bg-black">
         {heroBackground && (
-          <div
+          <img
             key={heroBackground}
-            className="absolute inset-0 bg-cover bg-center opacity-45 transition-opacity duration-700"
-            style={{ backgroundImage: `url(${heroBackground})` }}
+            src={heroBackground}
+            alt=""
+            className="race-hero-background absolute inset-0 h-full w-full object-cover"
           />
         )}
-        <div className="absolute inset-0 hero-pattern opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-r from-racing-dark via-racing-dark/85 to-racing-dark/45" />
-        <div className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-racing-dark to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-black/25" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/35" />
+        <div className="race-hero-grid absolute inset-0 opacity-25" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[86vh] grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-10 items-center py-14 lg:py-20">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 bg-racing-red/15 border border-racing-red/35 rounded-lg px-4 py-2 mb-6 text-racing-red text-xs font-semibold uppercase tracking-widest">
+        <div className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-[1600px] grid-cols-1 items-center gap-4 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:gap-10 lg:px-14 lg:py-12 xl:px-20">
+          <div className="race-hero-content order-2 max-w-4xl lg:order-1">
+            {weeklyEvents.length > 1 && (
+              <div className="mb-4 flex max-w-full gap-2 overflow-x-auto pb-1 scrollbar-hidden">
+                {weeklyEvents.map(event => (
+                  <button
+                    key={event.idcampeonato}
+                    type="button"
+                    onClick={() => setSelectedChampionshipId(event.idcampeonato)}
+                    className={`shrink-0 border px-3 py-1.5 font-racing text-[11px] font-bold uppercase transition-colors ${nextEvent?.idcampeonato === event.idcampeonato ? 'border-racing-red bg-racing-red text-white' : 'border-white/25 bg-black/60 text-gray-300 hover:border-racing-red'}`}
+                  >
+                    {event.categoria} · T{event.temporada}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mb-5 inline-flex items-center gap-3 border-l-2 border-racing-red bg-black/55 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white backdrop-blur-md">
               <span className="w-2 h-2 bg-racing-red rounded-full animate-pulse" />
-              PROXIMA FECHA
+              Próxima fecha
             </div>
-
-            <img
-              src="/logo.png"
-              alt="Logo CADPO"
-              className="mb-6 h-20 w-20 sm:h-24 sm:w-24 object-contain"
-              onError={event => { event.currentTarget.style.display = 'none'; }}
-            />
-
-            <h1 className="section-title text-5xl sm:text-6xl md:text-7xl lg:text-8xl mb-5 leading-none text-shadow-red">
-              {nextEvent ? `Ronda ${nextEvent.ronda}` : 'LIGA'} <span className="gradient-text">CADPO</span>
-            </h1>
-
-            <p className="font-racing text-2xl sm:text-3xl text-white mb-4">
-              {nextEventTitle}
-            </p>
 
             {nextEvent ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8 max-w-2xl">
-                <div className="bg-racing-card/80 border border-racing-border rounded-lg px-4 py-3">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Fecha</p>
-                  <p className="text-gray-100 font-medium capitalize">{formatDate(nextEvent.fecha)}</p>
+              <>
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm">
+                  <span className="bg-racing-red px-3 py-1.5 text-white">{nextEvent.categoria}</span>
+                  <span className="border border-white/25 bg-black/45 px-3 py-1.5">Temporada {nextEvent.temporada}</span>
+                  <span className="border border-white/25 bg-black/45 px-3 py-1.5">Ronda {nextEvent.ronda}</span>
                 </div>
-                <div className="bg-racing-card/80 border border-racing-border rounded-lg px-4 py-3">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Hora</p>
-                  <p className="text-gray-100 font-medium">{formatTime(nextEvent.fecha)} hs</p>
-                </div>
-                <div className="bg-racing-card/80 border border-racing-border rounded-lg px-4 py-3 sm:col-span-2">
-                  <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Circuito</p>
-                  <p className="text-gray-100 font-medium flex items-center gap-2">
-                    <MapPinIcon className="w-4 h-4 text-racing-red" />
-                    {nextEvent.circuito}
-                  </p>
-                  {location && <p className="text-gray-500 text-sm mt-1">{location}</p>}
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-300 text-lg sm:text-xl max-w-2xl mb-8 leading-relaxed">
-                Cuando cargues una fecha futura en calendario, este inicio va a mostrar automaticamente la proxima carrera.
-              </p>
-            )}
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Link to="/eventos" className="btn-primary text-base px-8 py-4">
-                Ver calendario
-              </Link>
-              <Link to="/campeonatos" className="btn-secondary text-base px-8 py-4">
-                Campeonatos
-                <ArrowRightIcon className="w-4 h-4" />
-              </Link>
-            </div>
+                <h1 className="font-racing text-5xl font-bold uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl xl:text-8xl">
+                  {nextEvent.circuito}
+                </h1>
+                {nextEvent.variante && (
+                  <p className="mt-2 font-racing text-2xl font-semibold uppercase text-racing-red sm:text-3xl">Variante {nextEvent.variante}</p>
+                )}
+
+                <div className="mt-6 flex flex-col gap-3 text-gray-100 sm:flex-row sm:flex-wrap sm:gap-6">
+                  <p className="flex items-center gap-2 text-sm font-medium capitalize sm:text-base">
+                    <CalendarIcon className="h-5 w-5 shrink-0 text-racing-red" /> {formatDate(nextEvent.fecha)}
+                  </p>
+                  <p className="flex items-center gap-2 text-sm font-medium sm:text-base">
+                    <ClockIcon className="h-5 w-5 shrink-0 text-racing-red" /> {formatTime(nextEvent.fecha)} H
+                  </p>
+                  {location && (
+                    <p className="flex items-center gap-2 text-sm text-gray-300 sm:text-base">
+                      <CountryFlag country={nextEvent.pais} className="text-lg" />
+                      <MapPinIcon className="h-5 w-5 shrink-0 text-racing-red" /> {location}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-8 max-w-3xl">
+                  <p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">
+                    {eventPhase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}
+                  </p>
+                  {eventPhase === 'active' ? (
+                    <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white backdrop-blur-md">
+                      <FlagIcon className="h-7 w-7 text-racing-red" /> Actividad en curso
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                      {countdownParts.map(part => (
+                        <div key={part.label} className="countdown-block relative overflow-hidden border border-white/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4">
+                          <span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span>
+                          <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <ServerJoinButton href={nextEvent.servidor} />
+                  {nextEvent.transmision ? (
+                    <a
+                      href={nextEvent.transmision}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-primary px-7 py-3.5"
+                    >
+                      <PlayCircleIcon className="h-5 w-5" />
+                      Ver transmisión
+                    </a>
+                  ) : null}
+                  <Link to="/eventos" className="btn-secondary px-7 py-3.5">Ver calendario <ArrowRightIcon className="h-4 w-4" /></Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h1 className="font-racing text-5xl font-bold uppercase text-white sm:text-7xl">No hay próximas fechas aún</h1>
+                <p className="mt-5 max-w-xl text-lg text-gray-300">Cuando se cargue una nueva fecha en el calendario aparecerá automáticamente en este espacio.</p>
+              </>
+            )}
           </div>
 
-          <div className="relative">
-            <div className="relative overflow-hidden rounded-lg border border-racing-border bg-racing-card/70 min-h-[300px] sm:min-h-[360px]">
-              {nextEvent?.circuito_foto_url && (
-                <img
-                  src={nextEvent.circuito_foto_url}
-                  alt={`Foto de ${nextEvent.circuito}`}
-                  className="absolute inset-0 h-full w-full object-cover opacity-55"
-                  onError={event => { event.currentTarget.style.display = 'none'; }}
-                />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-racing-dark via-racing-dark/45 to-racing-dark/10" />
-              {nextEvent?.circuito_trazado_url && (
-                <img
-                  src={nextEvent.circuito_trazado_url}
-                  alt={`Trazado de ${nextEvent.circuito}`}
-                  className="relative z-10 h-full w-full object-contain p-8 sm:p-10 drop-shadow-[0_14px_28px_rgba(0,0,0,0.65)]"
-                  onError={event => { event.currentTarget.style.display = 'none'; }}
-                />
-              )}
-              <div className="absolute left-5 right-5 bottom-5 z-20">
-                <p className="text-xs uppercase tracking-widest text-racing-red font-semibold mb-1">Circuito</p>
-                <p className="font-racing text-3xl font-bold text-white">{nextEvent?.circuito || 'Por confirmar'}</p>
-              </div>
-            </div>
-            {nextEvent?.campeonato_media_path && (
-              <p className="mt-3 text-xs text-gray-500">
-                Imagenes del carrusel: {nextEvent.campeonato_media_path}
-              </p>
+          <div className="order-1 flex min-h-[220px] items-center justify-center lg:order-2 lg:min-h-[520px]">
+            {nextEvent?.circuito_trazado_url ? (
+              <img
+                src={nextEvent.circuito_trazado_url}
+                alt={`Trazado de ${nextEvent.circuito}${nextEvent.variante ? `, variante ${nextEvent.variante}` : ''}`}
+                className="race-track-float max-h-[32vh] w-full max-w-[620px] object-contain drop-shadow-[0_18px_35px_rgba(0,0,0,0.9)] lg:max-h-[62vh]"
+                onError={event => { event.currentTarget.style.display = 'none'; }}
+              />
+            ) : (
+              <FlagIcon className="h-28 w-28 text-white/15" />
             )}
           </div>
         </div>
+        <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-racing-red to-transparent" />
       </section>
 
       <section className="bg-racing-gray border-y border-racing-border py-12">
@@ -230,7 +301,7 @@ export default function Home() {
         <div className="flex items-end justify-between mb-10">
           <div>
             <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Calendario</p>
-            <h2 className="section-title">Proximas <span className="gradient-text">Fechas</span></h2>
+            <h2 className="section-title">Próximas <span className="gradient-text">Fechas</span></h2>
           </div>
           <Link to="/eventos" className="btn-secondary !py-2 !px-4 !text-xs hidden sm:flex">
             Ver todas <ArrowRightIcon className="w-3 h-3" />
@@ -248,7 +319,7 @@ export default function Home() {
         ) : (
           <div className="card-glass p-12 text-center text-gray-400">
             <CalendarIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No hay fechas proximas por el momento.</p>
+            <p>No hay fechas próximas por el momento.</p>
           </div>
         )}
       </section>
@@ -257,7 +328,7 @@ export default function Home() {
         <div className="flex items-end justify-between mb-10">
           <div>
             <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Historia</p>
-            <h2 className="section-title">Ultimos <span className="gradient-text">Campeonatos</span></h2>
+            <h2 className="section-title">Últimos <span className="gradient-text">Campeonatos</span></h2>
           </div>
           <Link to="/campeonatos" className="btn-secondary !py-2 !px-4 !text-xs hidden sm:flex">
             Ver todos <ArrowRightIcon className="w-3 h-3" />
@@ -275,7 +346,7 @@ export default function Home() {
         ) : (
           <div className="card-glass p-12 text-center text-gray-400">
             <TrophyIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No hay campeonatos registrados aun.</p>
+            <p>No hay campeonatos registrados aún.</p>
           </div>
         )}
       </section>

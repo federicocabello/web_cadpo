@@ -89,4 +89,193 @@
   .scrollbar-hidden::-webkit-scrollbar {
     display: none;
   }
+
+  .race-hero-background {
+    animation: race-background-zoom 18s ease-in-out infinite alternate;
+  }
+
+  .race-hero-content {
+    animation: race-content-enter 700ms ease-out both;
+  }
+
+  .race-track-float {
+    animation: race-track-float 5s ease-in-out infinite;
+    transform-origin: center;
+  }
+
+  .race-hero-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: linear-gradient(to right, black, transparent 78%);
+  }
+
+  .countdown-block::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 2px;
+    background: #e63946;
+    box-shadow: 0 0 14px rgba(230, 57, 70, 0.9);
+    animation: countdown-line 2.4s ease-in-out infinite;
+  }
+
+  .classification-checker {
+    background-image:
+      linear-gradient(to left, rgba(0, 0, 0, 0), #0d0d0d 92%),
+      conic-gradient(from 90deg, rgba(251, 146, 60, 0.9) 25%, transparent 0 50%, rgba(251, 146, 60, 0.9) 0 75%, transparent 0);
+    background-size: 100% 100%, 24px 24px;
+    mask-image: linear-gradient(to left, black, transparent);
+  }
+
+  .session-country-flag {
+    mask-image: linear-gradient(to left, black 5%, transparent 92%);
+  }
+
+  .session-country-flag .fi {
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .timing-driver-row {
+    transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .timing-driver-row-enabled {
+    background-image: linear-gradient(to left, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.05) 16%, transparent 34%);
+  }
+
+  .timing-driver-row-pending {
+    background-image: linear-gradient(to left, rgba(234, 179, 8, 0.2) 0%, rgba(234, 179, 8, 0.05) 16%, transparent 34%);
+  }
+
+  .timing-driver-row:hover {
+    background-color: rgba(255, 255, 255, 0.055);
+    box-shadow: inset 3px 0 0 #e63946;
+  }
+
+  .timing-driver-row-enter {
+    animation: timing-row-enter 420ms ease-out both;
+  }
+
+  .timing-driver-row-moved-up {
+    animation: timing-row-moved-up 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .timing-driver-row-moved-down {
+    animation: timing-row-moved-down 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .timing-position-arrow {
+    animation: timing-position-arrow 900ms ease-in-out 2;
+  }
+
+  .race-session-checker {
+    background-image: conic-gradient(#ffffff 25%, #151515 0 50%, #ffffff 0 75%, #151515 0);
+    background-size: 56px 56px;
+    animation: race-session-checker 8s linear infinite;
+  }
+
+  .race-session-flag {
+    animation: race-session-flag 1.5s ease-in-out infinite;
+  }
+
+  .server-join-button {
+    animation: server-button-pulse 2.2s ease-in-out infinite;
+  }
+
+  .server-join-flag {
+    background-image: conic-gradient(#ffffff 25%, #111111 0 50%, #ffffff 0 75%, #111111 0);
+    background-size: 8px 8px;
+  }
+
+}
+
+@keyframes race-background-zoom {
+  from { transform: scale(1.01); }
+  to { transform: scale(1.08); }
+}
+
+@keyframes race-content-enter {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes race-track-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-12px) scale(1.015); }
+}
+
+@keyframes countdown-line {
+  0%, 100% { opacity: 0.45; transform: scaleX(0.35); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes timing-row-enter {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes timing-row-moved-up {
+  0% {
+    transform: translateY(var(--row-shift));
+    box-shadow: inset 4px 0 0 #22c55e;
+  }
+  65% { box-shadow: inset 4px 0 0 #22c55e; }
+  100% {
+    transform: translateY(0);
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
+@keyframes timing-row-moved-down {
+  0% {
+    transform: translateY(var(--row-shift));
+    box-shadow: inset 4px 0 0 #ef4444;
+  }
+  65% { box-shadow: inset 4px 0 0 #ef4444; }
+  100% {
+    transform: translateY(0);
+    box-shadow: inset 0 0 0 transparent;
+  }
+}
+
+@keyframes timing-position-arrow {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes race-session-checker {
+  from { background-position: 0 0; }
+  to { background-position: 112px 56px; }
+}
+
+@keyframes race-session-flag {
+  0%, 100% { transform: rotate(-8deg) scale(0.96); }
+  50% { transform: rotate(8deg) scale(1.05); }
+}
+
+@keyframes server-button-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(230, 57, 70, 0.2); }
+  50% { box-shadow: 0 0 24px rgba(230, 57, 70, 0.65); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .race-hero-background,
+  .race-hero-content,
+  .race-track-float,
+  .countdown-block::after,
+  .timing-driver-row-enter,
+  .timing-driver-row-moved-up,
+  .timing-driver-row-moved-down,
+  .timing-position-arrow,
+  .race-session-checker,
+  .race-session-flag,
+  .server-join-button {
+    animation: none;
+  }
 }

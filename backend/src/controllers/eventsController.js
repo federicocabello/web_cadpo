@@ -3,15 +3,15 @@ const slugify = require('../utils/slugify');
 
 const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
-         cal.especialidad, cal.coronacion,
+         cal.especialidad, cal.coronacion, cal.transmision,
          CONCAT(cal.idcampeonato, '-', cal.ronda) AS id,
          CASE
            WHEN cal.fecha >= NOW() THEN 'upcoming'
            ELSE 'completed'
          END AS status,
          ci.id AS idcircuito, ci.nombre AS circuito,
-         ci.localidad, ci.provincia, ci.pais, ci.imagen,
-         c.temporada, c.anio,
+         ci.localidad, ci.provincia, ci.pais, ci.imagen, ci.trazado, ci.variante,
+         c.temporada, c.anio, c.plataforma, c.puerto, c.n_server, c.servidor,
          cat.id AS idcategoria, cat.categoria, cat.logo AS categoria_logo
   FROM calendario cal
   JOIN circuitos ci ON cal.idcircuito = ci.id
@@ -59,26 +59,116 @@ const withMediaFields = row => {
     ...row,
     circuito_slug: circuitoSlug,
     categoria_slug: categoriaSlug,
-    circuito_foto_url: `/media/circuitos/fotos/${circuitoSlug}.png`,
-    circuito_trazado_url: `/media/circuitos/trazados/${circuitoSlug}.png`,
+    circuito_foto_url: row.imagen || `/media/circuitos/fotos/${circuitoSlug}.png`,
+    circuito_trazado_url: row.trazado || `/media/circuitos/trazados/${circuitoSlug}.png`,
     campeonato_media_path: `/media/campeonatos/${categoriaSlug}/temporada-${slugify(row.temporada)}`,
   };
 };
 
+const normalizeSpecialty = (especial, especialidad) => {
+  if (!especial) return null;
+
+  return String(especialidad || '').trim().toLocaleUpperCase('es-AR') || null;
+};
+
+const normalizeTransmissionUrl = value => String(value || '').trim();
+
 const create = async (req, res, next) => {
   try {
-    const { idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion } = req.body;
+    const { idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion, transmision } = req.body;
     if (!idcampeonato || !fecha || !ronda || !idcircuito) {
       return res.status(400).json({ error: 'idcampeonato, fecha, ronda e idcircuito son requeridos' });
     }
 
     await pool.query(
-      `INSERT INTO calendario (idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [idcampeonato, fecha, ronda, idcircuito, especial ? 1 : 0, especialidad || null, coronacion ? 1 : 0]
+      `INSERT INTO calendario (idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion, transmision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [idcampeonato, fecha, ronda, idcircuito, especial ? 1 : 0, normalizeSpecialty(especial, especialidad), coronacion ? 1 : 0, normalizeTransmissionUrl(transmision)]
     );
 
     res.status(201).json({ message: 'Fecha agregada al calendario', data: req.body });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const createBatch = async (req, res, next) => {
+  const connection = await pool.getConnection();
+
+  try {
+    const events = Array.isArray(req.body.events) ? req.body.events : [];
+    if (!events.length) {
+      return res.status(400).json({ error: 'Agregá al menos una fecha al calendario' });
+    }
+
+    const invalidEvent = events.find(event =>
+      !event.idcampeonato || !event.fecha || !event.ronda || !event.idcircuito
+    );
+    if (invalidEvent) {
+      return res.status(400).json({ error: 'Todas las fechas deben tener campeonato, fecha, ronda y circuito' });
+    }
+
+    await connection.beginTransaction();
+    const query = `INSERT INTO calendario
+      (idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion, transmision)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+    for (const event of events) {
+      await connection.query(query, [
+        event.idcampeonato,
+        event.fecha,
+        event.ronda,
+        event.idcircuito,
+        event.especial ? 1 : 0,
+        normalizeSpecialty(event.especial, event.especialidad),
+        event.coronacion ? 1 : 0,
+        normalizeTransmissionUrl(event.transmision),
+      ]);
+    }
+
+    await connection.commit();
+    res.status(201).json({
+      message: `${events.length} fechas agregadas al calendario`,
+      data: events,
+    });
+  } catch (err) {
+    await connection.rollback();
+    next(err);
+  } finally {
+    connection.release();
+  }
+};
+
+const update = async (req, res, next) => {
+  try {
+    const { idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion, transmision } = req.body;
+    const { oldIdcampeonato, oldRonda } = req.params;
+
+    if (!idcampeonato || !fecha || !ronda || !idcircuito) {
+      return res.status(400).json({ error: 'idcampeonato, fecha, ronda e idcircuito son requeridos' });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE calendario
+       SET idcampeonato=?, fecha=?, ronda=?, idcircuito=?, especial=?, especialidad=?, coronacion=?, transmision=?
+       WHERE idcampeonato=? AND ronda=?`,
+      [
+        idcampeonato,
+        fecha,
+        ronda,
+        idcircuito,
+        especial ? 1 : 0,
+        normalizeSpecialty(especial, especialidad),
+        coronacion ? 1 : 0,
+        normalizeTransmissionUrl(transmision),
+        oldIdcampeonato,
+        oldRonda,
+      ]
+    );
+
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+
+    res.json({ message: 'Fecha actualizada', data: req.body });
   } catch (err) {
     next(err);
   }
@@ -99,4 +189,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getUpcoming, create, remove };
+module.exports = { getAll, getUpcoming, create, createBatch, update, remove };

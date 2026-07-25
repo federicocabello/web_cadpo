@@ -52,10 +52,10 @@ export default function Registration() {
         ...form,
         pago: 0,
       });
-      setMessage('Inscripcion registrada correctamente.');
+      setMessage('Inscripción registrada correctamente.');
       setForm({ idcampeonato: '', idpiloto: '', idauto: '', numero: '' });
     } catch (err) {
-      setMessage(err.response?.data?.error || 'No se pudo registrar la inscripcion.');
+      setMessage(err.response?.data?.error || 'No se pudo registrar la inscripción.');
     } finally {
       setSubmitting(false);
     }
@@ -65,11 +65,11 @@ export default function Registration() {
     <div className="animate-fade-in">
       <div className="bg-racing-gray border-b border-racing-border py-12 px-4">
         <div className="max-w-7xl mx-auto">
-          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Participa</p>
+          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Participá</p>
           <h1 className="section-title text-4xl md:text-5xl mb-2">
-            Inscripcion <span className="gradient-text">a Campeonato</span>
+            Inscripción <span className="gradient-text">a Campeonato</span>
           </h1>
-          <p className="text-gray-400 max-w-xl">Alta simple sobre la tabla inscriptos: campeonato, piloto, auto y numero.</p>
+          <p className="text-gray-400 max-w-xl">Alta simple sobre la tabla inscriptos: campeonato, piloto, auto y número.</p>
         </div>
       </div>
 
@@ -108,7 +108,7 @@ export default function Registration() {
           </label>
 
           <label className="block">
-            <span className="text-sm text-gray-300">Numero</span>
+            <span className="text-sm text-gray-300">Número</span>
             <input
               name="numero"
               type="number"
@@ -129,7 +129,7 @@ export default function Registration() {
           )}
 
           <button type="submit" className="btn-primary w-full justify-center" disabled={submitting}>
-            {submitting ? 'Registrando...' : 'Registrar inscripcion'}
+            {submitting ? 'Registrando...' : 'Registrar inscripción'}
           </button>
         </form>
       </div>

@@ -51,7 +51,7 @@ export default function DriverStandingsTable({ drivers = [], loading = false }) 
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-white font-medium">{driver.nombre}</span>
-                    {driver.campeon ? <span className="ml-2 text-racing-red text-xs uppercase">Campeon</span> : null}
+                    {driver.campeon ? <span className="ml-2 text-racing-red text-xs uppercase">Campeón</span> : null}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className="text-gray-400">{driver.localidad || '-'}</span>
