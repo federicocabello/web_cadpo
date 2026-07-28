@@ -78,6 +78,13 @@ export const carsApi = {
   remove: id => api.delete(`/cars/${id}`),
 };
 
+export const carBrandsApi = {
+  getAll: () => api.get('/car-brands'),
+  create: data => api.post('/car-brands', data),
+  update: (id, data) => api.put(`/car-brands/${id}`, data),
+  remove: id => api.delete(`/car-brands/${id}`),
+};
+
 export const categoriesApi = {
   getAll: () => api.get('/categories'),
   getById: id => api.get(`/categories/${id}`),
@@ -88,7 +95,6 @@ export const categoriesApi = {
 
 export const circuitsApi = {
   getAll: () => api.get('/circuits'),
-  getGeography: () => api.get('/circuits/geography'),
   getById: id => api.get(`/circuits/${id}`),
   create: data => api.post('/circuits', data),
   update: (id, data) => api.put(`/circuits/${id}`, data),

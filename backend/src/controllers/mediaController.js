@@ -2,7 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const slugify = require('../utils/slugify');
 
-const publicDir = path.resolve(__dirname, '../../../frontend/public');
+const publicDir = require('../utils/publicDir');
 const imageExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
 const toPublicUrl = filePath => {

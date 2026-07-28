@@ -88,7 +88,7 @@ const getById = async (req, res, next) => {
     const [historial] = await pool.query(
       `SELECT c.id AS idcampeonato, c.temporada, c.anio,
               cat.categoria,
-              a.marca, a.modelo, a.logo AS auto_logo,
+              am.marca, a.modelo, am.logo AS auto_logo,
               i.numero, i.pago,
               t.posicion, t.puntos, t.victorias, t.apercibimientos,
               t.campeon, t.expulsado
@@ -96,6 +96,7 @@ const getById = async (req, res, next) => {
        JOIN campeonatos c  ON i.idcampeonato = c.id
        JOIN categorias cat ON c.idcategoria  = cat.id
        JOIN autos a        ON i.idauto       = a.id
+       JOIN autos_marcas am ON a.marca       = am.id
        LEFT JOIN tablas t  ON t.idcampeonato = i.idcampeonato AND t.idpiloto = i.idpiloto
        WHERE i.idpiloto = ?
        ORDER BY c.anio DESC, c.temporada DESC`,

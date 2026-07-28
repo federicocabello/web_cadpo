@@ -4,7 +4,6 @@ const circuitsController = require('../controllers/circuitsController');
 const uploadCircuitImage = require('../middleware/uploadCircuitImage');
 
 router.get('/', circuitsController.getAll);
-router.get('/geography', circuitsController.getGeography);
 router.get('/:id', circuitsController.getById);
 router.post(
   '/',

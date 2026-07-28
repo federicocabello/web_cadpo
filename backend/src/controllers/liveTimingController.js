@@ -38,6 +38,7 @@ const normalizeDriver = (driver, connected) => {
     gap: driver.Split || '',
     deltaToBest: driver.DeltaToBest || 0,
     pits: driver.NumPits || 0,
+    ballast: Math.max(0, Number(driver.Ballast) || 0),
     inPits: Boolean(driver.IsInPits),
     connected,
     ping: driver.Ping || 0,

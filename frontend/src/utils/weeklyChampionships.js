@@ -1,4 +1,6 @@
-const parseDate = value => new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+import { parseCalendarDate } from './calendarDate';
+
+const parseDate = value => parseCalendarDate(value);
 const ACTIVE_WINDOW_MS = 60 * 60 * 1000;
 
 export const getEventPhase = (event, now = new Date()) => {

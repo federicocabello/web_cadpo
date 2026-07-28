@@ -3,7 +3,7 @@ const path = require('path');
 const pool = require('../config/db');
 const normalizeCountryCode = require('../utils/countryCode');
 
-const publicDir = path.resolve(__dirname, '../../../frontend/public');
+const publicDir = require('../utils/publicDir');
 
 const toPublicImagePath = (file, folder) => {
   if (!file) return '';
@@ -82,33 +82,6 @@ const getById = async (req, res, next) => {
   }
 };
 
-const getGeography = async (req, res, next) => {
-  try {
-    const [rows] = await pool.query(
-      `SELECT ci.pais,
-              COUNT(DISTINCT ci.id) AS circuitos,
-              COUNT(cal.ronda) AS fechas,
-              SUM(CASE WHEN cal.fecha < NOW() THEN 1 ELSE 0 END) AS fechas_disputadas
-       FROM circuitos ci
-       LEFT JOIN calendario cal ON cal.idcircuito = ci.id
-       WHERE ci.pais IS NOT NULL AND ci.pais <> ''
-       GROUP BY ci.pais
-       ORDER BY fechas_disputadas DESC, circuitos DESC`
-    );
-
-    res.json({
-      data: rows.map(row => ({
-        pais: normalizeCountryCode(row.pais),
-        circuitos: Number(row.circuitos || 0),
-        fechas: Number(row.fechas || 0),
-        fechas_disputadas: Number(row.fechas_disputadas || 0),
-      })),
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
 const create = async (req, res, next) => {
   try {
     const { nombre, localidad, provincia, pais, variante } = normalizeCircuitFields(req.body);
@@ -178,4 +151,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getById, getGeography, create, update, remove };
+module.exports = { getAll, getById, create, update, remove };

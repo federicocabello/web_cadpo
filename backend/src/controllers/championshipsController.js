@@ -149,10 +149,11 @@ const getEnrolled = async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT i.numero, i.pago,
               p.id AS idpiloto, p.nombre, p.localidad, p.telefono,
-              a.id AS idauto, a.marca, a.modelo, a.logo AS auto_logo
+              a.id AS idauto, am.marca, a.modelo, am.logo AS auto_logo
        FROM inscriptos i
        JOIN pilotos p ON i.idpiloto = p.id
        JOIN autos a ON i.idauto = a.id
+       JOIN autos_marcas am ON a.marca = am.id
        WHERE i.idcampeonato = ?
        ORDER BY i.numero ASC`,
       [req.params.id]
@@ -167,17 +168,18 @@ const create = async (req, res, next) => {
   try {
     const { idcategoria, temporada, anio, puerto, n_server, servidor } = req.body;
     const plataforma = normalizePlatform(req.body.plataforma);
-    if (!idcategoria || !temporada || !anio || !plataforma) {
+    const parsedAnio = Number(anio);
+    if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
 
     const reglamento = toPublicRulesPath(req.file);
     const [result] = await pool.query(
       'INSERT INTO campeonatos (idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [idcategoria, temporada, anio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor)]
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor)]
     );
 
-    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor }, message: 'Campeonato creado' });
+    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor }, message: 'Campeonato creado' });
   } catch (err) {
     next(err);
   }
@@ -187,7 +189,8 @@ const update = async (req, res, next) => {
   try {
     const { idcategoria, temporada, anio, puerto, n_server, servidor } = req.body;
     const plataforma = normalizePlatform(req.body.plataforma);
-    if (!idcategoria || !temporada || !anio || !plataforma) {
+    const parsedAnio = Number(anio);
+    if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
 
@@ -197,11 +200,11 @@ const update = async (req, res, next) => {
     const reglamento = req.file ? toPublicRulesPath(req.file) : current.reglamento;
     const [result] = await pool.query(
       'UPDATE campeonatos SET idcategoria=?, temporada=?, anio=?, plataforma=?, reglamento=?, puerto=?, n_server=?, servidor=? WHERE id=?',
-      [idcategoria, temporada, anio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), req.params.id]
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), req.params.id]
     );
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Campeonato no encontrado' });
-    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor } });
+    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor } });
   } catch (err) {
     next(err);
   }

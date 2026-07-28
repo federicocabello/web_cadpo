@@ -12,7 +12,6 @@ import {
   TagIcon,
   BookOpenIcon,
   ChartBarIcon,
-  GlobeAltIcon,
 } from '@heroicons/react/24/outline'
 import { authApi, eventsApi } from '../services/api'
 import { getLiveTimingEvents } from '../utils/weeklyChampionships'
@@ -50,7 +49,6 @@ const navLinks = [
   { to: '/categorias', label: 'CATEGORÍAS', Icon: TagIcon },
   { to: '/historico', label: 'HISTÓRICO', Icon: BookOpenIcon },
   { to: '/estadisticas', label: 'ESTADÍSTICAS', Icon: ChartBarIcon },
-  { to: '/mapa-mundial', label: 'MAPA MUNDIAL', Icon: GlobeAltIcon },
 ]
 
 const socialLinks = [

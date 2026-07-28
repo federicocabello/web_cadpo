@@ -16,25 +16,10 @@ import {
   WrenchScrewdriverIcon,
   WrenchIcon
 } from '@heroicons/react/24/outline';
-import { carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, resultsApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, registrationsApi, resultsApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
-
-const toDateInputValue = value => {
-  if (!value) return '';
-
-  return new Date(value).toISOString().slice(0, 10);
-};
-
-const toDateTimeInputValue = value => {
-  if (!value) return '';
-  if (typeof value === 'string') return value.replace(' ', 'T').slice(0, 16);
-
-  const date = new Date(value);
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-
-  return offsetDate.toISOString().slice(0, 16);
-};
+import { formatCalendarDate, parseCalendarDate, toDateInputValue, toDateTimeInputValue } from '../utils/calendarDate';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -45,28 +30,28 @@ const toMySqlDateTime = value => {
 const formatEventDateTime = value => {
   if (!value) return '-';
 
-  const parts = new Intl.DateTimeFormat('es-AR', {
+  return `${formatCalendarDate(value, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
-  }).formatToParts(new Date(value));
-  const getPart = type => parts.find(part => part.type === type)?.value || '';
-
-  return `${getPart('day')}/${getPart('month')}/${getPart('year')} ${getPart('hour')}:${getPart('minute')} H`;
+  }).replace(',', '')} H`;
 };
 
 const adminSections = [
   { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
-  { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
-  { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
-  { id: 'campeonatos', label: 'CAMPEONATOS', icon: FireIcon },
-  { id: 'autos', label: 'AUTOS', icon: WrenchIcon },
-  { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
   { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
+  { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
+  { id: 'marcas', label: 'MARCAS', icon: TagIcon },
+  { id: 'autos', label: 'AUTOS', icon: WrenchIcon },
+  { id: 'campeonatos', label: 'CAMPEONATOS', icon: FireIcon },
+  { id: 'inscriptos', label: 'INSCRIPTOS', icon: UsersIcon },
+  { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
+  { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
 ];
+const adminSectionStorageKey = 'cadpo-admin-section';
 
 const emptyCircuitForm = {
   nombre: '',
@@ -102,6 +87,17 @@ const emptyCarForm = {
   idcategoria: '',
   marca: '',
   modelo: '',
+};
+
+const emptyCarBrandForm = { marca: '' };
+const emptyRegistrationForm = {
+  idcampeonato: '',
+  idpiloto: '',
+  idmarca: '',
+  idauto: '',
+  numero: '',
+  extra: false,
+  pago: false,
 };
 
 const emptyEventForm = {
@@ -292,30 +288,41 @@ export default function Admin() {
   const imageInputRef = useRef(null);
   const layoutInputRef = useRef(null);
   const categoryLogoInputRef = useRef(null);
+  const carBrandLogoInputRef = useRef(null);
   const championshipRulesInputRef = useRef(null);
-  const carLogoInputRef = useRef(null);
   const carImageInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
-  const [activeSection, setActiveSection] = useState('circuitos');
+  const [activeSection, setActiveSection] = useState(() => {
+    const savedSection = window.localStorage.getItem(adminSectionStorageKey);
+    return adminSections.some(section => section.id === savedSection)
+      ? savedSection
+      : adminSections[0].id;
+  });
   const [events, setEvents] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [circuits, setCircuits] = useState([]);
   const [categories, setCategories] = useState([]);
   const [championships, setChampionships] = useState([]);
+  const [carBrands, setCarBrands] = useState([]);
   const [cars, setCars] = useState([]);
+  const [registrations, setRegistrations] = useState([]);
   const [results, setResults] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [resultMessage, setResultMessage] = useState('');
   const [circuitMessage, setCircuitMessage] = useState('');
   const [categoryMessage, setCategoryMessage] = useState('');
   const [championshipMessage, setChampionshipMessage] = useState('');
+  const [carBrandMessage, setCarBrandMessage] = useState('');
   const [carMessage, setCarMessage] = useState('');
+  const [registrationMessage, setRegistrationMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingResult, setSavingResult] = useState(false);
   const [savingCircuit, setSavingCircuit] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingChampionship, setSavingChampionship] = useState(false);
+  const [savingCarBrand, setSavingCarBrand] = useState(false);
   const [savingCar, setSavingCar] = useState(false);
+  const [savingRegistration, setSavingRegistration] = useState(false);
   const [resultForm, setResultForm] = useState({
     posicion: '',
     idpiloto: '',
@@ -345,12 +352,20 @@ export default function Admin() {
   const [championshipRulesFile, setChampionshipRulesFile] = useState(null);
   const [editingChampionshipId, setEditingChampionshipId] = useState(null);
   const [championshipSearch, setChampionshipSearch] = useState('');
+  const [carBrandForm, setCarBrandForm] = useState(emptyCarBrandForm);
+  const [carBrandLogoFile, setCarBrandLogoFile] = useState(null);
+  const [carBrandLogoCrop, setCarBrandLogoCrop] = useState(defaultCropSettings);
+  const [editingCarBrandId, setEditingCarBrandId] = useState(null);
+  const [carBrandSearch, setCarBrandSearch] = useState('');
   const [carForm, setCarForm] = useState(emptyCarForm);
-  const [carLogoFile, setCarLogoFile] = useState(null);
-  const [carLogoCrop, setCarLogoCrop] = useState(defaultCropSettings);
   const [carImageFile, setCarImageFile] = useState(null);
   const [editingCarId, setEditingCarId] = useState(null);
   const [carSearch, setCarSearch] = useState('');
+  const [registrationForm, setRegistrationForm] = useState(emptyRegistrationForm);
+  const [registrationDriverSearch, setRegistrationDriverSearch] = useState('');
+  const [showRegistrationDriverSuggestions, setShowRegistrationDriverSuggestions] = useState(false);
+  const [registrationSearch, setRegistrationSearch] = useState('');
+  const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
   const [eventForm, setEventForm] = useState(emptyEventForm);
   const [eventBatch, setEventBatch] = useState(emptyEventBatch);
   const [eventBatchRows, setEventBatchRows] = useState([]);
@@ -367,6 +382,10 @@ export default function Admin() {
   const [driverSearch, setDriverSearch] = useState('');
   const [showDriverLocalitySuggestions, setShowDriverLocalitySuggestions] = useState(false);
   const [lockedDriverLocality, setLockedDriverLocality] = useState(false);
+
+  useEffect(() => {
+    window.localStorage.setItem(adminSectionStorageKey, activeSection);
+  }, [activeSection]);
 
   const selectedEvent = useMemo(
     () => events.find(event => String(event.id) === String(selectedEventId)),
@@ -467,6 +486,82 @@ export default function Admin() {
       });
   }, [carSearch, cars]);
 
+  const displayedCarBrands = useMemo(() => {
+    const search = carBrandSearch.trim().toLocaleLowerCase('es-AR');
+    return [...carBrands]
+      .filter(brand => !search || [brand.marca, brand.logo]
+        .filter(Boolean)
+        .some(value => String(value).toLocaleLowerCase('es-AR').includes(search)))
+      .sort((a, b) => String(a.marca || '').localeCompare(String(b.marca || ''), 'es-AR', { sensitivity: 'base' }));
+  }, [carBrandSearch, carBrands]);
+
+  const registrationChampionship = useMemo(
+    () => championships.find(championship => String(championship.id) === String(registrationForm.idcampeonato)),
+    [championships, registrationForm.idcampeonato]
+  );
+
+  const registrationCars = useMemo(
+    () => cars.filter(car => !registrationChampionship
+      || String(car.idcategoria) === String(registrationChampionship.idcategoria)),
+    [cars, registrationChampionship]
+  );
+
+  const registrationBrands = useMemo(() => {
+    const brandsById = new Map();
+    registrationCars.forEach(car => {
+      if (car.idmarca && !brandsById.has(String(car.idmarca))) {
+        brandsById.set(String(car.idmarca), {
+          id: car.idmarca,
+          marca: car.marca,
+          logo: car.logo,
+        });
+      }
+    });
+
+    return [...brandsById.values()]
+      .sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
+  }, [registrationCars]);
+
+  const registrationModels = useMemo(
+    () => registrationCars
+      .filter(car => String(car.idmarca) === String(registrationForm.idmarca))
+      .sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' })),
+    [registrationCars, registrationForm.idmarca]
+  );
+
+  const registrationDriverSuggestions = useMemo(() => {
+    const search = registrationDriverSearch.trim().toLocaleLowerCase('es-AR');
+    if (!search) return [];
+
+    return [...drivers]
+      .filter(driver => String(driver.nombre || '').toLocaleLowerCase('es-AR').includes(search))
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' }))
+      .slice(0, 8);
+  }, [drivers, registrationDriverSearch]);
+
+  const displayedRegistrations = useMemo(() => {
+    const search = registrationSearch.trim().toLocaleLowerCase('es-AR');
+    return registrations.filter(registration => {
+      if (
+        registrationChampionshipFilter
+        && String(registration.idcampeonato) !== String(registrationChampionshipFilter)
+      ) return false;
+
+      if (!search) return true;
+      return [
+        registration.nombre,
+        registration.numero,
+        registration.marca,
+        registration.modelo,
+        registration.categoria,
+        registration.temporada,
+        registration.anio,
+      ]
+        .filter(value => value !== null && value !== undefined)
+        .some(value => String(value).toLocaleLowerCase('es-AR').includes(search));
+    });
+  }, [registrationChampionshipFilter, registrationSearch, registrations]);
+
   const displayedEvents = useMemo(() => {
     const search = eventSearch.trim().toLocaleLowerCase('es-AR');
 
@@ -492,10 +587,10 @@ export default function Admin() {
           const circuitOrder = String(a.circuito || '').localeCompare(String(b.circuito || ''), 'es-AR', { sensitivity: 'base' });
           if (circuitOrder !== 0) return circuitOrder * direction;
 
-          return (new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+          return (parseCalendarDate(b.fecha)?.getTime() || 0) - (parseCalendarDate(a.fecha)?.getTime() || 0);
         }
 
-        return (new Date(a.fecha).getTime() - new Date(b.fecha).getTime()) * direction;
+        return ((parseCalendarDate(a.fecha)?.getTime() || 0) - (parseCalendarDate(b.fecha)?.getTime() || 0)) * direction;
       });
   }, [eventSearch, eventSort, eventSortDirection, events]);
 
@@ -575,13 +670,15 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carsRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
           categoriesApi.getAll(),
           championshipsApi.getAll(),
+          carBrandsApi.getAll(),
           carsApi.getAll(),
+          registrationsApi.getAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -590,7 +687,9 @@ export default function Admin() {
         setCircuits(circuitsRes.data.data ?? []);
         setCategories(categoriesRes.data.data ?? []);
         setChampionships(championshipsRes.data.data ?? []);
+        setCarBrands(carBrandsRes.data.data ?? []);
         setCars(carsRes.data.data ?? []);
+        setRegistrations(registrationsRes.data.data ?? []);
         setSelectedEventId(eventRows[0]?.id ?? '');
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -678,6 +777,30 @@ export default function Admin() {
   const handleCarChange = event => {
     const { name, value } = event.target;
     setCarForm(current => ({ ...current, [name]: value }));
+  };
+
+  const handleCarBrandFormChange = event => {
+    setCarBrandForm({ marca: event.target.value });
+  };
+
+  const handleRegistrationChange = event => {
+    const { name, type, checked, value } = event.target;
+    setRegistrationForm(current => {
+      const nextValue = type === 'checkbox' ? checked : value;
+      return {
+        ...current,
+        [name]: nextValue,
+        ...(name === 'idcampeonato' ? { idmarca: '', idauto: '' } : {}),
+        ...(name === 'idmarca' ? { idauto: '' } : {}),
+        ...(name === 'extra' && checked ? { numero: '' } : {}),
+      };
+    });
+  };
+
+  const handleSelectRegistrationDriver = driver => {
+    setRegistrationForm(current => ({ ...current, idpiloto: driver.id }));
+    setRegistrationDriverSearch(driver.nombre);
+    setShowRegistrationDriverSuggestions(false);
   };
 
   const handleEventChange = event => {
@@ -832,13 +955,18 @@ export default function Admin() {
     if (championshipRulesInputRef.current) championshipRulesInputRef.current.value = '';
   };
 
+  const resetCarBrandForm = () => {
+    setCarBrandForm(emptyCarBrandForm);
+    setCarBrandLogoFile(null);
+    setCarBrandLogoCrop(defaultCropSettings);
+    setEditingCarBrandId(null);
+    if (carBrandLogoInputRef.current) carBrandLogoInputRef.current.value = '';
+  };
+
   const resetCarForm = () => {
     setCarForm(emptyCarForm);
-    setCarLogoFile(null);
-    setCarLogoCrop(defaultCropSettings);
     setCarImageFile(null);
     setEditingCarId(null);
-    if (carLogoInputRef.current) carLogoInputRef.current.value = '';
     if (carImageInputRef.current) carImageInputRef.current.value = '';
   };
 
@@ -999,6 +1127,36 @@ export default function Admin() {
     }
   };
 
+  const handleCarBrandSubmit = async event => {
+    event.preventDefault();
+    setSavingCarBrand(true);
+    setCarBrandMessage('');
+
+    try {
+      const data = new FormData();
+      data.append('marca', capitalizeValue(carBrandForm.marca));
+      if (carBrandLogoFile) {
+        const croppedLogo = await createSquarePngFile(carBrandLogoFile, carBrandLogoCrop, 'logo-marca.png');
+        data.append('logo', croppedLogo);
+      }
+
+      if (editingCarBrandId) {
+        await carBrandsApi.update(editingCarBrandId, data);
+      } else {
+        await carBrandsApi.create(data);
+      }
+
+      const response = await carBrandsApi.getAll();
+      setCarBrands(response.data.data ?? []);
+      resetCarBrandForm();
+      setCarBrandMessage(editingCarBrandId ? 'Marca actualizada correctamente.' : 'Marca cargada correctamente.');
+    } catch (err) {
+      setCarBrandMessage(err.response?.data?.error || 'No se pudo guardar la marca.');
+    } finally {
+      setSavingCarBrand(false);
+    }
+  };
+
   const handleCarSubmit = async event => {
     event.preventDefault();
     setSavingCar(true);
@@ -1007,12 +1165,8 @@ export default function Admin() {
     try {
       const data = new FormData();
       data.append('idcategoria', carForm.idcategoria);
-      data.append('marca', capitalizeValue(carForm.marca));
+      data.append('marca', carForm.marca);
       data.append('modelo', capitalizeValue(carForm.modelo));
-      if (carLogoFile) {
-        const croppedLogo = await createSquarePngFile(carLogoFile, carLogoCrop, 'logo-auto.png');
-        data.append('logo', croppedLogo);
-      }
       if (carImageFile) data.append('imagen', carImageFile);
 
       if (editingCarId) {
@@ -1202,6 +1356,65 @@ export default function Admin() {
     }
   };
 
+  const handleRegistrationSubmit = async event => {
+    event.preventDefault();
+    if (!registrationForm.idpiloto) {
+      setRegistrationMessage('Buscá y seleccioná un piloto de la lista.');
+      return;
+    }
+    setSavingRegistration(true);
+    setRegistrationMessage('');
+
+    try {
+      await registrationsApi.create({
+        ...registrationForm,
+        idcampeonato: Number(registrationForm.idcampeonato),
+        idpiloto: Number(registrationForm.idpiloto),
+        idauto: Number(registrationForm.idauto),
+        numero: registrationForm.extra ? 0 : Number(registrationForm.numero),
+        pago: registrationForm.pago,
+      });
+      const response = await registrationsApi.getAll();
+      setRegistrations(response.data.data ?? []);
+      setRegistrationForm(emptyRegistrationForm);
+      setRegistrationDriverSearch('');
+      setRegistrationMessage('Piloto inscripto correctamente.');
+    } catch (err) {
+      setRegistrationMessage(err.response?.data?.error || 'No se pudo inscribir al piloto.');
+    } finally {
+      setSavingRegistration(false);
+    }
+  };
+
+  const handleRegistrationPayment = async registration => {
+    const nextPayment = !registration.pago;
+    try {
+      await registrationsApi.updatePayment(registration.idcampeonato, registration.idpiloto, nextPayment);
+      setRegistrations(current => current.map(item => (
+        String(item.idcampeonato) === String(registration.idcampeonato)
+        && String(item.idpiloto) === String(registration.idpiloto)
+          ? { ...item, pago: nextPayment ? 1 : 0 }
+          : item
+      )));
+      setRegistrationMessage(nextPayment ? 'Pago confirmado.' : 'Pago marcado como pendiente.');
+    } catch (err) {
+      setRegistrationMessage(err.response?.data?.error || 'No se pudo actualizar el pago.');
+    }
+  };
+
+  const handleDeleteCarBrand = async id => {
+    const confirmed = window.confirm('¿Eliminar esta marca?');
+    if (!confirmed) return;
+
+    try {
+      await carBrandsApi.remove(id);
+      setCarBrands(current => current.filter(brand => brand.id !== id));
+      setCarBrandMessage('Marca eliminada.');
+    } catch (err) {
+      setCarBrandMessage(err.response?.data?.error || 'No se pudo eliminar la marca.');
+    }
+  };
+
   const handleDeleteCar = async id => {
     const confirmed = window.confirm('¿Eliminar este auto?');
     if (!confirmed) return;
@@ -1285,17 +1498,39 @@ export default function Admin() {
     setChampionshipMessage(`Editando ${championship.categoria} T${championship.temporada}. Si no cargás un nuevo PDF, se conserva el actual.`);
   };
 
+  const handleDeleteRegistration = async registration => {
+    const confirmed = window.confirm(`¿Eliminar la inscripción de ${registration.nombre}?`);
+    if (!confirmed) return;
+
+    try {
+      await registrationsApi.remove(registration.idcampeonato, registration.idpiloto);
+      setRegistrations(current => current.filter(item => !(
+        String(item.idcampeonato) === String(registration.idcampeonato)
+        && String(item.idpiloto) === String(registration.idpiloto)
+      )));
+      setRegistrationMessage('Inscripción eliminada.');
+    } catch (err) {
+      setRegistrationMessage(err.response?.data?.error || 'No se pudo eliminar la inscripción.');
+    }
+  };
+
+  const handleEditCarBrand = brand => {
+    setEditingCarBrandId(brand.id);
+    setCarBrandForm({ marca: brand.marca || '' });
+    setCarBrandLogoFile(null);
+    setCarBrandLogoCrop(defaultCropSettings);
+    if (carBrandLogoInputRef.current) carBrandLogoInputRef.current.value = '';
+    setCarBrandMessage(`Editando ${brand.marca}. Si no cargás otro logo, se conserva el actual.`);
+  };
+
   const handleEditCar = car => {
     setEditingCarId(car.id);
     setCarForm({
       idcategoria: car.idcategoria || '',
-      marca: car.marca || '',
+      marca: car.idmarca || '',
       modelo: car.modelo || '',
     });
-    setCarLogoFile(null);
-    setCarLogoCrop(defaultCropSettings);
     setCarImageFile(null);
-    if (carLogoInputRef.current) carLogoInputRef.current.value = '';
     if (carImageInputRef.current) carImageInputRef.current.value = '';
     setCarMessage(`Editando ${car.marca} ${car.modelo}. Si no cargás nuevas imágenes, se conservan las actuales.`);
   };
@@ -2236,6 +2471,266 @@ export default function Admin() {
       );
     }
 
+    if (activeSection === 'inscriptos') {
+      return (
+        <div className="grid grid-cols-1 gap-8 2xl:grid-cols-[440px_1fr]">
+          <section className="card-glass p-6">
+            <h2 className="mb-5 font-racing text-2xl font-bold">Inscribir piloto</h2>
+            <form onSubmit={handleRegistrationSubmit} className="space-y-4">
+              <label className="block">
+                <span className="text-sm text-gray-300">Campeonato</span>
+                <select name="idcampeonato" value={registrationForm.idcampeonato} onChange={handleRegistrationChange} className="input-field mt-2" required>
+                  <option value="">Seleccionar campeonato</option>
+                  {championships.map(championship => (
+                    <option key={championship.id} value={championship.id}>
+                      {championship.categoria} · T{championship.temporada} · {championship.anio}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="relative">
+                <span className="text-sm text-gray-300">Piloto</span>
+                <div className="relative mt-2">
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                  <input
+                    value={registrationDriverSearch}
+                    onChange={event => {
+                      setRegistrationDriverSearch(event.target.value);
+                      setRegistrationForm(current => ({ ...current, idpiloto: '' }));
+                      setShowRegistrationDriverSuggestions(true);
+                    }}
+                    onFocus={() => setShowRegistrationDriverSuggestions(true)}
+                    className="input-field pl-10"
+                    placeholder="Buscar piloto por nombre"
+                    autoComplete="off"
+                    required
+                  />
+                </div>
+                {showRegistrationDriverSuggestions && registrationDriverSuggestions.length ? (
+                  <div className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto border border-racing-border bg-racing-dark shadow-xl">
+                    {registrationDriverSuggestions.map(driver => (
+                      <button
+                        key={driver.id}
+                        type="button"
+                        onClick={() => handleSelectRegistrationDriver(driver)}
+                        className="block w-full border-b border-racing-border px-4 py-3 text-left text-sm text-gray-200 transition hover:bg-racing-red/15 hover:text-white"
+                      >
+                        {driver.nombre}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <label className="block">
+                <span className="text-sm text-gray-300">Marca</span>
+                <select name="idmarca" value={registrationForm.idmarca} onChange={handleRegistrationChange} className="input-field mt-2" disabled={!registrationForm.idcampeonato} required>
+                  <option value="">{registrationForm.idcampeonato ? 'Seleccionar marca' : 'Primero seleccioná un campeonato'}</option>
+                  {registrationBrands.map(brand => (
+                    <option key={brand.id} value={brand.id}>{brand.marca}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-sm text-gray-300">Modelo</span>
+                <select name="idauto" value={registrationForm.idauto} onChange={handleRegistrationChange} className="input-field mt-2" disabled={!registrationForm.idmarca} required>
+                  <option value="">{registrationForm.idmarca ? 'Seleccionar modelo' : 'Primero seleccioná una marca'}</option>
+                  {registrationModels.map(car => (
+                    <option key={car.id} value={car.id}>{car.modelo}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-gray-300">Número</span>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-yellow-300">
+                    <input name="extra" type="checkbox" checked={registrationForm.extra} onChange={handleRegistrationChange} className="h-5 w-5 accent-yellow-400" />
+                    EXTRA
+                  </label>
+                </div>
+                <input
+                  name="numero"
+                  type="number"
+                  min="1"
+                  max="999"
+                  value={registrationForm.numero}
+                  onChange={handleRegistrationChange}
+                  className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"
+                  placeholder={registrationForm.extra ? 'Se guardará con número 0' : 'Ej. 27'}
+                  disabled={registrationForm.extra}
+                  required={!registrationForm.extra}
+                />
+              </div>
+
+              <label className="flex cursor-pointer items-center justify-between border border-racing-border bg-racing-dark px-4 py-3">
+                <span>
+                  <span className="block text-sm font-semibold text-white">Pago confirmado</span>
+                  <span className="block text-xs text-gray-500">Sin confirmar quedará pendiente</span>
+                </span>
+                <input name="pago" type="checkbox" checked={registrationForm.pago} onChange={handleRegistrationChange} className="h-5 w-5 accent-racing-red" />
+              </label>
+
+              {registrationMessage ? <div className="border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
+              <button type="submit" className="btn-primary w-full justify-center" disabled={savingRegistration}>
+                {savingRegistration ? 'Inscribiendo...' : 'Agregar inscripción'}
+              </button>
+            </form>
+          </section>
+
+          <section className="card-glass overflow-hidden">
+            <div className="border-b border-racing-border px-5 py-4">
+              <h2 className="font-racing text-2xl font-bold">Pilotos inscriptos</h2>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <select value={registrationChampionshipFilter} onChange={event => setRegistrationChampionshipFilter(event.target.value)} className="input-field">
+                  <option value="">Todos los campeonatos</option>
+                  {championships.map(championship => (
+                    <option key={championship.id} value={championship.id}>{championship.categoria} · T{championship.temporada} · {championship.anio}</option>
+                  ))}
+                </select>
+                <div className="relative">
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                  <input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} className="input-field pl-10" placeholder="Piloto, número, auto..." />
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[880px] text-sm">
+                <thead><tr className="border-b border-racing-border bg-racing-dark">
+                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Nº</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Campeonato</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Auto</th>
+                  <th className="px-4 py-3 text-center text-xs uppercase text-gray-400">Pago</th>
+                  <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
+                </tr></thead>
+                <tbody className="divide-y divide-racing-border">
+                  {displayedRegistrations.length ? displayedRegistrations.map(registration => (
+                    <tr key={`${registration.idcampeonato}-${registration.idpiloto}`} className="hover:bg-racing-card/60">
+                      <td className={`px-4 py-3 font-racing text-xl font-bold ${Number(registration.numero) === 0 ? 'text-yellow-300' : 'text-racing-red'}`}>
+                        {Number(registration.numero) === 0 ? 'EXTRA' : `#${registration.numero}`}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-white">{registration.nombre}</td>
+                      <td className="px-4 py-3 text-gray-300">{registration.categoria} · T{registration.temporada} · {registration.anio}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {registration.auto_logo ? <img src={registration.auto_logo} alt="" className="h-8 w-10 object-contain" /> : null}
+                          <span className="text-gray-300">{registration.marca} {registration.modelo}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button type="button" onClick={() => handleRegistrationPayment(registration)} className={`px-3 py-1 text-xs font-bold uppercase ${registration.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
+                          {registration.pago ? 'Pagado' : 'Pendiente'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button type="button" onClick={() => handleDeleteRegistration(registration)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar inscripción">
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="6" className="px-4 py-12 text-center text-gray-500">No hay inscripciones para mostrar.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      );
+    }
+
+    if (activeSection === 'marcas') {
+      return (
+        <div className="grid grid-cols-1 gap-8 2xl:grid-cols-[420px_1fr]">
+          <section className="card-glass p-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <h2 className="font-racing text-2xl font-bold">{editingCarBrandId ? 'Modificar marca' : 'Agregar marca'}</h2>
+              {editingCarBrandId ? (
+                <button type="button" onClick={resetCarBrandForm} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Cancelar edición">
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              ) : null}
+            </div>
+
+            <form onSubmit={handleCarBrandSubmit} className="space-y-4">
+              <label className="block">
+                <span className="text-sm text-gray-300">Nombre de la marca</span>
+                <input name="marca" value={carBrandForm.marca} onChange={handleCarBrandFormChange} className="input-field mt-2" placeholder="Mercedes-Benz" required />
+              </label>
+
+              <label className="block">
+                <span className="text-sm text-gray-300">Logo</span>
+                <div className="mt-2 rounded-lg border border-dashed border-racing-border bg-racing-dark p-4">
+                  <div className="flex items-center gap-3 text-gray-400">
+                    <PhotoIcon className="h-6 w-6 text-racing-red" />
+                    <span className="text-sm">{carBrandLogoFile?.name || (editingCarBrandId ? 'Se conservará el logo actual' : 'PNG, JPG, WEBP o AVIF hasta 5 MB')}</span>
+                  </div>
+                  <input
+                    ref={carBrandLogoInputRef}
+                    type="file"
+                    accept="image/avif,image/webp,image/jpeg,image/png"
+                    required={!editingCarBrandId}
+                    onChange={event => {
+                      setCarBrandLogoFile(event.target.files?.[0] ?? null);
+                      setCarBrandLogoCrop(defaultCropSettings);
+                    }}
+                    className="mt-4 block w-full text-sm text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-racing-red file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-racing-red-dark"
+                  />
+                  <SquareCropEditor file={carBrandLogoFile} settings={carBrandLogoCrop} onChange={setCarBrandLogoCrop} label="Recorte del logo de la marca" />
+                </div>
+              </label>
+
+              {carBrandMessage ? <div className="rounded-lg border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{carBrandMessage}</div> : null}
+              <button type="submit" className="btn-primary w-full justify-center" disabled={savingCarBrand}>
+                {savingCarBrand ? 'Guardando...' : editingCarBrandId ? 'Actualizar marca' : 'Guardar marca'}
+              </button>
+            </form>
+          </section>
+
+          <section className="card-glass overflow-hidden">
+            <div className="border-b border-racing-border px-6 py-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <h2 className="font-racing text-2xl font-bold">Marcas cargadas</h2>
+                <div className="relative w-full xl:max-w-md">
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                  <input value={carBrandSearch} onChange={event => setCarBrandSearch(event.target.value)} className="input-field pl-10" placeholder="Buscar marca..." />
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-racing-border bg-racing-dark">
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Logo</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Marca</th>
+                  <th className="px-4 py-3 text-right text-xs uppercase tracking-wider text-gray-400">Acción</th>
+                </tr></thead>
+                <tbody className="divide-y divide-racing-border">
+                  {displayedCarBrands.length ? displayedCarBrands.map(brand => (
+                    <tr key={brand.id} className="hover:bg-racing-card/60">
+                      <td className="px-4 py-3"><img src={brand.logo} alt={`Logo ${brand.marca}`} className="h-12 w-20 object-contain" /></td>
+                      <td className="px-4 py-3 font-racing text-base text-white">{brand.marca}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button type="button" onClick={() => handleEditCarBrand(brand)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Editar marca"><PencilSquareIcon className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => handleDeleteCarBrand(brand.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar marca"><TrashIcon className="h-4 w-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="3" className="px-4 py-10 text-center text-gray-500">{carBrands.length ? 'No hay marcas que coincidan con la búsqueda.' : 'Todavía no hay marcas cargadas.'}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      );
+    }
+
     if (activeSection === 'autos') {
       return (
         <div className="grid grid-cols-1 2xl:grid-cols-[460px_1fr] gap-8">
@@ -2268,39 +2763,33 @@ export default function Admin() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="block">
                   <span className="text-sm text-gray-300">Marca</span>
-                  <input name="marca" value={carForm.marca} onChange={handleCarChange} className="input-field mt-2" placeholder="Toyota" required />
+                  <div className="relative mt-2">
+                    {carForm.marca && carBrands.find(brand => String(brand.id) === String(carForm.marca))?.logo ? (
+                      <img
+                        src={carBrands.find(brand => String(brand.id) === String(carForm.marca)).logo}
+                        alt=""
+                        className="pointer-events-none absolute left-3 top-1/2 h-7 w-8 -translate-y-1/2 object-contain"
+                      />
+                    ) : null}
+                    <select
+                      name="marca"
+                      value={carForm.marca}
+                      onChange={handleCarChange}
+                      className={`input-field ${carForm.marca ? 'pl-12' : ''}`}
+                      required
+                    >
+                      <option value="">Seleccionar marca</option>
+                      {carBrands.map(brand => (
+                        <option key={brand.id} value={brand.id}>{brand.marca}</option>
+                      ))}
+                    </select>
+                  </div>
                 </label>
                 <label className="block">
                   <span className="text-sm text-gray-300">Modelo</span>
                   <input name="modelo" value={carForm.modelo} onChange={handleCarChange} className="input-field mt-2" placeholder="Corolla" required />
                 </label>
               </div>
-
-              <label className="block">
-                <span className="text-sm text-gray-300">Logo</span>
-                <div className="mt-2 rounded-lg border border-dashed border-racing-border bg-racing-dark p-4">
-                  <div className="flex items-center gap-3 text-gray-400">
-                    <PhotoIcon className="h-6 w-6 text-racing-red" />
-                    <span className="text-sm">{carLogoFile?.name || 'PNG, JPG, WEBP o AVIF hasta 5 MB'}</span>
-                  </div>
-                  <input
-                    ref={carLogoInputRef}
-                    type="file"
-                    accept="image/avif,image/webp,image/jpeg,image/png"
-                    onChange={event => {
-                      setCarLogoFile(event.target.files?.[0] ?? null);
-                      setCarLogoCrop(defaultCropSettings);
-                    }}
-                    className="mt-4 block w-full text-sm text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-racing-red file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-racing-red-dark"
-                  />
-                  <SquareCropEditor
-                    file={carLogoFile}
-                    settings={carLogoCrop}
-                    onChange={setCarLogoCrop}
-                    label="Recorte del logo del auto"
-                  />
-                </div>
-              </label>
 
               <label className="block">
                 <span className="text-sm text-gray-300">Imagen del auto</span>
@@ -2380,7 +2869,7 @@ export default function Admin() {
                             {car.logo ? (
                               <img src={car.logo} alt={`Logo ${car.marca}`} className="h-10 w-12 object-contain" />
                             ) : (
-                              <div className="flex h-10 w-12 items-center justify-center rounded bg-racing-dark text-[10px] text-gray-500">Sin logo</div>
+                              <div className="flex h-10 w-12 items-center justify-center bg-racing-dark text-[10px] text-gray-500">Sin logo</div>
                             )}
                             <span className="font-racing text-base text-white">{car.marca}</span>
                           </div>

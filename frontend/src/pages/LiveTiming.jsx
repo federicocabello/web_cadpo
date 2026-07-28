@@ -9,14 +9,66 @@ import {
   MapPinIcon,
   SignalIcon,
 } from '@heroicons/react/24/outline';
-import { driversApi, eventsApi, liveTimingApi } from '../services/api';
+import { championshipsApi, driversApi, eventsApi, liveTimingApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
 import { getLiveTimingEvents } from '../utils/weeklyChampionships';
+import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const REFRESH_INTERVAL_MS = 10000;
 const REQUIRED_LAPS = 25;
-const driverNameKey = value => String(value || '').trim().toLocaleLowerCase('es-AR');
+const driverNameKey = value => String(value || '')
+  .normalize('NFD')
+  .replace(/\p{M}/gu, '')
+  .trim()
+  .replace(/\s+/g, ' ')
+  .toLocaleLowerCase('es-AR');
+const formatBallast = value => {
+  const ballast = Number(value);
+  if (!ballast) return '';
+  return `+${Number.isInteger(ballast) ? ballast : ballast.toFixed(1)} KG`;
+};
+const sectorColor = (sector, fastestSectors) => {
+  if (sector.time === fastestSectors[sector.index]) return 'text-[#c77dff]';
+  return ['text-cyan-400', 'text-amber-300', 'text-emerald-400'][sector.index] || 'text-gray-400';
+};
+
+const formatSectorDelta = (sector, leaderSectors) => {
+  const leaderTime = leaderSectors[sector.index];
+  if (!sector.time || !leaderTime) return '';
+  const difference = (sector.time - leaderTime) / 1000000000;
+  if (Math.abs(difference) < 0.0005) return '0.000';
+  return `${difference > 0 ? '+' : '-'}${Math.abs(difference).toFixed(3)}`;
+};
+
+const sectorDeltaColor = (sector, fastestSectors, leaderSectors) => {
+  if (sector.time === fastestSectors[sector.index]) return 'text-[#c77dff]';
+  const leaderTime = leaderSectors[sector.index];
+  if (!sector.time || !leaderTime || sector.time === leaderTime) return 'text-gray-500';
+  return sector.time > leaderTime ? 'text-red-400' : 'text-green-400';
+};
+
+function SectorMiniTable({ sectors, fastestSectors, leaderSectors }) {
+  if (!sectors?.length) return null;
+
+  return (
+    <div className="grid shrink-0 gap-x-3 font-racing tabular-nums" style={{ gridTemplateColumns: `repeat(${sectors.length}, minmax(0, 1fr))` }}>
+      {sectors.map(sector => (
+        <span key={`label-${sector.index}`} className="flex items-baseline gap-1 text-left text-[11px] font-bold uppercase text-white">
+          S{sector.index + 1}
+          <strong className={`text-xs ${sectorDeltaColor(sector, fastestSectors, leaderSectors)}`}>
+            {formatSectorDelta(sector, leaderSectors)}
+          </strong>
+        </span>
+      ))}
+      {sectors.map(sector => (
+        <span key={`time-${sector.index}`} className={`text-left text-lg font-bold leading-none ${sectorColor(sector, fastestSectors)}`}>
+          {formatSectorTime(sector.time)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const formatLapTime = nanoseconds => {
   if (!nanoseconds) return '--:--.---';
@@ -48,9 +100,9 @@ const sessionLabel = value => {
 const isQualifyingSession = value => /clasificaci[oó]n|qualifying|qualification|qualy/i.test(String(value || ''));
 const isRaceSession = value => /carrera|race/i.test(String(value || ''));
 
-const parseDate = value => new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+const parseDate = value => parseCalendarDate(value);
 
-const formatEventDate = value => parseDate(value).toLocaleString('es-AR', {
+const formatEventDate = value => formatCalendarDate(value, {
   weekday: 'long',
   day: '2-digit',
   month: 'long',
@@ -95,6 +147,7 @@ export default function LiveTiming() {
   const [calendarLoaded, setCalendarLoaded] = useState(false);
   const [selectedChampionshipId, setSelectedChampionshipId] = useState(null);
   const [driverCountries, setDriverCountries] = useState(new Map());
+  const [enrolledDrivers, setEnrolledDrivers] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -136,6 +189,35 @@ export default function LiveTiming() {
     const interval = window.setInterval(loadTiming, REFRESH_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [loadTiming, selectedChampionshipId]);
+
+  useEffect(() => {
+    if (!selectedChampionshipId) {
+      setEnrolledDrivers(new Map());
+      return undefined;
+    }
+
+    let active = true;
+    const loadEnrolledDrivers = async () => {
+      try {
+        const response = await championshipsApi.getEnrolled(selectedChampionshipId);
+        if (!active) return;
+
+        const enrolledMap = new Map();
+        for (const registration of response.data.data || []) {
+          enrolledMap.set(driverNameKey(registration.nombre), registration);
+        }
+        setEnrolledDrivers(enrolledMap);
+      } catch (err) {
+        console.error('No se pudieron cargar los inscriptos del campeonato:', err);
+        if (active) setEnrolledDrivers(new Map());
+      }
+    };
+
+    loadEnrolledDrivers();
+    return () => {
+      active = false;
+    };
+  }, [selectedChampionshipId]);
 
   useEffect(() => {
     const loadCalendarEvent = async () => {
@@ -217,12 +299,19 @@ export default function LiveTiming() {
       });
     }
 
-    return [...byDriver.values()].sort((a, b) => {
+    return [...byDriver.values()].map(driver => {
+      const registration = enrolledDrivers.get(driverNameKey(driver.name));
+      return {
+        ...driver,
+        displayCarModel: registration?.modelo || driver.car,
+        carBrandLogo: registration?.auto_logo || '',
+      };
+    }).sort((a, b) => {
       if (!a.bestLap) return 1;
       if (!b.bestLap) return -1;
       return a.bestLap - b.bestLap;
     });
-  }, [timing]);
+  }, [enrolledDrivers, timing]);
 
   const bestLap = useMemo(
     () => drivers.reduce((best, driver) => driver.bestLap && (!best || driver.bestLap < best) ? driver.bestLap : best, 0),
@@ -236,6 +325,13 @@ export default function LiveTiming() {
     }
     return fastest;
   }, []), [drivers]);
+  const leaderSectors = useMemo(() => {
+    const leader = drivers.find(driver => driver.bestLap && driver.bestLap === bestLap);
+    return (leader?.bestSectors || []).reduce((sectors, sector) => {
+      sectors[sector.index] = sector.time;
+      return sectors;
+    }, []);
+  }, [bestLap, drivers]);
   const positionChanges = useMemo(() => {
     const changes = new Map();
     if (!isQualifyingSession(timing?.session) || !isQualifyingSession(previousSessionRef.current)) {
@@ -428,6 +524,11 @@ export default function LiveTiming() {
                         <div className="flex flex-wrap items-center gap-2">
                           <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-lg" />
                           <h3 className="truncate font-semibold text-white">{driver.name}</h3>
+                          {driver.ballast > 0 ? (
+                            <span className="shrink-0 font-racing text-sm font-bold text-yellow-300">
+                              {formatBallast(driver.ballast)}
+                            </span>
+                          ) : null}
                           {driver.connected && (
                             <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-green-400">
                               <span className="relative flex h-2 w-2">
@@ -438,14 +539,28 @@ export default function LiveTiming() {
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 truncate text-xs text-gray-500">{driver.car}</p>
+                        <div className="relative mt-1 flex min-h-12 items-center justify-end overflow-hidden">
+                          {driver.carBrandLogo ? (
+                            <img
+                              src={driver.carBrandLogo}
+                              alt=""
+                              className="pointer-events-none absolute left-1/2 top-0 h-[175%] w-44 -translate-x-1/2 object-contain object-top opacity-60"
+                            />
+                          ) : null}
+                          <p className="relative z-10 w-full truncate py-2 pl-20 pr-2 text-right text-sm font-bold uppercase text-white [text-shadow:0_2px_5px_#000,0_0_10px_#000]">
+                            {driver.displayCarModel}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/5 pt-3">
+                      <div className="col-span-2">
+                        <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
+                      </div>
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Mejor vuelta</p>
-                        <p className={`font-racing text-xl font-bold tabular-nums ${driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
+                        <p className={`font-racing text-2xl font-bold tabular-nums ${driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Diferencia</p>
@@ -461,16 +576,6 @@ export default function LiveTiming() {
                       </div>
                     </div>
 
-                    {driver.bestSectors?.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-3 font-racing text-[11px] font-semibold tabular-nums">
-                        {driver.bestSectors.map(sector => (
-                          <span key={sector.index} className={sector.time === fastestSectors[sector.index] ? 'text-[#c77dff]' : 'text-gray-500'}>
-                            S{sector.index + 1} {formatSectorTime(sector.time)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
                     <div className="mt-3">
                       {driver.laps >= REQUIRED_LAPS ? (
                         <span className="inline-flex bg-green-500/15 px-3 py-1 text-xs font-bold uppercase text-green-400">Habilitado</span>
@@ -484,12 +589,13 @@ export default function LiveTiming() {
             </div>
 
             <div className="scrollbar-hidden hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1040px] border-collapse text-left text-base">
+              <table className="w-full min-w-[1160px] border-collapse text-left text-base">
                 <thead className="bg-black text-[10px] font-bold uppercase tracking-widest text-gray-500">
                   <tr>
                     <th className="w-16 px-4 py-3 text-center">Pos.</th>
                     <th className="px-4 py-3">Piloto</th>
                     <th className="px-4 py-3">Auto</th>
+                    <th className="px-4 py-3">Sectores</th>
                     <th className="px-4 py-3 text-right">Mejor vuelta</th>
                     <th className="px-4 py-3 text-right">Diferencia</th>
                     <th className="px-4 py-3 text-center">Vueltas</th>
@@ -522,11 +628,15 @@ export default function LiveTiming() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-black font-racing text-sm font-bold text-racing-red">{driver.initials || driver.name.slice(0, 3).toUpperCase()}</span>
                             <div>
                               <div className="flex items-center gap-2">
                                 <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-lg" />
                                 <p className="font-semibold text-white">{driver.name}</p>
+                                {driver.ballast > 0 ? (
+                                  <span className="shrink-0 font-racing text-base font-bold text-yellow-300">
+                                    {formatBallast(driver.ballast)}
+                                  </span>
+                                ) : null}
                                 {driver.connected && (
                                   <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-green-400">
                                     <span className="relative flex h-2 w-2">
@@ -541,18 +651,23 @@ export default function LiveTiming() {
                             </div>
                           </div>
                         </td>
-                        <td className="max-w-[280px] px-4 py-3 text-sm text-gray-300"><span className="block truncate">{driver.car}</span></td>
-                        <td className="px-4 py-3 text-right">
-                          <p className={`font-racing text-lg font-bold tabular-nums ${driver.bestLap && driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
-                          {driver.bestSectors?.length > 0 && (
-                            <div className="mt-1 flex justify-end gap-2 font-racing text-[10px] font-semibold tabular-nums">
-                              {driver.bestSectors.map(sector => (
-                                <span key={sector.index} className={sector.time === fastestSectors[sector.index] ? 'text-[#c77dff]' : 'text-gray-500'}>
-                                  S{sector.index + 1} {formatSectorTime(sector.time)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+                        <td className="relative h-[70px] max-w-[280px] overflow-hidden px-4 py-3">
+                          {driver.carBrandLogo ? (
+                            <img
+                              src={driver.carBrandLogo}
+                              alt=""
+                              className="pointer-events-none absolute left-1/2 top-0 h-[190%] w-60 -translate-x-1/2 object-contain object-top opacity-60"
+                            />
+                          ) : null}
+                          <span className="relative z-10 block truncate py-3 pl-28 pr-2 text-right text-base font-bold uppercase text-white [text-shadow:0_2px_6px_#000,0_0_12px_#000]">
+                            {driver.displayCarModel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className={`shrink-0 text-right font-racing text-xl font-bold tabular-nums ${driver.bestLap && driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
                         </td>
                         <td className="px-4 py-3 text-right font-racing text-lg font-bold tabular-nums text-racing-red">{formatGap(driver.bestLap, bestLap)}</td>
                         <td className="px-4 py-3 text-center text-gray-300">{driver.laps}</td>

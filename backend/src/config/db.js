@@ -6,9 +6,15 @@ const pool = mysql2.createPool({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'web_cadpo',
+  dateStrings: true,
+  timezone: '-03:00',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+});
+
+pool.on('connection', connection => {
+  connection.query("SET time_zone = '-03:00'");
 });
 
 const checkDatabase = async () => {

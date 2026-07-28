@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { CountryFlag } from './CountryFlag';
 import { getCountryName } from '../data/countries';
 import { CalendarIcon, MapPinIcon, TrophyIcon, FlagIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
+import { formatCalendarDate } from '../utils/calendarDate';
 
 const statusConfig = {
   upcoming: { label: 'Próxima', className: 'badge-upcoming' },
@@ -11,7 +12,7 @@ const statusConfig = {
 const formatDate = value => {
   if (!value) return 'Por confirmar';
 
-  return new Date(value).toLocaleDateString('es-AR', {
+  return formatCalendarDate(value, {
     day: '2-digit',
     month: 'long',
     year: 'numeric',

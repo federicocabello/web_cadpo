@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { TrophyIcon, CalendarIcon, FlagIcon, UserIcon } from '@heroicons/react/24/outline';
+import { getDatabaseDateParts } from '../utils/calendarDate';
 
 const statusConfig = {
   upcoming: { label: 'Próximo', className: 'badge-upcoming' },
@@ -7,7 +8,13 @@ const statusConfig = {
   completed: { label: 'Finalizado', className: 'badge-completed' },
 };
 
-const formatYear = value => (value ? new Date(value).getFullYear() : null);
+const formatYear = value => {
+  if (!value) return null;
+  const str = String(value).trim();
+  if (/^\d{4}$/.test(str)) return Number(str);
+
+  return getDatabaseDateParts(str)?.year || null;
+};
 
 export default function ChampionshipCard({ championship }) {
   const cfg = statusConfig[championship.status] || statusConfig.completed;

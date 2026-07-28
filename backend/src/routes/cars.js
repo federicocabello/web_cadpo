@@ -8,7 +8,6 @@ router.get('/:id', carsController.getById);
 router.post(
   '/',
   uploadCarMedia.fields([
-    { name: 'logo', maxCount: 1 },
     { name: 'imagen', maxCount: 1 },
   ]),
   carsController.create
@@ -16,7 +15,6 @@ router.post(
 router.put(
   '/:id',
   uploadCarMedia.fields([
-    { name: 'logo', maxCount: 1 },
     { name: 'imagen', maxCount: 1 },
   ]),
   carsController.update

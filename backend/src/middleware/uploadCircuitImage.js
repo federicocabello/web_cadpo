@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
-const publicDir = path.resolve(__dirname, '../../../frontend/public');
+const publicDir = require('../utils/publicDir');
 const circuitImagesDir = path.join(publicDir, 'media', 'circuitos', 'fotos');
 const circuitLayoutsDir = path.join(publicDir, 'media', 'circuitos', 'trazados');
 const allowedExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);

@@ -10,10 +10,9 @@ import Categories from './pages/Categories'
 import LiveTiming from './pages/LiveTiming'
 import Results from './pages/Results'
 import Statistics from './pages/Statistics'
-import Admin from './pages/Admin'
 import { healthApi } from './services/api'
 
-const WorldMap = lazy(() => import('./pages/WorldMap'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 function MaintenanceScreen() {
   return (
@@ -82,18 +81,17 @@ function App() {
           <Route path="/tiempos-en-vivo" element={<LiveTiming />} />
           <Route path="/resultados" element={<Results />} />
           <Route path="/estadisticas" element={<Statistics />} />
-          <Route
-            path="/mapa-mundial"
-            element={(
-              <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>}>
-                <WorldMap />
-              </Suspense>
-            )}
-          />
           <Route path="/inscripcion" element={<Registration />} />
           <Route path="/pilotos" element={<Drivers />} />
           <Route path="/categorias" element={<Categories />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route
+            path="/admin"
+            element={(
+              <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>}>
+                <Admin />
+              </Suspense>
+            )}
+          />
         </Routes>
       </main>
     </div>

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
-const publicDir = path.resolve(__dirname, '../../../frontend/public');
+const publicDir = require('../utils/publicDir');
 const rulesDir = path.join(publicDir, 'media', 'campeonatos', 'reglamentos');
 
 const storage = multer.diskStorage({

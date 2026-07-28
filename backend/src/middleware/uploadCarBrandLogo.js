@@ -4,38 +4,31 @@ const path = require('path');
 const multer = require('multer');
 
 const publicDir = require('../utils/publicDir');
-const carImagesDir = path.join(publicDir, 'media', 'autos', 'imagenes');
+const brandLogosDir = path.join(publicDir, 'media', 'autos', 'marcas');
 const allowedExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    fs.mkdirSync(carImagesDir, { recursive: true });
-    cb(null, carImagesDir);
+    fs.mkdirSync(brandLogosDir, { recursive: true });
+    cb(null, brandLogosDir);
   },
   filename: (req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
-    const randomName = crypto.randomBytes(16).toString('hex');
-    cb(null, `${randomName}${extension}`);
+    cb(null, `${crypto.randomBytes(16).toString('hex')}${extension}`);
   },
 });
 
 const fileFilter = (req, file, cb) => {
   const extension = path.extname(file.originalname).toLowerCase();
-
   if (!allowedExtensions.has(extension)) {
-    cb(new Error('La imagen debe ser AVIF, WEBP, JPG o PNG'));
+    cb(new Error('El logo debe ser AVIF, WEBP, JPG o PNG'));
     return;
   }
-
   cb(null, true);
 };
 
-const uploadCarMedia = multer({
+module.exports = multer({
   storage,
   fileFilter,
-  limits: {
-    fileSize: 8 * 1024 * 1024,
-  },
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
-
-module.exports = uploadCarMedia;

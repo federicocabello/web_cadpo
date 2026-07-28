@@ -8,19 +8,14 @@ import { CountryFlag } from '../components/CountryFlag';
 import { getCountryName } from '../data/countries';
 import ServerJoinButton from '../components/ServerJoinButton';
 import { getEventPhase, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
+import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const shuffle = items => [...items].sort(() => Math.random() - 0.5);
-
-const parseEventDate = value => {
-  if (!value) return null;
-  const parsed = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
 
 const formatDate = value => {
   if (!value) return 'Por confirmar';
 
-  return parseEventDate(value)?.toLocaleDateString('es-AR', {
+  return formatCalendarDate(value, {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -31,7 +26,7 @@ const formatDate = value => {
 const formatTime = value => {
   if (!value) return '';
 
-  return parseEventDate(value)?.toLocaleTimeString('es-AR', {
+  return formatCalendarDate(value, {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -39,7 +34,7 @@ const formatTime = value => {
 };
 
 const getCountdown = (value, now) => {
-  const eventDate = parseEventDate(value);
+  const eventDate = parseCalendarDate(value);
   if (!eventDate) return null;
 
   const difference = eventDate.getTime() - now;
