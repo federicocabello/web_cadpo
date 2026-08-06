@@ -57,6 +57,7 @@ export const championshipsApi = {
 export const registrationsApi = {
   getAll: params => api.get('/registrations', { params }),
   create: data => api.post('/registrations', data),
+  updateBulk: changes => api.put('/registrations/bulk', { changes }),
   updatePayment: (idcampeonato, idpiloto, pago) =>
     api.patch(`/registrations/${idcampeonato}/${idpiloto}/payment`, { pago }),
   remove: (idcampeonato, idpiloto) => api.delete(`/registrations/${idcampeonato}/${idpiloto}`),
@@ -108,6 +109,7 @@ export const mediaApi = {
 export const resultsApi = {
   getAll: params => api.get('/results', { params }),
   create: data => api.post('/results', data),
+  saveBulk: changes => api.post('/results/bulk', { changes }),
   update: (id, data) => api.put(`/results/${id}`, data),
   remove: id => api.delete(`/results/${id}`),
 };

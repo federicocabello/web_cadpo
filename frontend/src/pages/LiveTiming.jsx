@@ -12,10 +12,11 @@ import {
 import { championshipsApi, driversApi, eventsApi, liveTimingApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
-import { getLiveTimingEvents } from '../utils/weeklyChampionships';
+import { getLiveTimingEvents, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
-const REFRESH_INTERVAL_MS = 10000;
+const DEFAULT_REFRESH_INTERVAL_MS = 10000;
+const QUALIFYING_REFRESH_INTERVAL_MS = 1000;
 const REQUIRED_LAPS = 25;
 const driverNameKey = value => String(value || '')
   .normalize('NFD')
@@ -145,6 +146,7 @@ export default function LiveTiming() {
   const [timing, setTiming] = useState(null);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoaded, setCalendarLoaded] = useState(false);
+  const [calendarError, setCalendarError] = useState(false);
   const [selectedChampionshipId, setSelectedChampionshipId] = useState(null);
   const [driverCountries, setDriverCountries] = useState(new Map());
   const [enrolledDrivers, setEnrolledDrivers] = useState(new Map());
@@ -156,11 +158,19 @@ export default function LiveTiming() {
   const previousPositionsRef = useRef(new Map());
   const previousSessionRef = useRef('');
   const hasRenderedRowsRef = useRef(false);
+  const timingRequestInFlightRef = useRef(false);
   const weeklyEvents = useMemo(() => getLiveTimingEvents(calendarEvents, new Date(now)), [calendarEvents, now]);
-  const raceEvent = weeklyEvents.find(event => event.idcampeonato === selectedChampionshipId) || weeklyEvents[0] || null;
+  const calendarSchedule = useMemo(
+    () => getWeeklyChampionshipEvents(calendarEvents, new Date(now)),
+    [calendarEvents, now],
+  );
+  const raceEvent = calendarSchedule.find(event => event.idcampeonato === selectedChampionshipId)
+    || calendarSchedule[0]
+    || null;
 
   const loadTiming = useCallback(async (manual = false) => {
-    if (!selectedChampionshipId) return;
+    if (!selectedChampionshipId || timingRequestInFlightRef.current) return;
+    timingRequestInFlightRef.current = true;
     if (manual) setRefreshing(true);
 
     try {
@@ -171,6 +181,7 @@ export default function LiveTiming() {
     } catch (err) {
       setError(err.response?.data?.error || 'No se pudo conectar con el servidor de tiempos.');
     } finally {
+      timingRequestInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -186,9 +197,16 @@ export default function LiveTiming() {
     previousSessionRef.current = '';
     hasRenderedRowsRef.current = false;
     loadTiming();
-    const interval = window.setInterval(loadTiming, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(interval);
   }, [loadTiming, selectedChampionshipId]);
+
+  useEffect(() => {
+    if (!selectedChampionshipId) return undefined;
+    const refreshInterval = isQualifyingSession(timing?.session)
+      ? QUALIFYING_REFRESH_INTERVAL_MS
+      : DEFAULT_REFRESH_INTERVAL_MS;
+    const interval = window.setInterval(loadTiming, refreshInterval);
+    return () => window.clearInterval(interval);
+  }, [loadTiming, selectedChampionshipId, timing?.session]);
 
   useEffect(() => {
     if (!selectedChampionshipId) {
@@ -225,15 +243,17 @@ export default function LiveTiming() {
         const response = await eventsApi.getAll();
         const loadedEvents = response.data.data || [];
         const activeEvents = getLiveTimingEvents(loadedEvents);
+        setCalendarError(false);
         setCalendarEvents(loadedEvents);
         setSelectedChampionshipId(current => current || activeEvents[0]?.idcampeonato || null);
-        } catch (err) {
-          console.error('No se pudo cargar la fecha del calendario:', err);
-          setError('No se pudo consultar el calendario.');
-          setLoading(false);
-        } finally {
-          setCalendarLoaded(true);
-        }
+      } catch (err) {
+        console.error('No se pudo cargar la fecha del calendario:', err);
+        setCalendarError(true);
+        setError('No se pudo consultar el calendario.');
+        setLoading(false);
+      } finally {
+        setCalendarLoaded(true);
+      }
     };
 
     loadCalendarEvent();
@@ -281,10 +301,12 @@ export default function LiveTiming() {
     const byDriver = new Map();
 
     for (const driver of timing?.stored || []) {
+      if (driverNameKey(driver.name) === 'admin') continue;
       byDriver.set(`${driver.guid}-${driver.carModel}`, driver);
     }
 
     for (const driver of timing?.connected || []) {
+      if (driverNameKey(driver.name) === 'admin') continue;
       const key = `${driver.guid}-${driver.carModel}`;
       const stored = byDriver.get(key);
       byDriver.set(key, {
@@ -312,6 +334,10 @@ export default function LiveTiming() {
       return a.bestLap - b.bestLap;
     });
   }, [enrolledDrivers, timing]);
+  const connectedDriverCount = useMemo(
+    () => drivers.filter(driver => driver.connected).length,
+    [drivers],
+  );
 
   const bestLap = useMemo(
     () => drivers.reduce((best, driver) => driver.bestLap && (!best || driver.bestLap < best) ? driver.bestLap : best, 0),
@@ -357,7 +383,8 @@ export default function LiveTiming() {
   }, [drivers, timing?.session]);
 
   const serviceUnavailable = !loading && (Boolean(error) || stale);
-  const noAvailableDates = calendarLoaded && !raceEvent && !error;
+  const calendarLoading = !calendarLoaded;
+  const noAvailableDates = calendarLoaded && !calendarError && !raceEvent;
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-racing-dark pb-8">
@@ -384,11 +411,20 @@ export default function LiveTiming() {
                 ))}
               </div>
             )}
-            <div className={`mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] ${noAvailableDates ? 'text-gray-500' : 'text-green-400'}`}>
-              <SignalIcon className="h-4 w-4" /> {noAvailableDates ? 'Sin fechas disponibles' : 'Servidor funcionando'}
+            <div className={`mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] ${calendarLoading ? 'text-gray-400' : calendarError || noAvailableDates ? 'text-gray-500' : 'text-racing-red'}`}>
+              {calendarLoading ? (
+                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              ) : (
+                <CalendarDaysIcon className="h-4 w-4" />
+              )}
+              {calendarLoading ? 'Cargando calendario' : calendarError ? 'Calendario no disponible' : noAvailableDates ? 'Sin fechas disponibles' : 'Próxima fecha'}
             </div>
             <h1 className="mt-3 font-racing text-3xl font-bold uppercase text-white sm:text-5xl">
-              {raceEvent?.circuito || 'No hay próximas fechas aún'}
+              {calendarLoading
+                ? 'Buscando la próxima fecha...'
+                : calendarError
+                  ? 'No se pudo cargar el calendario'
+                  : raceEvent?.circuito || 'No hay próximas fechas aún'}
             </h1>
             {raceEvent?.variante && <p className="font-racing text-xl font-semibold uppercase text-racing-red">Variante {raceEvent.variante}</p>}
 
@@ -486,7 +522,7 @@ export default function LiveTiming() {
             </div>
             <div className="bg-racing-card p-3">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Pilotos en pista</p>
-              <p className="mt-1 font-racing text-2xl font-bold text-white">{timing?.connected?.length ?? 0}</p>
+              <p className="mt-1 font-racing text-2xl font-bold text-white">{connectedDriverCount}</p>
             </div>
             <div className="relative isolate col-span-2 overflow-hidden bg-racing-card p-3 sm:col-span-1">
               <div className="classification-checker absolute inset-y-0 right-0 -z-10 w-2/3 opacity-30" />
@@ -506,12 +542,12 @@ export default function LiveTiming() {
                   ? 'timing-driver-row-moved-up'
                   : positionChange < 0
                     ? 'timing-driver-row-moved-down'
-                  : !hasRenderedRowsRef.current ? 'timing-driver-row-enter' : '';
+                    : !hasRenderedRowsRef.current ? 'timing-driver-row-enter' : '';
 
                 return (
                   <article
                     key={`mobile-${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}
-                    className={`timing-driver-row relative p-3 ${animationClass} ${driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
+                    className={`timing-driver-row relative p-3 ${animationClass} ${isQualifyingSession(timing?.session) ? '' : driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
                     style={{ '--row-shift': `${positionChange * 88}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                   >
                     <div className="flex items-start gap-3">
@@ -544,7 +580,7 @@ export default function LiveTiming() {
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="pointer-events-none absolute left-1/2 top-0 h-[175%] w-44 -translate-x-1/2 object-contain object-top opacity-60"
+                              className="pointer-events-none absolute left-1/2 top-1/2 h-[175%] w-44 -translate-x-1/2 -translate-y-1/2 object-contain object-center opacity-60"
                             />
                           ) : null}
                           <p className="relative z-10 w-full truncate py-2 pl-20 pr-2 text-right text-sm font-bold uppercase text-white [text-shadow:0_2px_5px_#000,0_0_10px_#000]">
@@ -576,31 +612,31 @@ export default function LiveTiming() {
                       </div>
                     </div>
 
-                    <div className="mt-3">
+                    {!isQualifyingSession(timing?.session) && <div className="mt-3">
                       {driver.laps >= REQUIRED_LAPS ? (
                         <span className="inline-flex bg-green-500/15 px-3 py-1 text-xs font-bold uppercase text-green-400">Habilitado</span>
                       ) : (
                         <span className="inline-flex bg-yellow-500/15 px-3 py-1 text-xs font-bold uppercase text-yellow-300">Debe cumplir · faltan {REQUIRED_LAPS - driver.laps}</span>
                       )}
-                    </div>
+                    </div>}
                   </article>
                 );
               })}
             </div>
 
             <div className="scrollbar-hidden hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1160px] border-collapse text-left text-base">
+              <table className="w-full min-w-[1240px] table-fixed border-collapse text-left text-base">
                 <thead className="bg-black text-[10px] font-bold uppercase tracking-widest text-gray-500">
                   <tr>
                     <th className="w-16 px-4 py-3 text-center">Pos.</th>
-                    <th className="px-4 py-3">Piloto</th>
-                    <th className="px-4 py-3">Auto</th>
-                    <th className="px-4 py-3">Sectores</th>
-                    <th className="px-4 py-3 text-right">Mejor vuelta</th>
-                    <th className="px-4 py-3 text-right">Diferencia</th>
-                    <th className="px-4 py-3 text-center">Vueltas</th>
-                    <th className="px-4 py-3 text-right">Vel. máx.</th>
-                    <th className="px-4 py-3 text-center">Habilitación</th>
+                    <th className="w-[280px] px-4 py-3">Piloto</th>
+                    <th className="w-[230px] px-4 py-3">Auto</th>
+                    <th className="w-[280px] px-4 py-3">Sectores</th>
+                    <th className="w-[150px] px-4 py-3 text-right">Mejor vuelta</th>
+                    <th className="w-[110px] px-4 py-3 text-right">Diferencia</th>
+                    <th className="w-[80px] px-4 py-3 text-center">Vueltas</th>
+                    <th className="w-[120px] px-4 py-3 text-right">Vel. máx.</th>
+                    {!isQualifyingSession(timing?.session) && <th className="w-[190px] px-4 py-3 text-center">Habilitación</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
@@ -611,12 +647,12 @@ export default function LiveTiming() {
                       ? 'timing-driver-row-moved-up'
                       : positionChange < 0
                         ? 'timing-driver-row-moved-down'
-                      : !hasRenderedRowsRef.current ? 'timing-driver-row-enter' : '';
+                        : !hasRenderedRowsRef.current ? 'timing-driver-row-enter' : '';
 
                     return (
                       <tr
                         key={`${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}
-                        className={`timing-driver-row ${animationClass} ${driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
+                        className={`timing-driver-row ${animationClass} ${isQualifyingSession(timing?.session) ? '' : driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
                         style={{ '--row-shift': `${positionChange * 54}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                       >
                         <td className="px-4 py-3 text-center font-racing text-xl font-bold text-white">
@@ -626,12 +662,12 @@ export default function LiveTiming() {
                             {positionChange < 0 ? <ArrowDownIcon className="timing-position-arrow h-4 w-4 text-red-400" /> : null}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
+                        <td className="w-[280px] px-4 py-3">
+                          <div className="min-w-0">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2">
                                 <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-lg" />
-                                <p className="font-semibold text-white">{driver.name}</p>
+                                <p className="min-w-0 flex-1 truncate font-semibold text-white" title={driver.name}>{driver.name}</p>
                                 {driver.ballast > 0 ? (
                                   <span className="shrink-0 font-racing text-base font-bold text-yellow-300">
                                     {formatBallast(driver.ballast)}
@@ -656,7 +692,7 @@ export default function LiveTiming() {
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="pointer-events-none absolute left-1/2 top-0 h-[190%] w-60 -translate-x-1/2 object-contain object-top opacity-60"
+                              className="pointer-events-none absolute left-1/3 top-1/2 h-[75%] w-60 -translate-x-1/2 -translate-y-1/2 object-contain object-center opacity-60"
                             />
                           ) : null}
                           <span className="relative z-10 block truncate py-3 pl-28 pr-2 text-right text-base font-bold uppercase text-white [text-shadow:0_2px_6px_#000,0_0_12px_#000]">
@@ -672,13 +708,13 @@ export default function LiveTiming() {
                         <td className="px-4 py-3 text-right font-racing text-lg font-bold tabular-nums text-racing-red">{formatGap(driver.bestLap, bestLap)}</td>
                         <td className="px-4 py-3 text-center text-gray-300">{driver.laps}</td>
                         <td className="px-4 py-3 text-right text-gray-300">{driver.topSpeed ? `${driver.topSpeed.toFixed(1)} km/h` : '--'}</td>
-                        <td className="px-4 py-3 text-center">
+                        {!isQualifyingSession(timing?.session) && <td className="px-4 py-3 text-center">
                           {driver.laps >= REQUIRED_LAPS ? (
                             <span className="inline-flex bg-green-500/15 px-3 py-1 text-sm font-bold uppercase text-green-400">Habilitado</span>
                           ) : (
                             <span className="inline-flex bg-yellow-500/15 px-3 py-1 text-sm font-bold uppercase text-yellow-300">Debe cumplir · faltan {REQUIRED_LAPS - driver.laps}</span>
                           )}
-                        </td>
+                        </td>}
                       </tr>
                     );
                   })}

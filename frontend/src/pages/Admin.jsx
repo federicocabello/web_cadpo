@@ -1,6 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDaysIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   FlagIcon,
   MagnifyingGlassIcon,
   PhotoIcon,
@@ -19,7 +21,7 @@ import {
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, registrationsApi, resultsApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
-import { formatCalendarDate, parseCalendarDate, toDateInputValue, toDateTimeInputValue } from '../utils/calendarDate';
+import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -52,6 +54,32 @@ const adminSections = [
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
 ];
 const adminSectionStorageKey = 'cadpo-admin-section';
+const resultPointFields = [
+  { key: 'presentismo', shortLabel: 'P', label: 'Presentismo' },
+  { key: 'pts_qualy_sprint', shortLabel: 'QS', label: 'Qualy Sprint' },
+  { key: 'pts_sprint', shortLabel: 'S', label: 'Sprint', decimal: true },
+  { key: 'pts_qualy_final', shortLabel: 'QF', label: 'Qualy Final' },
+  { key: 'pts_final', shortLabel: 'F', label: 'Final', decimal: true },
+];
+const resultPositionFields = [
+  { key: 'pos_qualy_sprint', shortLabel: 'PQS', label: 'Posición Qualy Sprint' },
+  { key: 'pos_sprint', shortLabel: 'PS', label: 'Posición Sprint' },
+  { key: 'pos_qualy_final', shortLabel: 'PQF', label: 'Posición Qualy Final' },
+  { key: 'pos_final', shortLabel: 'PF', label: 'Posición Final' },
+];
+
+const parseResultPoints = value => {
+  const number = Number(String(value ?? 0).replace(',', '.'));
+  return Number.isFinite(number) ? number : 0;
+};
+
+const getResultPoints = result => Math.round(resultPointFields.reduce(
+  (total, field) => total + parseResultPoints(result?.[field.key]),
+  0
+) * 100) / 100;
+const formatResultPoints = value => Number(value || 0).toLocaleString('es-AR', {
+  maximumFractionDigits: 2,
+});
 
 const emptyCircuitForm = {
   nombre: '',
@@ -72,6 +100,11 @@ const championshipPlatforms = [
   'Simulador V3',
   'Assetto Corsa',
 ];
+const championshipYears = Array.from(
+  { length: new Date().getFullYear() - 2018 + 1 },
+  (_, index) => new Date().getFullYear() - index,
+);
+const adminPageSize = 25;
 
 const emptyChampionshipForm = {
   idcategoria: '',
@@ -81,6 +114,16 @@ const emptyChampionshipForm = {
   puerto: '',
   n_server: '',
   servidor: '',
+};
+
+const getNextChampionshipSeason = (championships, categoryId) => {
+  if (!categoryId) return '';
+  const highestSeason = championships.reduce((highest, championship) => {
+    if (String(championship.idcategoria) !== String(categoryId)) return highest;
+    const season = Number.parseInt(championship.temporada, 10);
+    return Number.isFinite(season) ? Math.max(highest, season) : highest;
+  }, 0);
+  return String(highestSeason + 1);
 };
 
 const emptyCarForm = {
@@ -284,6 +327,42 @@ function SquareCropEditor({ file, settings, onChange, label }) {
   );
 }
 
+function AdminPagination({ page, pageCount, total, onPageChange }) {
+  if (!total) return null;
+  const first = (page - 1) * adminPageSize + 1;
+  const last = Math.min(page * adminPageSize, total);
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-gray-400">Mostrando {first}-{last} de {total}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page === 1} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30" aria-label="Página anterior">
+          <ChevronLeftIcon className="h-5 w-5" />
+        </button>
+        <span className="min-w-24 text-center font-racing text-sm font-bold text-white">Página {page} de {pageCount}</span>
+        <button type="button" onClick={() => onPageChange(Math.min(pageCount, page + 1))} disabled={page === pageCount} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30" aria-label="Página siguiente">
+          <ChevronRightIcon className="h-5 w-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ClearFiltersButton({ active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!active}
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-racing-border text-gray-400 transition-colors hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
+      aria-label="Limpiar filtros"
+      title="Limpiar filtros"
+    >
+      <XMarkIcon className="h-4 w-4" />
+    </button>
+  );
+}
+
 export default function Admin() {
   const imageInputRef = useRef(null);
   const layoutInputRef = useRef(null);
@@ -307,7 +386,10 @@ export default function Admin() {
   const [cars, setCars] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [results, setResults] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState('');
+  const [resultChampionshipId, setResultChampionshipId] = useState('');
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [dirtyResults, setDirtyResults] = useState({});
+  const [savingResults, setSavingResults] = useState(false);
   const [resultMessage, setResultMessage] = useState('');
   const [circuitMessage, setCircuitMessage] = useState('');
   const [categoryMessage, setCategoryMessage] = useState('');
@@ -316,27 +398,20 @@ export default function Admin() {
   const [carMessage, setCarMessage] = useState('');
   const [registrationMessage, setRegistrationMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [savingResult, setSavingResult] = useState(false);
   const [savingCircuit, setSavingCircuit] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingChampionship, setSavingChampionship] = useState(false);
   const [savingCarBrand, setSavingCarBrand] = useState(false);
   const [savingCar, setSavingCar] = useState(false);
   const [savingRegistration, setSavingRegistration] = useState(false);
-  const [resultForm, setResultForm] = useState({
-    posicion: '',
-    idpiloto: '',
-    dq: false,
-    apercibimientos: 0,
-    recargo_tiempo: 0,
-    recargo_posiciones: 0,
-  });
   const [circuitForm, setCircuitForm] = useState(emptyCircuitForm);
   const [circuitImageFile, setCircuitImageFile] = useState(null);
   const [circuitLayoutFile, setCircuitLayoutFile] = useState(null);
   const [circuitLayoutCrop, setCircuitLayoutCrop] = useState(defaultCropSettings);
   const [editingCircuitId, setEditingCircuitId] = useState(null);
   const [circuitSearch, setCircuitSearch] = useState('');
+  const [circuitCountryFilter, setCircuitCountryFilter] = useState('');
+  const [circuitPage, setCircuitPage] = useState(1);
   const [circuitSort, setCircuitSort] = useState('nombre');
   const [circuitSortDirection, setCircuitSortDirection] = useState('asc');
   const [showCircuitNameSuggestions, setShowCircuitNameSuggestions] = useState(false);
@@ -352,6 +427,9 @@ export default function Admin() {
   const [championshipRulesFile, setChampionshipRulesFile] = useState(null);
   const [editingChampionshipId, setEditingChampionshipId] = useState(null);
   const [championshipSearch, setChampionshipSearch] = useState('');
+  const [championshipCategoryFilter, setChampionshipCategoryFilter] = useState('');
+  const [championshipYearFilter, setChampionshipYearFilter] = useState('');
+  const [championshipPage, setChampionshipPage] = useState(1);
   const [carBrandForm, setCarBrandForm] = useState(emptyCarBrandForm);
   const [carBrandLogoFile, setCarBrandLogoFile] = useState(null);
   const [carBrandLogoCrop, setCarBrandLogoCrop] = useState(defaultCropSettings);
@@ -361,11 +439,18 @@ export default function Admin() {
   const [carImageFile, setCarImageFile] = useState(null);
   const [editingCarId, setEditingCarId] = useState(null);
   const [carSearch, setCarSearch] = useState('');
+  const [carCategoryFilter, setCarCategoryFilter] = useState('');
+  const [carBrandFilter, setCarBrandFilter] = useState('');
+  const [carPage, setCarPage] = useState(1);
   const [registrationForm, setRegistrationForm] = useState(emptyRegistrationForm);
   const [registrationDriverSearch, setRegistrationDriverSearch] = useState('');
   const [showRegistrationDriverSuggestions, setShowRegistrationDriverSuggestions] = useState(false);
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
+  const [registrationPage, setRegistrationPage] = useState(1);
+  const [registrationEdits, setRegistrationEdits] = useState({});
+  const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
+  const [editingRegistrationNumbers, setEditingRegistrationNumbers] = useState({});
   const [eventForm, setEventForm] = useState(emptyEventForm);
   const [eventBatch, setEventBatch] = useState(emptyEventBatch);
   const [eventBatchRows, setEventBatchRows] = useState([]);
@@ -373,6 +458,11 @@ export default function Admin() {
   const [eventMessage, setEventMessage] = useState('');
   const [savingEvent, setSavingEvent] = useState(false);
   const [eventSearch, setEventSearch] = useState('');
+  const [eventChampionshipFilter, setEventChampionshipFilter] = useState('');
+  const [eventCircuitFilter, setEventCircuitFilter] = useState('');
+  const [eventDateFrom, setEventDateFrom] = useState('');
+  const [eventDateTo, setEventDateTo] = useState('');
+  const [eventPage, setEventPage] = useState(1);
   const [eventSort, setEventSort] = useState('fecha');
   const [eventSortDirection, setEventSortDirection] = useState('desc');
   const [driverForm, setDriverForm] = useState(emptyDriverForm);
@@ -380,6 +470,7 @@ export default function Admin() {
   const [driverMessage, setDriverMessage] = useState('');
   const [savingDriver, setSavingDriver] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
+  const [driverPage, setDriverPage] = useState(1);
   const [showDriverLocalitySuggestions, setShowDriverLocalitySuggestions] = useState(false);
   const [lockedDriverLocality, setLockedDriverLocality] = useState(false);
 
@@ -387,16 +478,62 @@ export default function Admin() {
     window.localStorage.setItem(adminSectionStorageKey, activeSection);
   }, [activeSection]);
 
-  const selectedEvent = useMemo(
-    () => events.find(event => String(event.id) === String(selectedEventId)),
-    [events, selectedEventId]
+  const resultChampionship = useMemo(
+    () => championships.find(item => String(item.id) === String(resultChampionshipId)),
+    [championships, resultChampionshipId]
   );
+
+  const resultRounds = useMemo(
+    () => events
+      .filter(event => String(event.idcampeonato) === String(resultChampionshipId))
+      .sort((a, b) => Number(a.ronda) - Number(b.ronda)),
+    [events, resultChampionshipId]
+  );
+
+  const resultStandings = useMemo(() => {
+    const byDriver = new Map();
+
+    registrations
+      .filter(registration => String(registration.idcampeonato) === String(resultChampionshipId))
+      .forEach(registration => {
+        byDriver.set(String(registration.idpiloto), {
+          idpiloto: registration.idpiloto,
+          piloto: registration.nombre,
+          rounds: new Map(),
+          total: 0,
+        });
+      });
+
+    results.forEach(result => {
+      const driverKey = String(result.idpiloto);
+      if (!byDriver.has(driverKey)) {
+        byDriver.set(driverKey, {
+          idpiloto: result.idpiloto,
+          piloto: result.piloto,
+          rounds: new Map(),
+          total: 0,
+        });
+      }
+
+      const standing = byDriver.get(driverKey);
+      standing.rounds.set(String(result.ronda), result);
+      standing.total += getResultPoints(result);
+    });
+
+    return [...byDriver.values()]
+      .sort((a, b) =>
+        b.total - a.total
+        || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' })
+      )
+      .map((standing, index) => ({ ...standing, position: index + 1 }));
+  }, [registrations, resultChampionshipId, results]);
 
   const displayedCircuits = useMemo(() => {
     const search = circuitSearch.trim().toLocaleLowerCase('es-AR');
 
     return [...circuits]
       .filter(circuit => {
+        if (circuitCountryFilter && normalizeCountryCode(circuit.pais) !== circuitCountryFilter) return false;
         if (!search) return true;
 
         return [circuit.nombre, circuit.variante, circuit.localidad, circuit.provincia, circuit.pais, circuit.imagen, circuit.trazado]
@@ -410,7 +547,26 @@ export default function Admin() {
 
         return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }) * direction;
       });
-  }, [circuitSearch, circuitSort, circuitSortDirection, circuits]);
+  }, [circuitCountryFilter, circuitSearch, circuitSort, circuitSortDirection, circuits]);
+
+  const availableCircuitCountries = useMemo(() => {
+    const countryCodes = new Set(circuits.map(circuit => normalizeCountryCode(circuit.pais)).filter(Boolean));
+    return [...countryCodes]
+      .map(code => ({
+        code,
+        name: circuitCountries.find(country => country.code === code)?.name || getCountryName(code) || code.toUpperCase(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es-AR', { sensitivity: 'base' }));
+  }, [circuits]);
+
+  const circuitPageCount = Math.max(1, Math.ceil(displayedCircuits.length / adminPageSize));
+  const paginatedCircuits = useMemo(
+    () => displayedCircuits.slice((circuitPage - 1) * adminPageSize, circuitPage * adminPageSize),
+    [circuitPage, displayedCircuits],
+  );
+
+  useEffect(() => setCircuitPage(1), [circuitCountryFilter, circuitSearch]);
+  useEffect(() => setCircuitPage(current => Math.min(current, circuitPageCount)), [circuitPageCount]);
 
   const circuitNameSuggestions = useMemo(() => {
     const search = circuitForm.nombre.trim().toLocaleLowerCase('es-AR');
@@ -441,6 +597,8 @@ export default function Admin() {
 
     return [...championships]
       .filter(championship => {
+        if (championshipCategoryFilter && String(championship.idcategoria) !== String(championshipCategoryFilter)) return false;
+        if (championshipYearFilter && String(championship.anio) !== String(championshipYearFilter)) return false;
         if (!search) return true;
 
         return [
@@ -462,13 +620,38 @@ export default function Admin() {
 
         return String(b.temporada || '').localeCompare(String(a.temporada || ''), 'es-AR', { sensitivity: 'base' });
       });
-  }, [championshipSearch, championships]);
+  }, [championshipCategoryFilter, championshipSearch, championshipYearFilter, championships]);
+
+  const availableChampionshipYears = useMemo(
+    () => [...new Set(championships.map(championship => Number(championship.anio)).filter(Boolean))].sort((a, b) => b - a),
+    [championships],
+  );
+
+  const championshipPageCount = Math.max(1, Math.ceil(displayedChampionships.length / adminPageSize));
+  const paginatedChampionships = useMemo(
+    () => displayedChampionships.slice((championshipPage - 1) * adminPageSize, championshipPage * adminPageSize),
+    [championshipPage, displayedChampionships],
+  );
+
+  useEffect(() => setChampionshipPage(1), [championshipCategoryFilter, championshipSearch, championshipYearFilter]);
+  useEffect(() => setChampionshipPage(current => Math.min(current, championshipPageCount)), [championshipPageCount]);
+
+  const championshipsWithoutEvents = useMemo(() => {
+    const championshipsWithEvents = new Set(
+      events.map(event => String(event.idcampeonato)),
+    );
+    return championships.filter(
+      championship => !championshipsWithEvents.has(String(championship.id)),
+    );
+  }, [championships, events]);
 
   const displayedCars = useMemo(() => {
     const search = carSearch.trim().toLocaleLowerCase('es-AR');
 
     return [...cars]
       .filter(car => {
+        if (carCategoryFilter && String(car.idcategoria) !== String(carCategoryFilter)) return false;
+        if (carBrandFilter && String(car.idmarca) !== String(carBrandFilter)) return false;
         if (!search) return true;
 
         return [car.categoria, car.marca, car.modelo, car.logo, car.imagen]
@@ -484,7 +667,21 @@ export default function Admin() {
 
         return String(a.modelo || '').localeCompare(String(b.modelo || ''), 'es-AR', { sensitivity: 'base' });
       });
-  }, [carSearch, cars]);
+  }, [carBrandFilter, carCategoryFilter, carSearch, cars]);
+
+  const carPageCount = Math.max(1, Math.ceil(displayedCars.length / adminPageSize));
+  const paginatedCars = useMemo(
+    () => displayedCars.slice((carPage - 1) * adminPageSize, carPage * adminPageSize),
+    [carPage, displayedCars],
+  );
+
+  useEffect(() => {
+    setCarPage(1);
+  }, [carBrandFilter, carCategoryFilter, carSearch]);
+
+  useEffect(() => {
+    setCarPage(current => Math.min(current, carPageCount));
+  }, [carPageCount]);
 
   const displayedCarBrands = useMemo(() => {
     const search = carBrandSearch.trim().toLocaleLowerCase('es-AR');
@@ -562,11 +759,30 @@ export default function Admin() {
     });
   }, [registrationChampionshipFilter, registrationSearch, registrations]);
 
+  const registrationPageCount = Math.max(1, Math.ceil(displayedRegistrations.length / adminPageSize));
+  const paginatedRegistrations = useMemo(
+    () => displayedRegistrations.slice((registrationPage - 1) * adminPageSize, registrationPage * adminPageSize),
+    [displayedRegistrations, registrationPage],
+  );
+
+  useEffect(() => {
+    setRegistrationPage(1);
+  }, [registrationChampionshipFilter, registrationSearch]);
+
+  useEffect(() => {
+    setRegistrationPage(current => Math.min(current, registrationPageCount));
+  }, [registrationPageCount]);
+
   const displayedEvents = useMemo(() => {
     const search = eventSearch.trim().toLocaleLowerCase('es-AR');
 
     return [...events]
       .filter(event => {
+        const eventDate = String(event.fecha || '').slice(0, 10);
+        if (eventChampionshipFilter && String(event.idcampeonato) !== String(eventChampionshipFilter)) return false;
+        if (eventCircuitFilter && String(event.idcircuito) !== String(eventCircuitFilter)) return false;
+        if (eventDateFrom && eventDate < eventDateFrom) return false;
+        if (eventDateTo && eventDate > eventDateTo) return false;
         if (!search) return true;
 
         return [
@@ -592,7 +808,16 @@ export default function Admin() {
 
         return ((parseCalendarDate(a.fecha)?.getTime() || 0) - (parseCalendarDate(b.fecha)?.getTime() || 0)) * direction;
       });
-  }, [eventSearch, eventSort, eventSortDirection, events]);
+  }, [eventChampionshipFilter, eventCircuitFilter, eventDateFrom, eventDateTo, eventSearch, eventSort, eventSortDirection, events]);
+
+  const eventPageCount = Math.max(1, Math.ceil(displayedEvents.length / adminPageSize));
+  const paginatedEvents = useMemo(
+    () => displayedEvents.slice((eventPage - 1) * adminPageSize, eventPage * adminPageSize),
+    [displayedEvents, eventPage],
+  );
+
+  useEffect(() => setEventPage(1), [eventChampionshipFilter, eventCircuitFilter, eventDateFrom, eventDateTo, eventSearch]);
+  useEffect(() => setEventPage(current => Math.min(current, eventPageCount)), [eventPageCount]);
 
   const displayedDrivers = useMemo(() => {
     const search = driverSearch.trim().toLocaleLowerCase('es-AR');
@@ -607,6 +832,15 @@ export default function Admin() {
       })
       .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
   }, [driverSearch, drivers]);
+
+  const driverPageCount = Math.max(1, Math.ceil(displayedDrivers.length / adminPageSize));
+  const paginatedDrivers = useMemo(
+    () => displayedDrivers.slice((driverPage - 1) * adminPageSize, driverPage * adminPageSize),
+    [displayedDrivers, driverPage],
+  );
+
+  useEffect(() => setDriverPage(1), [driverSearch]);
+  useEffect(() => setDriverPage(current => Math.min(current, driverPageCount)), [driverPageCount]);
 
   const driverDuplicate = useMemo(() => {
     const normalizedName = capitalizeValue(driverForm.nombre).toLocaleLowerCase('es-AR');
@@ -686,11 +920,12 @@ export default function Admin() {
         setDrivers(driversRes.data.data ?? []);
         setCircuits(circuitsRes.data.data ?? []);
         setCategories(categoriesRes.data.data ?? []);
-        setChampionships(championshipsRes.data.data ?? []);
+        const championshipRows = championshipsRes.data.data ?? [];
+        setChampionships(championshipRows);
         setCarBrands(carBrandsRes.data.data ?? []);
         setCars(carsRes.data.data ?? []);
         setRegistrations(registrationsRes.data.data ?? []);
-        setSelectedEventId(eventRows[0]?.id ?? '');
+        setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
         setResultMessage('No se pudieron cargar los datos de administración.');
@@ -704,29 +939,29 @@ export default function Admin() {
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (!selectedEvent) {
+      if (!authorized || !resultChampionshipId) {
         setResults([]);
         return;
       }
 
+      setLoadingResults(true);
+      setResultMessage('');
       try {
         const res = await resultsApi.getAll({
-          idcampeonato: selectedEvent.idcampeonato,
-          ronda: selectedEvent.ronda,
+          idcampeonato: resultChampionshipId,
         });
         setResults(res.data.data ?? []);
+        setDirtyResults({});
       } catch (err) {
         console.error('Error cargando resultados:', err);
+        setResultMessage(err.response?.data?.error || 'No se pudieron cargar los resultados.');
+      } finally {
+        setLoadingResults(false);
       }
     };
 
     fetchResults();
-  }, [selectedEvent]);
-
-  const handleResultChange = event => {
-    const { name, type, checked, value } = event.target;
-    setResultForm(current => ({ ...current, [name]: type === 'checkbox' ? checked : value }));
-  };
+  }, [authorized, resultChampionshipId]);
 
   const handleCircuitChange = event => {
     const { name, value } = event.target;
@@ -771,7 +1006,13 @@ export default function Admin() {
 
   const handleChampionshipChange = event => {
     const { name, value } = event.target;
-    setChampionshipForm(current => ({ ...current, [name]: value }));
+    setChampionshipForm(current => ({
+      ...current,
+      [name]: value,
+      ...(name === 'idcategoria' && !editingChampionshipId
+        ? { temporada: getNextChampionshipSeason(championships, value) }
+        : {}),
+    }));
   };
 
   const handleCarChange = event => {
@@ -987,50 +1228,101 @@ export default function Admin() {
     setShowDriverLocalitySuggestions(false);
   };
 
-  const handleResultSubmit = async event => {
-    event.preventDefault();
-
-    if (!selectedEvent) {
-      setResultMessage('Seleccioná una fecha del calendario.');
-      return;
+  const handleResultFieldChange = (standing, round, currentResult, field, value) => {
+    const resultKey = currentResult?._key
+      || (currentResult?.id ? `id-${currentResult.id}` : `new-${standing.idpiloto}-${round.ronda}`);
+    const pointsField = resultPointFields.find(item => item.key === field);
+    let normalizedValue = value.toLocaleUpperCase('es-AR');
+    if (pointsField?.decimal) {
+      if (!/^\d*[.,]?\d*$/.test(value)) return;
+      normalizedValue = value;
+    } else if (pointsField) {
+      normalizedValue = value === '' ? '' : Math.max(0, Number.parseInt(value, 10) || 0);
     }
 
-    setSavingResult(true);
+    setResults(current => {
+      const index = current.findIndex(result =>
+        result._key === resultKey
+        || (currentResult?.id && result.id === currentResult.id)
+      );
+
+      if (index >= 0) {
+        return current.map((result, resultIndex) =>
+          resultIndex === index
+            ? { ...result, _key: resultKey, [field]: normalizedValue }
+            : result
+        );
+      }
+
+      return [
+        ...current,
+        {
+          _key: resultKey,
+          _isNew: true,
+          idcampeonato: Number(resultChampionshipId),
+          fecha: String(round.fecha || '').slice(0, 10),
+          ronda: Number(round.ronda),
+          idcircuito: Number(round.idcircuito),
+          idpiloto: Number(standing.idpiloto),
+          piloto: standing.piloto,
+          circuito: round.circuito,
+          [field]: normalizedValue,
+        },
+      ];
+    });
+    setDirtyResults(current => ({ ...current, [resultKey]: true }));
+    setResultMessage('');
+  };
+
+  const handleSaveResults = async () => {
+    const pendingResults = results.filter(result => {
+      const resultKey = result._key || `id-${result.id}`;
+      return dirtyResults[resultKey];
+    });
+    if (!pendingResults.length) return;
+
+    setSavingResults(true);
     setResultMessage('');
 
     try {
-      await resultsApi.create({
-        idcampeonato: selectedEvent.idcampeonato,
-        fecha: toDateInputValue(selectedEvent.fecha),
-        ronda: selectedEvent.ronda,
-        idcircuito: selectedEvent.idcircuito,
-        posicion: Number(resultForm.posicion),
-        idpiloto: Number(resultForm.idpiloto),
-        dq: resultForm.dq ? 1 : 0,
-        apercibimientos: Number(resultForm.apercibimientos || 0),
-        recargo_tiempo: Number(resultForm.recargo_tiempo || 0),
-        recargo_posiciones: Number(resultForm.recargo_posiciones || 0),
+      const changes = pendingResults.map(result => {
+        const editableData = {
+          presentismo: Number(result.presentismo || 0),
+          pos_qualy_sprint: String(result.pos_qualy_sprint || '').trim(),
+          pts_qualy_sprint: Number(result.pts_qualy_sprint || 0),
+          pos_sprint: String(result.pos_sprint || '').trim(),
+          pts_sprint: parseResultPoints(result.pts_sprint),
+          pos_qualy_final: String(result.pos_qualy_final || '').trim(),
+          pts_qualy_final: Number(result.pts_qualy_final || 0),
+          pos_final: String(result.pos_final || '').trim(),
+          pts_final: parseResultPoints(result.pts_final),
+        };
+
+        return {
+          id: result._isNew ? null : result.id,
+          data: result._isNew
+            ? {
+                idcampeonato: result.idcampeonato,
+                fecha: result.fecha,
+                ronda: result.ronda,
+                idcircuito: result.idcircuito,
+                idpiloto: result.idpiloto,
+                ...editableData,
+              }
+            : editableData,
+        };
       });
 
-      setResultMessage('Resultado cargado correctamente.');
-      setResultForm({
-        posicion: '',
-        idpiloto: '',
-        dq: false,
-        apercibimientos: 0,
-        recargo_tiempo: 0,
-        recargo_posiciones: 0,
-      });
+      await resultsApi.saveBulk(changes);
 
-      const res = await resultsApi.getAll({
-        idcampeonato: selectedEvent.idcampeonato,
-        ronda: selectedEvent.ronda,
-      });
-      setResults(res.data.data ?? []);
+      const response = await resultsApi.getAll({ idcampeonato: resultChampionshipId });
+      setResults(response.data.data ?? []);
+      setDirtyResults({});
+      setResultMessage(`${pendingResults.length} resultado${pendingResults.length === 1 ? '' : 's'} guardado${pendingResults.length === 1 ? '' : 's'} correctamente.`);
     } catch (err) {
-      setResultMessage(err.response?.data?.error || 'No se pudo cargar el resultado.');
+      setResultMessage(err.response?.data?.error || 'No se pudieron guardar todos los cambios.');
     } finally {
-      setSavingResult(false);
+      setSavingResults(false);
     }
   };
 
@@ -1117,7 +1409,8 @@ export default function Admin() {
 
       const championshipsRes = await championshipsApi.getAll();
 
-      setChampionships(championshipsRes.data.data ?? []);
+      const championshipRows = championshipsRes.data.data ?? [];
+      setChampionships(championshipRows);
       resetChampionshipForm();
       setChampionshipMessage(editingChampionshipId ? 'Campeonato actualizado correctamente.' : 'Campeonato cargado correctamente.');
     } catch (err) {
@@ -1304,19 +1597,6 @@ export default function Admin() {
     }
   };
 
-  const handleDeleteResult = async id => {
-    const confirmed = window.confirm('¿Eliminar este resultado?');
-    if (!confirmed) return;
-
-    try {
-      await resultsApi.remove(id);
-      setResults(current => current.filter(result => result.id !== id));
-      setResultMessage('Resultado eliminado.');
-    } catch (err) {
-      setResultMessage(err.response?.data?.error || 'No se pudo eliminar el resultado.');
-    }
-  };
-
   const handleDeleteCircuit = async id => {
     const confirmed = window.confirm('¿Eliminar este circuito?');
     if (!confirmed) return;
@@ -1386,19 +1666,57 @@ export default function Admin() {
     }
   };
 
-  const handleRegistrationPayment = async registration => {
-    const nextPayment = !registration.pago;
+  const handleRegistrationEdit = (registration, field, value) => {
+    const key = `${registration.idcampeonato}-${registration.idpiloto}`;
+    const currentCar = cars.find(car => String(car.id) === String(registration.idauto));
+    setRegistrationEdits(current => {
+      const edit = current[key] || {
+        idcampeonato: registration.idcampeonato,
+        idpiloto: registration.idpiloto,
+        idmarca: String(registration.idmarca || currentCar?.idmarca || ''),
+        idauto: String(registration.idauto || ''),
+        numero: String(registration.numero ?? ''),
+        pago: Boolean(registration.pago),
+      };
+      return {
+        ...current,
+        [key]: {
+          ...edit,
+          [field]: value,
+          ...(field === 'idmarca' ? { idauto: '' } : {}),
+        },
+      };
+    });
+    setRegistrationMessage('');
+  };
+
+  const handleSaveRegistrationChanges = async () => {
+    const changes = Object.values(registrationEdits);
+    if (!changes.length) return;
+    if (changes.some(change => !change.idauto || change.numero === '')) {
+      setRegistrationMessage('Seleccioná el modelo e ingresá el número para todas las inscripciones modificadas.');
+      return;
+    }
+
+    setSavingRegistrationChanges(true);
+    setRegistrationMessage('');
     try {
-      await registrationsApi.updatePayment(registration.idcampeonato, registration.idpiloto, nextPayment);
-      setRegistrations(current => current.map(item => (
-        String(item.idcampeonato) === String(registration.idcampeonato)
-        && String(item.idpiloto) === String(registration.idpiloto)
-          ? { ...item, pago: nextPayment ? 1 : 0 }
-          : item
-      )));
-      setRegistrationMessage(nextPayment ? 'Pago confirmado.' : 'Pago marcado como pendiente.');
+      await registrationsApi.updateBulk(changes.map(change => ({
+        idcampeonato: Number(change.idcampeonato),
+        idpiloto: Number(change.idpiloto),
+        idauto: Number(change.idauto),
+        numero: Number(change.numero),
+        pago: Boolean(change.pago),
+      })));
+      const response = await registrationsApi.getAll();
+      setRegistrations(response.data.data ?? []);
+      setRegistrationEdits({});
+      setEditingRegistrationNumbers({});
+      setRegistrationMessage(`${changes.length} inscripción${changes.length === 1 ? '' : 'es'} actualizada${changes.length === 1 ? '' : 's'}.`);
     } catch (err) {
-      setRegistrationMessage(err.response?.data?.error || 'No se pudo actualizar el pago.');
+      setRegistrationMessage(err.response?.data?.error || 'No se pudieron guardar los cambios.');
+    } finally {
+      setSavingRegistrationChanges(false);
     }
   };
 
@@ -1565,6 +1883,176 @@ export default function Admin() {
   };
 
   const renderSection = () => {
+    if (activeSection === 'resultados') {
+      return (
+        <section className="min-w-0 overflow-hidden border border-racing-border bg-racing-gray">
+          <div className="flex flex-col gap-4 border-b border-racing-border px-4 py-4 lg:flex-row lg:items-end lg:justify-between lg:px-6">
+            <div>
+              <p className="text-xs font-semibold uppercase text-racing-red">Clasificación general</p>
+              <h2 className="mt-1 font-racing text-2xl font-bold">Tabla de posiciones</h2>
+              <p className="mt-1 text-sm text-gray-400">
+                {resultChampionship
+                  ? `${resultChampionship.categoria} · Temporada ${resultChampionship.temporada} · ${resultChampionship.anio}`
+                  : 'Seleccioná un campeonato'}
+              </p>
+            </div>
+
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end lg:w-auto">
+              <label className="w-full lg:w-96">
+                <span className="text-xs font-semibold uppercase text-gray-400">Campeonato</span>
+                <select
+                  value={resultChampionshipId}
+                  onChange={event => setResultChampionshipId(event.target.value)}
+                  className="input-field mt-2"
+                  disabled={savingResults}
+                >
+                  <option value="">Seleccionar campeonato</option>
+                  {displayedChampionships.map(championship => (
+                    <option key={championship.id} value={championship.id}>
+                      {championship.categoria} · T{championship.temporada} · {championship.anio}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={handleSaveResults}
+                disabled={!Object.keys(dirtyResults).length || savingResults}
+                className="btn-primary h-[46px] shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {savingResults
+                  ? 'Guardando...'
+                  : `Guardar cambios${Object.keys(dirtyResults).length ? ` (${Object.keys(dirtyResults).length})` : ''}`}
+              </button>
+            </div>
+          </div>
+
+          {resultMessage && (
+            <div className="border-b border-racing-red/40 bg-racing-red/10 px-4 py-3 text-sm text-gray-200 lg:px-6">
+              {resultMessage}
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-max min-w-full table-auto border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-racing-border bg-racing-dark">
+                  <th className="sticky left-0 z-20 w-16 bg-racing-dark px-3 py-3 text-center text-xs uppercase text-gray-400">Pos.</th>
+                  <th className="sticky left-16 z-20 w-40 bg-racing-dark px-3 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
+                  {resultRounds.map(round => (
+                    <th key={round.id} className="whitespace-nowrap border-l border-racing-border px-2 py-2 text-center">
+                      <span className="block font-racing text-sm text-white">R{round.ronda}</span>
+                      <span className="block max-w-44 truncate text-[10px] font-normal text-gray-500" title={`${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}>
+                        {round.circuito}{round.variante ? ` · ${round.variante}` : ''}
+                      </span>
+                    </th>
+                  ))}
+                  <th className="sticky right-0 z-20 min-w-28 border-l border-racing-border bg-racing-dark px-4 py-3 text-center text-xs uppercase text-gray-400">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-racing-border">
+                {loadingResults ? (
+                  <tr>
+                    <td colSpan={resultRounds.length + 3} className="px-6 py-14 text-center text-gray-500">
+                      Cargando resultados...
+                    </td>
+                  </tr>
+                ) : resultStandings.length ? (
+                  resultStandings.map(standing => (
+                    <tr key={standing.idpiloto} className="group bg-racing-gray hover:bg-racing-card/70">
+                      <td className="sticky left-0 z-10 bg-racing-gray px-3 py-4 text-center group-hover:bg-racing-card">
+                        <span className={`font-racing text-xl ${standing.position <= 3 ? 'text-racing-red' : 'text-gray-300'}`}>
+                          {standing.position}
+                        </span>
+                      </td>
+                      <td className="sticky left-16 z-10 w-40 max-w-40 truncate bg-racing-gray px-3 py-3 font-semibold text-white group-hover:bg-racing-card" title={standing.piloto}>
+                        {standing.piloto}
+                      </td>
+                      {resultRounds.map(round => {
+                        const result = standing.rounds.get(String(round.ronda));
+                        const resultKey = result?._key
+                          || (result?.id ? `id-${result.id}` : `new-${standing.idpiloto}-${round.ronda}`);
+                        const isDirty = Boolean(dirtyResults[resultKey]);
+                        const wasPresent = Boolean(result) && Number(result.presentismo || 0) >= 1;
+                        return (
+                          <td
+                            key={round.id}
+                            className={`w-px whitespace-nowrap border-l px-1.5 py-1.5 ${
+                              isDirty
+                                ? 'border-amber-400/70 bg-amber-400/5'
+                                : wasPresent
+                                  ? 'border-yellow-300/25 bg-gradient-to-r from-yellow-400/15 via-yellow-300/[0.07] to-transparent'
+                                  : 'border-racing-border/70'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-end justify-center gap-1">
+                                {resultPointFields.map(field => {
+                                  const fieldValue = result?.[field.key];
+                                  return (
+                                    <label key={field.key} className="block w-8 shrink-0" title={field.label}>
+                                      <span className="block text-center text-[9px] font-semibold uppercase text-gray-500">
+                                        {field.shortLabel}
+                                      </span>
+                                      <input
+                                        type={field.decimal ? 'text' : 'number'}
+                                        inputMode={field.decimal ? 'decimal' : 'numeric'}
+                                        min={field.decimal ? undefined : '0'}
+                                        value={parseResultPoints(fieldValue) === 0 ? '' : fieldValue}
+                                        onChange={event => handleResultFieldChange(standing, round, result, field.key, event.target.value)}
+                                        className="mt-0.5 h-8 w-8 appearance-none border border-racing-border bg-racing-dark px-0.5 text-center font-racing text-sm text-white outline-none transition focus:border-racing-red [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        aria-label={`${field.label}, ${standing.piloto}, ronda ${round.ronda}`}
+                                      />
+                                    </label>
+                                  );
+                                })}
+                                <div className="ml-1 flex h-8 min-w-10 items-center justify-center border-l border-racing-border pl-1.5 font-racing text-sm text-amber-400" title="Total de la ronda">
+                                  {formatResultPoints(getResultPoints(result))}
+                                </div>
+                              </div>
+                              <div className="mt-1 flex justify-center gap-1 border-t border-racing-border/60 pt-1">
+                                {resultPositionFields.map(field => (
+                                  <label key={field.key} className="block w-11 shrink-0" title={field.label}>
+                                    <span className="block text-center text-[9px] font-semibold uppercase text-gray-500">
+                                      {field.shortLabel}
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={result?.[field.key] || ''}
+                                      onChange={event => handleResultFieldChange(standing, round, result, field.key, event.target.value)}
+                                      className="mt-0.5 h-8 w-11 border border-racing-border bg-racing-dark px-1 text-center font-racing text-xs uppercase text-white outline-none transition focus:border-racing-red"
+                                      aria-label={`${field.label}, ${standing.piloto}, ronda ${round.ronda}`}
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </td>
+                        );
+                      })}
+                      <td className="sticky right-0 z-10 border-l border-racing-border bg-racing-dark px-4 py-4 text-center">
+                        <span className="font-racing text-2xl font-bold text-amber-400">{formatResultPoints(standing.total)}</span>
+                        <span className="ml-1 text-xs text-gray-500">PTS</span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={resultRounds.length + 3} className="px-6 py-14 text-center text-gray-500">
+                      {resultChampionshipId
+                        ? 'No hay resultados cargados para este campeonato.'
+                        : 'Seleccioná un campeonato para ver la tabla.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      );
+    }
+
+    /*
     if (activeSection === 'resultados') {
       return (
         <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-8">
@@ -1790,6 +2278,7 @@ export default function Admin() {
         </div>
       );
     }
+    */
 
     if (activeSection === 'circuitos') {
       return (
@@ -1955,9 +2444,21 @@ export default function Admin() {
 
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Circuitos cargados</h2>
-                <div className="w-full xl:max-w-xl">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-racing text-2xl font-bold">Circuitos cargados</h2>
+                  <p className="mt-1 text-sm text-gray-400">{displayedCircuits.length} circuito{displayedCircuits.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <ClearFiltersButton active={Boolean(circuitCountryFilter || circuitSearch)} onClick={() => { setCircuitCountryFilter(''); setCircuitSearch(''); }} />
+                </div>
+                <div className="grid w-full gap-3 md:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">País</span>
+                    <select value={circuitCountryFilter} onChange={event => setCircuitCountryFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todos los países</option>
+                      {availableCircuitCountries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                    </select>
+                  </label>
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
                     <div className="relative mt-2">
@@ -2002,8 +2503,8 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedCircuits.length > 0 ? (
-                    displayedCircuits.map(circuit => (
+                  {paginatedCircuits.length > 0 ? (
+                    paginatedCircuits.map(circuit => (
                       <tr key={circuit.id} className="hover:bg-racing-card/60">
                         <td className="relative isolate overflow-hidden px-4 py-3">
                           {circuit.imagen ? (
@@ -2060,6 +2561,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            <AdminPagination page={circuitPage} pageCount={circuitPageCount} total={displayedCircuits.length} onPageChange={setCircuitPage} />
           </section>
         </div>
       );
@@ -2137,7 +2639,7 @@ export default function Admin() {
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Categorías cargadas</h2>
+                <div className="flex items-center gap-3"><h2 className="font-racing text-2xl font-bold">Categorías cargadas</h2><ClearFiltersButton active={Boolean(categorySearch)} onClick={() => setCategorySearch('')} /></div>
                 <div className="w-full xl:max-w-xl">
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
@@ -2258,29 +2760,32 @@ export default function Admin() {
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-sm text-gray-300">Temporada</span>
-                  <input
-                    name="temporada"
-                    value={championshipForm.temporada}
-                    onChange={handleChampionshipChange}
-                    className="input-field mt-2"
-                    placeholder="1"
-                    required
-                  />
-                </label>
+                <div className="block">
+                  <span className="text-sm text-gray-300">
+                    {editingChampionshipId ? 'Temporada registrada' : 'Próxima temporada'}
+                  </span>
+                  <div
+                    className="mt-2 flex min-h-11 items-center border border-racing-border bg-racing-dark px-3 font-racing text-lg text-yellow-300"
+                    aria-live="polite"
+                  >
+                    {championshipForm.temporada
+                      ? `Temporada ${championshipForm.temporada}`
+                      : 'Seleccioná una categoría'}
+                  </div>
+                </div>
                 <label className="block">
                   <span className="text-sm text-gray-300">Año</span>
-                  <input
+                  <select
                     name="anio"
-                    type="number"
-                    min="2000"
-                    max="2100"
                     value={championshipForm.anio}
                     onChange={handleChampionshipChange}
                     className="input-field mt-2"
                     required
-                  />
+                  >
+                    {championshipYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
@@ -2371,9 +2876,28 @@ export default function Admin() {
 
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Campeonatos cargados</h2>
-                <div className="w-full xl:max-w-xl">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-racing text-2xl font-bold">Campeonatos cargados</h2>
+                  <p className="mt-1 text-sm text-gray-400">{displayedChampionships.length} campeonato{displayedChampionships.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <ClearFiltersButton active={Boolean(championshipCategoryFilter || championshipYearFilter || championshipSearch)} onClick={() => { setChampionshipCategoryFilter(''); setChampionshipYearFilter(''); setChampionshipSearch(''); }} />
+                </div>
+                <div className="grid w-full gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Categoría</span>
+                    <select value={championshipCategoryFilter} onChange={event => setChampionshipCategoryFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todas las categorías</option>
+                      {categories.map(category => <option key={category.id} value={category.id}>{category.categoria}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Año</span>
+                    <select value={championshipYearFilter} onChange={event => setChampionshipYearFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todos los años</option>
+                      {availableChampionshipYears.map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                  </label>
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
                     <div className="relative mt-2">
@@ -2405,8 +2929,8 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedChampionships.length > 0 ? (
-                    displayedChampionships.map(championship => (
+                  {paginatedChampionships.length > 0 ? (
+                    paginatedChampionships.map(championship => (
                       <tr key={championship.id} className="hover:bg-racing-card/60">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
@@ -2466,6 +2990,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            <AdminPagination page={championshipPage} pageCount={championshipPageCount} total={displayedChampionships.length} onPageChange={setChampionshipPage} />
           </section>
         </div>
       );
@@ -2555,7 +3080,7 @@ export default function Admin() {
                   name="numero"
                   type="number"
                   min="1"
-                  max="999"
+                  max="200"
                   value={registrationForm.numero}
                   onChange={handleRegistrationChange}
                   className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"
@@ -2582,7 +3107,28 @@ export default function Admin() {
 
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-5 py-4">
-              <h2 className="font-racing text-2xl font-bold">Pilotos inscriptos</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-racing text-2xl font-bold">Pilotos inscriptos</h2>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {displayedRegistrations.length} inscripción{displayedRegistrations.length === 1 ? '' : 'es'}
+                    {registrationChampionshipFilter ? ' en el campeonato seleccionado' : ' en total'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ClearFiltersButton active={Boolean(registrationChampionshipFilter || registrationSearch)} onClick={() => { setRegistrationChampionshipFilter(''); setRegistrationSearch(''); }} />
+                  <button
+                    type="button"
+                    onClick={handleSaveRegistrationChanges}
+                    disabled={!Object.keys(registrationEdits).length || savingRegistrationChanges}
+                    className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {savingRegistrationChanges
+                      ? 'Guardando...'
+                      : `Guardar cambios${Object.keys(registrationEdits).length ? ` (${Object.keys(registrationEdits).length})` : ''}`}
+                  </button>
+                </div>
+              </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 <select value={registrationChampionshipFilter} onChange={event => setRegistrationChampionshipFilter(event.target.value)} className="input-field">
                   <option value="">Todos los campeonatos</option>
@@ -2595,6 +3141,7 @@ export default function Admin() {
                   <input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} className="input-field pl-10" placeholder="Piloto, número, auto..." />
                 </div>
               </div>
+              {registrationMessage ? <div className="mt-3 border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
             </div>
 
             <div className="overflow-x-auto">
@@ -2608,36 +3155,148 @@ export default function Admin() {
                   <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
                 </tr></thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedRegistrations.length ? displayedRegistrations.map(registration => (
-                    <tr key={`${registration.idcampeonato}-${registration.idpiloto}`} className="hover:bg-racing-card/60">
-                      <td className={`px-4 py-3 font-racing text-xl font-bold ${Number(registration.numero) === 0 ? 'text-yellow-300' : 'text-racing-red'}`}>
-                        {Number(registration.numero) === 0 ? 'EXTRA' : `#${registration.numero}`}
+                  {paginatedRegistrations.length ? paginatedRegistrations.map(registration => {
+                    const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
+                    const registeredCar = cars.find(car => String(car.id) === String(registration.idauto));
+                    const edit = registrationEdits[registrationKey] || {
+                      idmarca: String(registration.idmarca || registeredCar?.idmarca || ''),
+                      idauto: String(registration.idauto || ''),
+                      numero: String(registration.numero ?? ''),
+                      pago: Boolean(registration.pago),
+                    };
+                    const availableCars = cars.filter(car => String(car.idcategoria) === String(registration.idcategoria));
+                    const availableBrands = [...new Map(availableCars.map(car => [String(car.idmarca), {
+                      id: car.idmarca,
+                      marca: car.marca,
+                      logo: car.logo,
+                    }])).values()].sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
+                    const availableModels = availableCars
+                      .filter(car => String(car.idmarca) === String(edit.idmarca))
+                      .sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' }));
+                    const selectedBrand = availableBrands.find(brand => String(brand.id) === String(edit.idmarca));
+                    const isDirty = Boolean(registrationEdits[registrationKey]);
+                    const isEditingNumber = Boolean(editingRegistrationNumbers[registrationKey]);
+
+                    return <tr key={registrationKey} className={`${isDirty ? 'bg-yellow-400/5' : ''} hover:bg-racing-card/60`}>
+                      <td className="px-4 py-3">
+                        {isEditingNumber ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              max="200"
+                              value={edit.numero}
+                              onChange={event => handleRegistrationEdit(registration, 'numero', event.target.value)}
+                              className="input-field font-anton w-16 px-1 py-1.5 text-center text-xl text-yellow-300"
+                              aria-label={`Número de ${registration.nombre}`}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditingRegistrationNumbers(current => ({ ...current, [registrationKey]: false }))}
+                              className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-400 hover:border-yellow-300 hover:text-yellow-300"
+                              aria-label="Cerrar edición del número"
+                            >
+                              <XMarkIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="font-anton min-w-16 text-center text-4xl leading-normal text-yellow-300">
+                              {Number(edit.numero) === 0 ? 'EXTRA' : edit.numero}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingRegistrationNumbers(current => ({ ...current, [registrationKey]: true }))}
+                              className="inline-flex h-7 w-7 items-center justify-center text-gray-500 hover:text-yellow-300"
+                              aria-label={`Editar número de ${registration.nombre}`}
+                            >
+                              <PencilSquareIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-white">{registration.nombre}</td>
+                      <td className="px-4 py-3 text-lg font-semibold italic text-white">{registration.nombre}</td>
                       <td className="px-4 py-3 text-gray-300">{registration.categoria} · T{registration.temporada} · {registration.anio}</td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {registration.auto_logo ? <img src={registration.auto_logo} alt="" className="h-8 w-10 object-contain" /> : null}
-                          <span className="text-gray-300">{registration.marca} {registration.modelo}</span>
+                        <div className="grid min-w-[300px] grid-cols-2 gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            {selectedBrand?.logo ? <img src={selectedBrand.logo} alt="" className="h-10 w-12 shrink-0 object-contain" /> : null}
+                            <select
+                              value={edit.idmarca}
+                              onChange={event => handleRegistrationEdit(registration, 'idmarca', event.target.value)}
+                              className="input-field min-w-0 flex-1 py-2 text-sm"
+                              aria-label={`Marca de ${registration.nombre}`}
+                            >
+                              <option value="">Seleccionar marca</option>
+                              {availableBrands.map(brand => <option key={brand.id} value={brand.id}>{brand.marca}</option>)}
+                            </select>
+                          </div>
+                          <select
+                            value={edit.idauto}
+                            onChange={event => handleRegistrationEdit(registration, 'idauto', event.target.value)}
+                            className="input-field py-2 text-sm"
+                            disabled={!edit.idmarca}
+                            aria-label={`Modelo de ${registration.nombre}`}
+                          >
+                            <option value="">Seleccionar modelo</option>
+                            {availableModels.map(car => <option key={car.id} value={car.id}>{car.modelo}</option>)}
+                          </select>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button type="button" onClick={() => handleRegistrationPayment(registration)} className={`px-3 py-1 text-xs font-bold uppercase ${registration.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
-                          {registration.pago ? 'Pagado' : 'Pendiente'}
-                        </button>
+                        <label className={`inline-flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase ${edit.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
+                          <input
+                            type="checkbox"
+                            checked={edit.pago}
+                            onChange={event => handleRegistrationEdit(registration, 'pago', event.target.checked)}
+                            className="h-4 w-4 accent-green-500"
+                          />
+                          {edit.pago ? 'Pagado' : 'Pendiente'}
+                        </label>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button type="button" onClick={() => handleDeleteRegistration(registration)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar inscripción">
                           <TrashIcon className="h-4 w-4" />
                         </button>
                       </td>
-                    </tr>
-                  )) : (
+                    </tr>;
+                  }) : (
                     <tr><td colSpan="6" className="px-4 py-12 text-center text-gray-500">No hay inscripciones para mostrar.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
+            {displayedRegistrations.length > 0 ? (
+              <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-400">
+                  Mostrando {(registrationPage - 1) * adminPageSize + 1}-{Math.min(registrationPage * adminPageSize, displayedRegistrations.length)} de {displayedRegistrations.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationPage(current => Math.max(1, current - 1))}
+                    disabled={registrationPage === 1}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Página anterior"
+                  >
+                    <ChevronLeftIcon className="h-5 w-5" />
+                  </button>
+                  <span className="min-w-24 text-center font-racing text-sm font-bold text-white">
+                    Página {registrationPage} de {registrationPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationPage(current => Math.min(registrationPageCount, current + 1))}
+                    disabled={registrationPage === registrationPageCount}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Página siguiente"
+                  >
+                    <ChevronRightIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       );
@@ -2694,7 +3353,7 @@ export default function Admin() {
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Marcas cargadas</h2>
+                <div className="flex items-center gap-3"><h2 className="font-racing text-2xl font-bold">Marcas cargadas</h2><ClearFiltersButton active={Boolean(carBrandSearch)} onClick={() => setCarBrandSearch('')} /></div>
                 <div className="relative w-full xl:max-w-md">
                   <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
                   <input value={carBrandSearch} onChange={event => setCarBrandSearch(event.target.value)} className="input-field pl-10" placeholder="Buscar marca..." />
@@ -2822,9 +3481,40 @@ export default function Admin() {
 
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Autos cargados</h2>
-                <div className="w-full xl:max-w-xl">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-racing text-2xl font-bold">Autos cargados</h2>
+                  <p className="mt-1 text-sm text-gray-400">{displayedCars.length} auto{displayedCars.length === 1 ? '' : 's'} encontrado{displayedCars.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <ClearFiltersButton active={Boolean(carCategoryFilter || carBrandFilter || carSearch)} onClick={() => { setCarCategoryFilter(''); setCarBrandFilter(''); setCarSearch(''); }} />
+                </div>
+                <div className="grid w-full gap-3 md:grid-cols-3">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Categoría</span>
+                    <select
+                      value={carCategoryFilter}
+                      onChange={event => {
+                        setCarCategoryFilter(event.target.value);
+                        setCarBrandFilter('');
+                      }}
+                      className="input-field mt-2"
+                    >
+                      <option value="">Todas las categorías</option>
+                      {categories.map(category => <option key={category.id} value={category.id}>{category.categoria}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Marca</span>
+                    <select value={carBrandFilter} onChange={event => setCarBrandFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todas las marcas</option>
+                      {carBrands
+                        .filter(brand => !carCategoryFilter || cars.some(car => (
+                          String(car.idcategoria) === String(carCategoryFilter)
+                          && String(car.idmarca) === String(brand.id)
+                        )))
+                        .map(brand => <option key={brand.id} value={brand.id}>{brand.marca}</option>)}
+                    </select>
+                  </label>
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
                     <div className="relative mt-2">
@@ -2853,8 +3543,8 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedCars.length > 0 ? (
-                    displayedCars.map(car => (
+                  {paginatedCars.length > 0 ? (
+                    paginatedCars.map(car => (
                       <tr key={car.id} className="hover:bg-racing-card/60">
                         <td className="px-4 py-3">
                           {car.imagen ? (
@@ -2907,6 +3597,34 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            {displayedCars.length > 0 ? (
+              <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-400">
+                  Mostrando {(carPage - 1) * adminPageSize + 1}-{Math.min(carPage * adminPageSize, displayedCars.length)} de {displayedCars.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCarPage(current => Math.max(1, current - 1))}
+                    disabled={carPage === 1}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Página anterior de autos"
+                  >
+                    <ChevronLeftIcon className="h-5 w-5" />
+                  </button>
+                  <span className="min-w-24 text-center font-racing text-sm font-bold text-white">Página {carPage} de {carPageCount}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCarPage(current => Math.min(carPageCount, current + 1))}
+                    disabled={carPage === carPageCount}
+                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Página siguiente de autos"
+                  >
+                    <ChevronRightIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       );
@@ -2932,7 +3650,10 @@ export default function Admin() {
                     required
                   >
                   <option value="">Seleccionar campeonato</option>
-                  {championships.map(championship => (
+                  {!championshipsWithoutEvents.length ? (
+                    <option value="" disabled>Todos los campeonatos ya tienen fechas asignadas</option>
+                  ) : null}
+                  {championshipsWithoutEvents.map(championship => (
                     <option key={championship.id} value={championship.id}>
                       {championship.categoria} - Temporada {championship.temporada} ({championship.anio})
                     </option>
@@ -3066,9 +3787,36 @@ export default function Admin() {
 
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Fechas cargadas</h2>
-                <div className="w-full xl:max-w-xl">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="font-racing text-2xl font-bold">Fechas cargadas</h2>
+                  <p className="mt-1 text-sm text-gray-400">{displayedEvents.length} fecha{displayedEvents.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <ClearFiltersButton active={Boolean(eventChampionshipFilter || eventCircuitFilter || eventDateFrom || eventDateTo || eventSearch)} onClick={() => { setEventChampionshipFilter(''); setEventCircuitFilter(''); setEventDateFrom(''); setEventDateTo(''); setEventSearch(''); }} />
+                </div>
+                <div className="grid w-full gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Campeonato</span>
+                    <select value={eventChampionshipFilter} onChange={event => setEventChampionshipFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todos los campeonatos</option>
+                      {championships.map(championship => <option key={championship.id} value={championship.id}>{championship.categoria} · T{championship.temporada} · {championship.anio}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Autódromo</span>
+                    <select value={eventCircuitFilter} onChange={event => setEventCircuitFilter(event.target.value)} className="input-field mt-2">
+                      <option value="">Todos los autódromos</option>
+                      {circuits.map(circuit => <option key={circuit.id} value={circuit.id}>{circuit.nombre}{circuit.variante ? ` · ${circuit.variante}` : ''}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Desde</span>
+                    <input type="date" value={eventDateFrom} onChange={event => setEventDateFrom(event.target.value)} className="input-field mt-2" />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs uppercase tracking-wider text-gray-500">Hasta</span>
+                    <input type="date" value={eventDateTo} min={eventDateFrom || undefined} onChange={event => setEventDateTo(event.target.value)} className="input-field mt-2" />
+                  </label>
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
                     <div className="relative mt-2">
@@ -3117,8 +3865,8 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedEvents.length > 0 ? (
-                    displayedEvents.map(event => (
+                  {paginatedEvents.length > 0 ? (
+                    paginatedEvents.map(event => (
                       <tr key={`${event.idcampeonato}-${event.ronda}`} className="hover:bg-racing-card/60">
                         <td className="px-4 py-3 text-gray-300">{formatEventDateTime(event.fecha)}</td>
                         <td className="px-4 py-3">
@@ -3200,6 +3948,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            <AdminPagination page={eventPage} pageCount={eventPageCount} total={displayedEvents.length} onPageChange={setEventPage} />
           </section>
 
           {editingEventKey ? (
@@ -3394,7 +4143,7 @@ export default function Admin() {
           <section className="card-glass overflow-hidden">
             <div className="border-b border-racing-border px-6 py-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <h2 className="font-racing text-2xl font-bold">Pilotos cargados</h2>
+                <div className="flex items-center gap-3"><h2 className="font-racing text-2xl font-bold">Pilotos cargados</h2><ClearFiltersButton active={Boolean(driverSearch)} onClick={() => setDriverSearch('')} /></div>
                 <div className="w-full xl:max-w-xl">
                   <label className="block">
                     <span className="text-xs uppercase tracking-wider text-gray-500">Buscar</span>
@@ -3426,8 +4175,8 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
-                  {displayedDrivers.length > 0 ? (
-                    displayedDrivers.map(driver => (
+                  {paginatedDrivers.length > 0 ? (
+                    paginatedDrivers.map(driver => (
                       <tr key={driver.id} className="hover:bg-racing-card/60">
                         <td className="px-4 py-3 font-racing text-base text-white">{driver.nombre}</td>
                         <td className="px-4 py-3 text-gray-300">{driver.localidad || '-'}</td>
@@ -3472,6 +4221,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            <AdminPagination page={driverPage} pageCount={driverPageCount} total={displayedDrivers.length} onPageChange={setDriverPage} />
           </section>
         </div>
       );
@@ -3543,7 +4293,9 @@ export default function Admin() {
               })}
             </nav>
 
-            {renderSection()}
+            <div key={activeSection} className="min-w-0">
+              {renderSection()}
+            </div>
           </>
         )}
       </div>

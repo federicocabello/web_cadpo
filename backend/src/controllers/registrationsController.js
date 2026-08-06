@@ -7,7 +7,7 @@ const getAll = async (req, res, next) => {
     let query = `
       SELECT i.numero, i.pago, i.idcampeonato,
              p.id AS idpiloto, p.nombre, p.localidad, p.telefono,
-             a.id AS idauto, am.marca, a.modelo, am.logo AS auto_logo,
+             a.id AS idauto, am.id AS idmarca, am.marca, a.modelo, am.logo AS auto_logo,
              c.temporada, c.anio, c.idcategoria, cat.categoria
       FROM inscriptos i
       JOIN pilotos p ON i.idpiloto = p.id
@@ -37,8 +37,8 @@ const create = async (req, res, next) => {
       return res.status(400).json({ error: 'idcampeonato, idpiloto, idauto y numero son requeridos' });
     }
     const numericNumber = Number(numero);
-    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 999) {
-      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 999' });
+    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 200) {
+      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 200' });
     }
 
     const [[championship]] = await pool.query('SELECT idcategoria FROM campeonatos WHERE id = ?', [idcampeonato]);
@@ -92,6 +92,82 @@ const updatePayment = async (req, res, next) => {
   }
 };
 
+const updateBulk = async (req, res, next) => {
+  const changes = req.body?.changes;
+  if (!Array.isArray(changes) || !changes.length) {
+    return res.status(400).json({ error: 'No hay cambios de inscripciones para guardar' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    for (const change of changes) {
+      const idcampeonato = Number(change.idcampeonato);
+      const idpiloto = Number(change.idpiloto);
+      const idauto = Number(change.idauto);
+      const numero = Number(change.numero);
+      const pago = change.pago === true || change.pago === 1 || change.pago === '1' ? 1 : 0;
+      if (!idcampeonato || !idpiloto || !idauto) {
+        const error = new Error('Campeonato, piloto y auto son requeridos');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (!Number.isInteger(numero) || numero < 0 || numero > 200) {
+        const error = new Error('El número debe ser un entero entre 0 y 200');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const [[registration]] = await connection.query(
+        `SELECT c.idcategoria AS campeonato_categoria, a.idcategoria AS auto_categoria
+         FROM inscriptos i
+         JOIN campeonatos c ON c.id = i.idcampeonato
+         JOIN autos a ON a.id = ?
+         WHERE i.idcampeonato = ? AND i.idpiloto = ?`,
+        [idauto, idcampeonato, idpiloto]
+      );
+      if (!registration) {
+        const error = new Error('Inscripción o auto no encontrado');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (Number(registration.campeonato_categoria) !== Number(registration.auto_categoria)) {
+        const error = new Error('El auto no pertenece a la categoría del campeonato');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      if (numero !== 0) {
+        const [[duplicateNumber]] = await connection.query(
+          `SELECT idpiloto FROM inscriptos
+           WHERE idcampeonato = ? AND numero = ? AND idpiloto <> ?
+           LIMIT 1`,
+          [idcampeonato, numero, idpiloto]
+        );
+        if (duplicateNumber) {
+          const error = new Error(`El número ${numero} ya está utilizado en este campeonato`);
+          error.statusCode = 409;
+          throw error;
+        }
+      }
+
+      await connection.query(
+        'UPDATE inscriptos SET idauto = ?, numero = ?, pago = ? WHERE idcampeonato = ? AND idpiloto = ?',
+        [idauto, numero, pago, idcampeonato, idpiloto]
+      );
+    }
+
+    await connection.commit();
+    res.json({ message: 'Inscripciones actualizadas', updated: changes.length });
+  } catch (err) {
+    await connection.rollback();
+    next(err);
+  } finally {
+    connection.release();
+  }
+};
+
 // ── DELETE /api/inscriptos/:idcampeonato/:idpiloto ────────────────────────────
 const remove = async (req, res, next) => {
   try {
@@ -107,4 +183,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, create, updatePayment, remove };
+module.exports = { getAll, create, updatePayment, updateBulk, remove };

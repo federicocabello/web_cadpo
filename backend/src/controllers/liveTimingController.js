@@ -1,8 +1,57 @@
 const pool = require('../config/db');
 const LIVE_TIMING_HOST = process.env.LIVE_TIMING_HOST || 'rh.servegame.com';
 const CACHE_TTL_MS = 10000;
+const QUALIFYING_CACHE_TTL_MS = 750;
+const INACTIVE_TIMING_MS = 15000;
+const TRANSIENT_FAILURE_GRACE_MS = 30000;
 
 const timingCaches = new Map();
+const timingActivity = new Map();
+const isAdminDriver = driver =>
+  String(driver?.CarInfo?.DriverName || '').trim().toLocaleLowerCase() === 'admin';
+
+const timingSignature = source => {
+  const connectedDrivers = (Array.isArray(source.ConnectedDrivers) ? source.ConnectedDrivers : [])
+    .filter(driver => !isAdminDriver(driver));
+  const disconnectedDrivers = (Array.isArray(source.DisconnectedDrivers) ? source.DisconnectedDrivers : [])
+    .filter(driver => !isAdminDriver(driver));
+  const driverActivity = [...connectedDrivers, ...disconnectedDrivers]
+    .map(driver => {
+      const cars = Object.values(driver.Cars || {});
+      const laps = cars.reduce((total, car) => total + Number(car.NumLaps || 0), 0);
+      return `${driver.CarInfo?.DriverGUID || ''}:${driver.LastSeen || ''}:${laps}`;
+    })
+    .join('|');
+
+  return [
+    source.CurrentSessionIndex ?? source.SessionIndex ?? 0,
+    source.Type ?? '',
+    source.Name || '',
+    source.ElapsedMilliseconds || 0,
+    connectedDrivers.length,
+    driverActivity,
+  ].join('::');
+};
+
+const isInactiveSnapshot = (championshipId, source) => {
+  const signature = timingSignature(source);
+  const previous = timingActivity.get(championshipId);
+  const now = Date.now();
+
+  // En práctica y clasificación el Server Manager puede entregar el mismo
+  // snapshot durante varios minutos aunque la sesión continúe funcionando.
+  if (Number(source.Type) !== 3) {
+    timingActivity.set(championshipId, { signature, unchangedSince: now });
+    return false;
+  }
+
+  if (!previous || previous.signature !== signature) {
+    timingActivity.set(championshipId, { signature, unchangedSince: now });
+    return false;
+  }
+
+  return now - previous.unchangedSince >= INACTIVE_TIMING_MS;
+};
 
 const getCarTiming = driver => {
   const cars = driver.Cars || {};
@@ -46,11 +95,19 @@ const normalizeDriver = (driver, connected) => {
   };
 };
 
+const getSessionName = source => {
+  const sessionType = Number(source.Type);
+  if (sessionType === 1) return 'Práctica';
+  if (sessionType === 2) return 'Clasificación';
+  if (sessionType === 3) return 'Carrera';
+  return source.Name || '';
+};
+
 const normalizeResponse = source => ({
   serverName: source.ServerName || 'Servidor CADPO',
   track: source.Track || '',
   trackConfig: source.TrackConfig || '',
-  session: source.Name || '',
+  session: getSessionName(source),
   sessionType: source.Type,
   sessionIndex: source.CurrentSessionIndex ?? source.SessionIndex ?? 0,
   sessionCount: source.SessionCount || 0,
@@ -59,8 +116,12 @@ const normalizeResponse = source => ({
   elapsedMilliseconds: source.ElapsedMilliseconds || 0,
   time: source.Time || 0,
   laps: source.Laps || 0,
-  connected: (source.ConnectedDrivers || []).map(driver => normalizeDriver(driver, true)),
-  stored: (source.DisconnectedDrivers || []).map(driver => normalizeDriver(driver, false)),
+  connected: (source.ConnectedDrivers || [])
+    .filter(driver => !isAdminDriver(driver))
+    .map(driver => normalizeDriver(driver, true)),
+  stored: (source.DisconnectedDrivers || [])
+    .filter(driver => !isAdminDriver(driver))
+    .map(driver => normalizeDriver(driver, false)),
   updatedAt: new Date().toISOString(),
 });
 
@@ -83,7 +144,10 @@ const getLiveTiming = async (req, res, next) => {
 
     const timingUrl = `http://${LIVE_TIMING_HOST}:${port}/api/live-timings/leaderboard.json?server=${serverNumber}`;
     const cachedTiming = timingCaches.get(championshipId);
-    if (cachedTiming && Date.now() - cachedTiming.time < CACHE_TTL_MS) {
+    const cacheTtl = /clasificaci[oó]n|qualifying|qualification|qualy/i.test(cachedTiming?.data?.session || '')
+      ? QUALIFYING_CACHE_TTL_MS
+      : CACHE_TTL_MS;
+    if (cachedTiming && Date.now() - cachedTiming.time < cacheTtl) {
       return res.json({ data: cachedTiming.data, cached: true });
     }
 
@@ -102,21 +166,32 @@ const getLiveTiming = async (req, res, next) => {
 
     if (!response.ok) {
       const error = new Error(`El servidor de tiempos respondió ${response.status}`);
-      error.status = 502;
+      error.statusCode = 502;
       throw error;
     }
 
-    const data = normalizeResponse(await response.json());
+    const source = await response.json();
+    if (isInactiveSnapshot(championshipId, source)) {
+      const error = new Error('El servidor de tiempos no presenta actividad');
+      error.statusCode = 503;
+      throw error;
+    }
+
+    const data = normalizeResponse(source);
     timingCaches.set(championshipId, { data, time: Date.now() });
     res.json({ data, cached: false });
   } catch (err) {
     const championshipId = Number(req.query.championshipId);
     const cachedTiming = timingCaches.get(championshipId);
     if (cachedTiming) {
+      const cacheAge = Date.now() - cachedTiming.time;
+      if (cacheAge <= TRANSIENT_FAILURE_GRACE_MS) {
+        return res.json({ data: cachedTiming.data, cached: true, recovering: true });
+      }
       return res.json({ data: cachedTiming.data, cached: true, stale: true });
     }
 
-    err.status = 503;
+    err.statusCode = 503;
     err.message = err.name === 'AbortError'
       ? 'El servidor de tiempos no respondió a tiempo'
       : `Tiempos en vivo no disponibles: ${err.message}`;

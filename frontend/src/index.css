@@ -27,6 +27,10 @@
 }
 
 @layer components {
+  .font-anton {
+    font-family: 'Anton', sans-serif;
+  }
+
   .btn-primary {
     @apply inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-racing-red to-racing-red-dark text-white font-racing font-semibold text-sm uppercase tracking-widest rounded-lg transition-all duration-300 hover:shadow-racing hover:scale-105 active:scale-95;
   }
