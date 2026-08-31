@@ -11,11 +11,7 @@ const getUploadedFile = (files, fieldName) => {
   return files[fieldName][0];
 };
 
-const capitalizeValue = value =>
-  String(value || '')
-    .trim()
-    .toLocaleLowerCase('es-AR')
-    .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
+const trimValue = value => String(value || '').trim();
 
 const getAll = async (req, res, next) => {
   try {
@@ -56,7 +52,7 @@ const create = async (req, res, next) => {
   try {
     const idcategoria = req.body.idcategoria;
     const marca = Number(req.body.marca);
-    const modelo = capitalizeValue(req.body.modelo);
+    const modelo = trimValue(req.body.modelo);
 
     if (!idcategoria || !marca || !modelo) {
       return res.status(400).json({ error: 'idcategoria, marca y modelo son requeridos' });
@@ -81,7 +77,7 @@ const update = async (req, res, next) => {
   try {
     const idcategoria = req.body.idcategoria;
     const marca = Number(req.body.marca);
-    const modelo = capitalizeValue(req.body.modelo);
+    const modelo = trimValue(req.body.modelo);
 
     if (!idcategoria || !marca || !modelo) {
       return res.status(400).json({ error: 'idcategoria, marca y modelo son requeridos' });

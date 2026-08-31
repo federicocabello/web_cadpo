@@ -3,11 +3,7 @@ const path = require('path');
 const pool = require('../config/db');
 const publicDir = require('../utils/publicDir');
 
-const capitalizeValue = value =>
-  String(value || '')
-    .trim()
-    .toLocaleLowerCase('es-AR')
-    .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
+const trimValue = value => String(value || '').trim();
 
 const toPublicLogoPath = file => file ? `/media/autos/marcas/${file.filename}` : '';
 
@@ -37,7 +33,7 @@ const getAll = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    const marca = capitalizeValue(req.body.marca);
+    const marca = trimValue(req.body.marca);
     if (!marca) return res.status(400).json({ error: 'La marca es requerida' });
     if (!req.file) return res.status(400).json({ error: 'El logo de la marca es requerido' });
 
@@ -60,7 +56,7 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const marca = capitalizeValue(req.body.marca);
+    const marca = trimValue(req.body.marca);
     if (!marca) return res.status(400).json({ error: 'La marca es requerida' });
 
     const [[current]] = await pool.query('SELECT logo FROM autos_marcas WHERE id = ?', [req.params.id]);

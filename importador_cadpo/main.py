@@ -13,9 +13,14 @@ from database import (
     DATABASE_CONFIG,
     create_connection,
     ensure_connection,
+    fetch_all_championships,
     fetch_championships,
+    fetch_driver_names,
     fetch_import_context,
+    fetch_registration_context,
     save_import,
+    save_new_drivers,
+    save_registrations,
     verify_connection,
 )
 
@@ -46,15 +51,21 @@ class ImportadorCadpo(tk.Tk):
         self.import_rows = []
         self.sheet = None
         self.scoring_sheet = None
+        self.driver_import_sheet = None
+        self.registration_import_sheet = None
+        self.registration_championship_value = tk.StringVar()
+        self.registration_driver_count = tk.StringVar(value="30")
+        self.loading_overlay = None
+        self.driver_import_column_order = list(range(7))
+        self.driver_import_visible_columns = list(range(7))
         self.columns_expanded = False
         self.columns_button = None
-        self.compact_column_order = [6, 4, 8]
+        self.compact_column_order = [0, 6, 8]
         self._pilot_validation_job = None
         self._scoring_row_job = None
         self.championship_value = tk.StringVar()
         self.driver_row_count = tk.StringVar(value="30")
         self.driver_row_count.trace_add("write", self._schedule_scoring_row_sync)
-        self.attendance_points = tk.StringVar()
 
         self.status = tk.StringVar(value="Iniciando conexión con la base de datos...")
 
@@ -92,6 +103,50 @@ class ImportadorCadpo(tk.Tk):
     def _clear_window(self):
         for widget in self.winfo_children():
             widget.destroy()
+
+    def _show_loading(self, title, detail):
+        self._hide_loading()
+        overlay = tk.Toplevel(self)
+        self.loading_overlay = overlay
+        overlay.title(title)
+        overlay.configure(bg=COLORS["panel"])
+        overlay.resizable(False, False)
+        overlay.transient(self)
+        overlay.protocol("WM_DELETE_WINDOW", lambda: None)
+        overlay.grab_set()
+
+        panel = tk.Frame(overlay, bg=COLORS["panel"], padx=34, pady=28)
+        panel.pack(fill="both", expand=True)
+        tk.Label(
+            panel, text=title.upper(), bg=COLORS["panel"], fg=COLORS["text"],
+            font=("Arial", 14, "bold"),
+        ).pack()
+        tk.Label(
+            panel, text=detail, bg=COLORS["panel"], fg=COLORS["muted"],
+            font=("Arial", 10), wraplength=420, justify="center",
+        ).pack(pady=(8, 18))
+        progress = ttk.Progressbar(panel, mode="indeterminate", length=360)
+        progress.pack(fill="x")
+        progress.start(12)
+
+        overlay.update_idletasks()
+        width = overlay.winfo_reqwidth()
+        height = overlay.winfo_reqheight()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
+        overlay.geometry(f"{width}x{height}+{x}+{y}")
+        overlay.focus_force()
+        overlay.update()
+
+    def _hide_loading(self):
+        if self.loading_overlay is None:
+            return
+        try:
+            self.loading_overlay.grab_release()
+            self.loading_overlay.destroy()
+        except tk.TclError:
+            pass
+        self.loading_overlay = None
 
     def _show_connection_screen(self):
         self._clear_window()
@@ -230,14 +285,58 @@ class ImportadorCadpo(tk.Tk):
         for widget in self.import_content.winfo_children():
             widget.destroy()
 
+        title_row = tk.Frame(self.import_content, bg=COLORS["background"])
+        title_row.pack(fill="x")
         tk.Label(
-            self.import_content,
+            title_row,
             text="SELECCIONAR CAMPEONATO",
             bg=COLORS["background"],
             fg=COLORS["text"],
             font=("Arial", 20, "bold"),
             anchor="w",
-        ).pack(fill="x")
+        ).pack(side="left", fill="x", expand=True)
+        tk.Button(
+            title_row,
+            text="+ PILOTOS",
+            command=self._show_driver_import,
+            bg=COLORS["panel"],
+            activebackground=COLORS["field"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            font=("Arial", 9, "bold"),
+            padx=14,
+            pady=8,
+        ).pack(side="right", padx=(8, 0))
+        tk.Button(
+            title_row,
+            text="+ INSCRIPTOS",
+            command=self._show_registration_import,
+            bg=COLORS["panel"],
+            activebackground=COLORS["field"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            font=("Arial", 9, "bold"),
+            padx=14,
+            pady=8,
+        ).pack(side="right")
+        tk.Button(
+            title_row,
+            text="SALIR",
+            command=self._close_application,
+            bg=COLORS["red"],
+            activebackground=COLORS["red_hover"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            font=("Arial", 9, "bold"),
+            padx=14,
+            pady=8,
+        ).pack(side="right")
         tk.Label(
             self.import_content,
             text="La planilla se generará usando las fechas cargadas en calendario.",
@@ -335,27 +434,6 @@ class ImportadorCadpo(tk.Tk):
         self.scoring_sheet.column_width(4, 110)
         self.scoring_sheet["A"].readonly()
 
-        extras = tk.Frame(scoring_area, bg=COLORS["panel"], padx=18, pady=14)
-        extras.pack(side="right", fill="y", padx=(16, 0))
-        tk.Label(
-            extras,
-            text="PUNTOS AUTOMÁTICOS",
-            bg=COLORS["panel"],
-            fg=COLORS["text"],
-            font=("Arial", 10, "bold"),
-        ).pack(anchor="w", pady=(0, 12))
-        for label, variable in (
-            ("Presentismo", self.attendance_points),
-        ):
-            tk.Label(
-                extras,
-                text=label.upper(),
-                bg=COLORS["panel"],
-                fg=COLORS["muted"],
-                font=("Arial", 8, "bold"),
-            ).pack(anchor="w", pady=(7, 4))
-            ttk.Entry(extras, textvariable=variable, width=24).pack(fill="x", ipady=5)
-
         tk.Button(
             self.import_content,
             text="CREAR PLANILLA",
@@ -370,6 +448,553 @@ class ImportadorCadpo(tk.Tk):
             padx=20,
             pady=12,
         ).pack(anchor="w", pady=18)
+
+    def _show_driver_import(self):
+        self._dispose_sheet()
+        for widget in self.import_content.winfo_children():
+            widget.destroy()
+
+        try:
+            self.connection = ensure_connection(self.connection)
+            drivers = fetch_driver_names(self.connection)
+        except Exception as error:
+            messagebox.showerror("Error", f"No se pudieron cargar los pilotos.\n\n{error}")
+            self._show_championship_selector()
+            return
+
+        self.driver_import_existing = {
+            self._normalize(driver["nombre"]): driver["nombre"] for driver in drivers
+        }
+        header = tk.Frame(self.import_content, bg=COLORS["background"])
+        header.pack(fill="x", padx=18, pady=(16, 10))
+        tk.Button(
+            header,
+            text="VOLVER",
+            command=self._show_championship_selector,
+            bg=COLORS["panel"],
+            activebackground=COLORS["field"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            padx=14,
+            pady=8,
+        ).pack(side="left")
+        tk.Label(
+            header,
+            text="AGREGAR PILOTOS",
+            bg=COLORS["background"],
+            fg=COLORS["text"],
+            font=("Arial", 18, "bold"),
+        ).pack(side="left", padx=18)
+        tk.Button(
+            header,
+            text="COLUMNAS",
+            command=self._edit_driver_import_columns,
+            bg=COLORS["panel"],
+            activebackground=COLORS["field"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            padx=14,
+            pady=8,
+        ).pack(side="right")
+
+        tk.Label(
+            self.import_content,
+            text="Pegá filas o columnas desde Excel. Las celdas sin completar se guardan vacías.",
+            bg=COLORS["background"],
+            fg=COLORS["muted"],
+            font=("Arial", 10),
+            anchor="w",
+        ).pack(fill="x", padx=18, pady=(0, 10))
+
+        self.driver_import_sheet = Sheet(
+            self.import_content,
+            data=[["", "", "", "", "ar", "", ""] for _ in range(50)],
+            headers=["NOMBRE", "LOCALIDAD", "PROVINCIA", "TELÉFONO", "NACIONALIDAD", "STEAM", "ESTADO"],
+            theme="dark",
+            show_row_index=True,
+            default_row_height=32,
+            default_header_height=36,
+            paste_can_expand_y=True,
+            paste_can_expand_x=False,
+        )
+        self.driver_import_sheet.pack(fill="both", expand=True, padx=18)
+        self.driver_import_sheet.enable_bindings(
+            "single_select", "drag_select", "arrowkeys", "edit_cell", "copy",
+            "cut", "paste", "delete", "undo", "ctrl_select",
+        )
+        for column, width in enumerate((280, 180, 180, 150, 130, 190, 240)):
+            self.driver_import_sheet.column_width(column, width)
+        self.driver_import_sheet["G"].readonly()
+        self.driver_import_sheet.bind("<<SheetModified>>", self._refresh_driver_import_states)
+        self._apply_driver_import_columns(redraw=False)
+
+        footer = tk.Frame(self.import_content, bg=COLORS["background"])
+        footer.pack(fill="x", padx=18, pady=14)
+        self.driver_import_status = tk.Label(
+            footer,
+            text="Ingresá o pegá los nombres para comprobarlos.",
+            bg=COLORS["background"],
+            fg=COLORS["muted"],
+            font=("Arial", 10),
+        )
+        self.driver_import_status.pack(side="left")
+        tk.Button(
+            footer,
+            text="GUARDAR PILOTOS",
+            command=self._save_driver_import,
+            bg=COLORS["red"],
+            activebackground=COLORS["red_hover"],
+            fg=COLORS["text"],
+            activeforeground=COLORS["text"],
+            relief="flat",
+            cursor="hand2",
+            font=("Arial", 10, "bold"),
+            padx=20,
+            pady=10,
+        ).pack(side="right")
+
+    def _read_driver_import_rows(self):
+        drivers = []
+        seen = set()
+        for row in self.driver_import_sheet.data:
+            raw_name = str(row[0] if row else "").strip()
+            if not raw_name:
+                continue
+            name = " ".join(part.capitalize() for part in raw_name.split())
+            key = self._normalize(name)
+            if key not in seen:
+                values = list(row) + [""] * (7 - len(row))
+                drivers.append({
+                    "nombre": name,
+                    "localidad": " ".join(part.capitalize() for part in str(values[1]).strip().split()),
+                    "provincia": " ".join(part.capitalize() for part in str(values[2]).strip().split()),
+                    "telefono": "".join(character for character in str(values[3]) if character.isdigit()),
+                    "nacionalidad": str(values[4]).strip().lower(),
+                    "steam": str(values[5]).strip(),
+                })
+                seen.add(key)
+        return drivers
+
+    def _apply_driver_import_columns(self, redraw=True):
+        if not self.driver_import_sheet:
+            return
+        ordered_columns = [
+            column for column in self.driver_import_column_order
+            if column in self.driver_import_visible_columns
+        ]
+        self.driver_import_sheet.display_columns(
+            columns=ordered_columns,
+            all_columns_displayed=False,
+            redraw=False,
+        )
+        self.driver_import_sheet.MT.displayed_columns = ordered_columns
+        self.driver_import_sheet.MT.reset_col_positions()
+        if redraw:
+            self.driver_import_sheet.redraw()
+
+    def _edit_driver_import_columns(self):
+        labels = {
+            0: "NOMBRE",
+            1: "LOCALIDAD",
+            2: "PROVINCIA",
+            3: "TELÉFONO",
+            4: "NACIONALIDAD",
+            5: "STEAM",
+            6: "ESTADO",
+        }
+        order = list(self.driver_import_column_order)
+        visible = {
+            column: tk.BooleanVar(value=column in self.driver_import_visible_columns)
+            for column in labels
+        }
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Columnas de pilotos")
+        dialog.configure(bg=COLORS["panel"])
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        tk.Label(
+            dialog,
+            text="COLUMNAS VISIBLES Y ORDEN",
+            bg=COLORS["panel"],
+            fg=COLORS["text"],
+            font=("Arial", 11, "bold"),
+        ).pack(anchor="w", padx=18, pady=(18, 10))
+
+        content = tk.Frame(dialog, bg=COLORS["panel"])
+        content.pack(fill="both", expand=True, padx=18)
+
+        def move(column, direction):
+            current_index = order.index(column)
+            new_index = current_index + direction
+            if not 0 <= new_index < len(order):
+                return
+            order[current_index], order[new_index] = order[new_index], order[current_index]
+            refresh_rows()
+
+        def refresh_rows():
+            for widget in content.winfo_children():
+                widget.destroy()
+            for index, column in enumerate(order):
+                row = tk.Frame(content, bg=COLORS["field"], padx=8, pady=5)
+                row.pack(fill="x", pady=2)
+                tk.Checkbutton(
+                    row,
+                    text=labels[column],
+                    variable=visible[column],
+                    bg=COLORS["field"],
+                    activebackground=COLORS["field"],
+                    fg=COLORS["text"],
+                    activeforeground=COLORS["text"],
+                    selectcolor=COLORS["panel"],
+                    font=("Arial", 9, "bold"),
+                    anchor="w",
+                ).pack(side="left", fill="x", expand=True)
+                tk.Button(
+                    row,
+                    text="▼",
+                    command=lambda value=column: move(value, 1),
+                    state="normal" if index < len(order) - 1 else "disabled",
+                    bg=COLORS["panel"],
+                    activebackground=COLORS["border"],
+                    fg=COLORS["text"],
+                    relief="flat",
+                    width=3,
+                ).pack(side="right", padx=(4, 0))
+                tk.Button(
+                    row,
+                    text="▲",
+                    command=lambda value=column: move(value, -1),
+                    state="normal" if index > 0 else "disabled",
+                    bg=COLORS["panel"],
+                    activebackground=COLORS["border"],
+                    fg=COLORS["text"],
+                    relief="flat",
+                    width=3,
+                ).pack(side="right")
+
+        def apply_columns():
+            selected = [column for column in order if visible[column].get()]
+            if not selected:
+                messagebox.showwarning("Sin columnas", "Seleccioná al menos una columna.", parent=dialog)
+                return
+            self.driver_import_column_order = order
+            self.driver_import_visible_columns = selected
+            self._apply_driver_import_columns()
+            dialog.destroy()
+
+        refresh_rows()
+        tk.Button(
+            dialog,
+            text="APLICAR",
+            command=apply_columns,
+            bg=COLORS["red"],
+            activebackground=COLORS["red_hover"],
+            fg=COLORS["text"],
+            relief="flat",
+            padx=18,
+            pady=9,
+        ).pack(anchor="e", padx=18, pady=18)
+
+    def _refresh_driver_import_states(self, _event=None):
+        if not self.driver_import_sheet or not self.driver_import_sheet.winfo_exists():
+            return
+        seen = set()
+        new_count = 0
+        skipped_count = 0
+        for row_index, row in enumerate(self.driver_import_sheet.data):
+            raw_name = str(row[0] if row else "").strip()
+            while len(row) < 7:
+                row.append("")
+            for column in range(7):
+                self.driver_import_sheet.dehighlight_cells(row=row_index, column=column, redraw=False)
+            nationality = str(row[4]).strip().lower() or "ar"
+            self.driver_import_sheet.set_cell_data(row_index, 4, nationality, redraw=False)
+            if not raw_name:
+                self.driver_import_sheet.set_cell_data(row_index, 6, "", redraw=False)
+                continue
+            name = " ".join(part.capitalize() for part in raw_name.split())
+            key = self._normalize(name)
+            self.driver_import_sheet.set_cell_data(row_index, 0, name, redraw=False)
+            self.driver_import_sheet.set_cell_data(
+                row_index, 1,
+                " ".join(part.capitalize() for part in str(row[1]).strip().split()),
+                redraw=False,
+            )
+            self.driver_import_sheet.set_cell_data(
+                row_index, 2,
+                " ".join(part.capitalize() for part in str(row[2]).strip().split()),
+                redraw=False,
+            )
+            self.driver_import_sheet.set_cell_data(
+                row_index, 3,
+                "".join(character for character in str(row[3]) if character.isdigit()),
+                redraw=False,
+            )
+            if key in self.driver_import_existing:
+                self.driver_import_sheet.set_cell_data(row_index, 6, f"YA EXISTE: {self.driver_import_existing[key]}", redraw=False)
+                for column in range(7):
+                    self.driver_import_sheet.highlight_cells(row=row_index, column=column, bg="#3b1515", fg="#fecaca", redraw=False)
+                skipped_count += 1
+            elif key in seen:
+                self.driver_import_sheet.set_cell_data(row_index, 6, "REPETIDO EN ESTA LISTA", redraw=False)
+                for column in range(7):
+                    self.driver_import_sheet.highlight_cells(row=row_index, column=column, bg="#3b1515", fg="#fecaca", redraw=False)
+                skipped_count += 1
+            else:
+                self.driver_import_sheet.set_cell_data(row_index, 6, "LISTO PARA AGREGAR", redraw=False)
+                for column in range(7):
+                    self.driver_import_sheet.highlight_cells(row=row_index, column=column, bg="#123524", fg="#bbf7d0", redraw=False)
+                seen.add(key)
+                new_count += 1
+        self.driver_import_sheet.redraw()
+        self.driver_import_status.configure(
+            text=f"{new_count} nuevos · {skipped_count} omitidos",
+            fg=COLORS["green"] if new_count else COLORS["muted"],
+        )
+
+    def _save_driver_import(self):
+        self._refresh_driver_import_states()
+        drivers = [
+            driver for driver in self._read_driver_import_rows()
+            if self._normalize(driver["nombre"]) not in self.driver_import_existing
+        ]
+        if not drivers:
+            messagebox.showinfo("Sin pilotos nuevos", "Todos los nombres ya están registrados o la lista está vacía.")
+            return
+        if not messagebox.askyesno("Confirmar pilotos", f"Se agregarán {len(drivers)} pilotos.\n\n¿Continuar?"):
+            return
+        self._show_loading("Guardando pilotos", f"Comprobando e insertando {len(drivers)} pilotos en la base de datos...")
+        try:
+            self.connection = ensure_connection(self.connection)
+            inserted, skipped = save_new_drivers(self.connection, drivers)
+        except Exception as error:
+            self._hide_loading()
+            messagebox.showerror("No se guardaron los pilotos", str(error))
+            return
+        finally:
+            self._hide_loading()
+        messagebox.showinfo(
+            "Pilotos procesados",
+            f"Agregados: {len(inserted)}\nOmitidos por repetición: {len(skipped)}",
+        )
+        self._show_driver_import()
+
+    def _show_registration_import(self):
+        self._dispose_sheet()
+        for widget in self.import_content.winfo_children():
+            widget.destroy()
+        self._show_loading("Cargando campeonatos", "Buscando campeonatos disponibles para inscripciones...")
+        try:
+            self.connection = ensure_connection(self.connection)
+            self.registration_championships = fetch_all_championships(self.connection)
+        except Exception as error:
+            self._hide_loading()
+            messagebox.showerror("Error", f"No se pudieron cargar los campeonatos.\n\n{error}")
+            self._show_championship_selector()
+            return
+        finally:
+            self._hide_loading()
+
+        header = tk.Frame(self.import_content, bg=COLORS["background"])
+        header.pack(fill="x", padx=18, pady=(16, 12))
+        tk.Button(
+            header, text="VOLVER", command=self._show_championship_selector,
+            bg=COLORS["panel"], activebackground=COLORS["field"], fg=COLORS["text"],
+            activeforeground=COLORS["text"], relief="flat", cursor="hand2", padx=14, pady=8,
+        ).pack(side="left")
+        tk.Label(
+            header, text="AGREGAR INSCRIPTOS", bg=COLORS["background"],
+            fg=COLORS["text"], font=("Arial", 18, "bold"),
+        ).pack(side="left", padx=18)
+
+        selector = tk.Frame(self.import_content, bg=COLORS["background"])
+        selector.pack(fill="x", padx=18, pady=(0, 12))
+        labels = [
+            f'{row["id"]} · {row["categoria"]} · T{row["temporada"]} · {row["anio"]}'
+            for row in self.registration_championships
+        ]
+        ttk.Combobox(
+            selector, textvariable=self.registration_championship_value,
+            values=labels, state="readonly", font=("Arial", 11),
+        ).pack(side="left", fill="x", expand=True, ipady=6)
+        tk.Label(
+            selector, text="CANTIDAD DE PILOTOS", bg=COLORS["background"],
+            fg=COLORS["muted"], font=("Arial", 8, "bold"),
+        ).pack(side="left", padx=(14, 7))
+        ttk.Spinbox(
+            selector, from_=1, to=500, textvariable=self.registration_driver_count,
+            width=7, font=("Arial", 11),
+        ).pack(side="left", ipady=5)
+        tk.Button(
+            selector, text="CARGAR", command=self._load_registration_sheet,
+            bg=COLORS["red"], activebackground=COLORS["red_hover"], fg=COLORS["text"],
+            relief="flat", cursor="hand2", font=("Arial", 9, "bold"), padx=18, pady=10,
+        ).pack(side="left", padx=(10, 0))
+
+        self.registration_sheet_container = tk.Frame(self.import_content, bg=COLORS["background"])
+        self.registration_sheet_container.pack(fill="both", expand=True, padx=18)
+
+    def _load_registration_sheet(self):
+        championship = next(
+            (
+                row for row in self.registration_championships
+                if self.registration_championship_value.get().startswith(f'{row["id"]} ·')
+            ),
+            None,
+        )
+        if not championship:
+            messagebox.showwarning("Campeonato", "Seleccioná un campeonato.")
+            return
+        try:
+            row_count = int(self.registration_driver_count.get())
+            if not 1 <= row_count <= 500:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Cantidad inválida", "Ingresá entre 1 y 500 pilotos.")
+            return
+        self._show_loading("Preparando inscriptos", "Consultando pilotos, autos y categoría del campeonato...")
+        try:
+            self.connection = ensure_connection(self.connection)
+            self.registration_context = fetch_registration_context(self.connection, championship["id"])
+        except Exception as error:
+            self._hide_loading()
+            messagebox.showerror("Error", f"No se pudieron preparar los inscriptos.\n\n{error}")
+            return
+        finally:
+            self._hide_loading()
+        self.registration_championship_id = championship["id"]
+        for widget in self.registration_sheet_container.winfo_children():
+            widget.destroy()
+
+        self.registration_import_sheet = Sheet(
+            self.registration_sheet_container,
+            data=[["", "", "", True, ""] for _ in range(row_count)],
+            headers=["PILOTO", "AUTO", "NÚMERO", "PAGO", "ESTADO"],
+            theme="dark", show_row_index=True, default_row_height=32,
+            default_header_height=38, paste_can_expand_y=True, paste_can_expand_x=False,
+        )
+        self.registration_import_sheet.pack(fill="both", expand=True)
+        self.registration_import_sheet.enable_bindings(
+            "single_select", "drag_select", "arrowkeys", "edit_cell", "copy",
+            "cut", "paste", "delete", "undo", "ctrl_select",
+        )
+        for column, width in enumerate((300, 300, 100, 80, 250)):
+            self.registration_import_sheet.column_width(column, width)
+        self.registration_import_sheet.dropdown(
+            "A", values=[item["nombre"] for item in self.registration_context["drivers"]],
+            state="normal", validate_input=False,
+        )
+        self.registration_import_sheet.dropdown(
+            "B", values=[f'{item["marca"]} {item["modelo"]}' for item in self.registration_context["cars"]],
+            state="normal", validate_input=False,
+        )
+        self.registration_import_sheet.checkbox("D", checked=True)
+        self.registration_import_sheet["E"].readonly()
+        self.registration_import_sheet.bind("<<SheetModified>>", self._refresh_registration_states)
+
+        footer = tk.Frame(self.registration_sheet_container, bg=COLORS["background"])
+        footer.pack(fill="x", pady=12)
+        self.registration_import_status = tk.Label(
+            footer, text="Pegá los pilotos y seleccioná sus autos.",
+            bg=COLORS["background"], fg=COLORS["muted"], font=("Arial", 10),
+        )
+        self.registration_import_status.pack(side="left")
+        tk.Button(
+            footer, text="GUARDAR INSCRIPTOS", command=self._save_registration_import,
+            bg=COLORS["red"], activebackground=COLORS["red_hover"], fg=COLORS["text"],
+            relief="flat", cursor="hand2", font=("Arial", 10, "bold"), padx=20, pady=10,
+        ).pack(side="right")
+
+    def _build_registration_import(self):
+        driver_map = {self._normalize(item["nombre"]): item for item in self.registration_context["drivers"]}
+        car_map = {
+            self._normalize(f'{item["marca"]} {item["modelo"]}'): item
+            for item in self.registration_context["cars"]
+        }
+        existing = self.registration_context["registered_driver_ids"]
+        seen = set()
+        registrations = []
+        invalid = 0
+        for row_index, row in enumerate(self.registration_import_sheet.data):
+            values = list(row) + [""] * (5 - len(row))
+            driver_text = str(values[0]).strip()
+            car_text = str(values[1]).strip()
+            for column in range(5):
+                self.registration_import_sheet.dehighlight_cells(row=row_index, column=column, redraw=False)
+            if not driver_text and not car_text:
+                self.registration_import_sheet.set_cell_data(row_index, 4, "", redraw=False)
+                continue
+            driver = driver_map.get(self._normalize(driver_text))
+            car = car_map.get(self._normalize(car_text))
+            if not driver:
+                status = "PILOTO NO REGISTRADO"
+            elif driver["id"] in existing:
+                status = "YA ESTÁ INSCRIPTO"
+            elif driver["id"] in seen:
+                status = "REPETIDO EN ESTA LISTA"
+            elif not car:
+                status = "AUTO NO VÁLIDO PARA LA CATEGORÍA"
+            else:
+                status = "LISTO PARA AGREGAR"
+                number_text = "".join(character for character in str(values[2]) if character.isdigit())
+                self.registration_import_sheet.set_cell_data(row_index, 0, driver["nombre"], redraw=False)
+                self.registration_import_sheet.set_cell_data(row_index, 1, f'{car["marca"]} {car["modelo"]}', redraw=False)
+                self.registration_import_sheet.set_cell_data(row_index, 2, number_text, redraw=False)
+                registrations.append({
+                    "idpiloto": driver["id"], "idauto": car["id"],
+                    "numero": int(number_text) if number_text else 0,
+                    "pago": 0 if values[3] is False else 1,
+                })
+                seen.add(driver["id"])
+            self.registration_import_sheet.set_cell_data(row_index, 4, status, redraw=False)
+            ready = status == "LISTO PARA AGREGAR"
+            for column in range(5):
+                self.registration_import_sheet.highlight_cells(
+                    row=row_index, column=column,
+                    bg="#123524" if ready else "#3b1515",
+                    fg="#bbf7d0" if ready else "#fecaca", redraw=False,
+                )
+            if not ready:
+                invalid += 1
+        self.registration_import_sheet.redraw()
+        self.registration_import_status.configure(
+            text=f"{len(registrations)} listos · {invalid} omitidos",
+            fg=COLORS["green"] if registrations else COLORS["muted"],
+        )
+        return registrations
+
+    def _refresh_registration_states(self, _event=None):
+        if self.registration_import_sheet and self.registration_import_sheet.winfo_exists():
+            self._build_registration_import()
+
+    def _save_registration_import(self):
+        registrations = self._build_registration_import()
+        if not registrations:
+            messagebox.showinfo("Sin inscriptos", "No hay filas válidas para guardar.")
+            return
+        if not messagebox.askyesno("Confirmar inscriptos", f"Se agregarán {len(registrations)} inscriptos.\n\n¿Continuar?"):
+            return
+        self._show_loading("Guardando inscriptos", f"Validando e insertando {len(registrations)} inscriptos...")
+        try:
+            self.connection = ensure_connection(self.connection)
+            inserted, skipped = save_registrations(
+                self.connection, self.registration_championship_id, registrations,
+            )
+        except Exception as error:
+            self._hide_loading()
+            messagebox.showerror("No se guardaron los inscriptos", str(error))
+            return
+        finally:
+            self._hide_loading()
+        messagebox.showinfo("Inscriptos procesados", f"Agregados: {inserted}\nOmitidos: {skipped}")
+        self._load_registration_sheet()
 
     def _load_championship_sheet(self):
         selected_index = next(
@@ -396,26 +1021,35 @@ class ImportadorCadpo(tk.Tk):
             self._report_error("Puntajes inválidos", error)
             return
 
+        self._show_loading("Creando planilla", "Consultando inscriptos, fechas y configuración del campeonato...")
         try:
             self.connection = ensure_connection(self.connection)
             championship_id = self.championships[selected_index]["id"]
             self.import_context = fetch_import_context(self.connection, championship_id)
             self.import_context["initial_row_count"] = initial_row_count
             self.import_context["scoring"] = scoring
-            self.import_context["event_multipliers"] = [1.0] * len(self.import_context["events"])
+            self.import_context["event_multipliers"] = [
+                {"sprint": 1.0, "final": 1.0}
+                for _event in self.import_context["events"]
+            ]
         except Exception as error:
+            self._hide_loading()
             self._report_error("No se pudo preparar la planilla", error)
             return
 
         if not self.import_context["events"]:
+            self._hide_loading()
             messagebox.showwarning("Sin fechas", "El campeonato no tiene fechas cargadas en calendario.")
             return
 
         try:
             self._render_sheet()
         except Exception as error:
+            self._hide_loading()
             self._report_error("Error al crear la planilla", error)
             self._show_championship_selector()
+        finally:
+            self._hide_loading()
 
     def _report_error(self, title, error):
         error_detail = traceback.format_exc()
@@ -519,16 +1153,11 @@ class ImportadorCadpo(tk.Tk):
                     continue
                 target.setdefault(points, []).append(position)
 
-        def automatic_points(variable, label):
-            value = variable.get().strip()
-            return self._integer(value or "0", label, 0)
-
         return {
             "qualy_sprint_by_points": qualy_sprint_by_points,
             "qualy_final_by_points": qualy_final_by_points,
             "sprint_by_points": sprint_by_points,
             "final_by_points": final_by_points,
-            "presentismo": automatic_points(self.attendance_points, "Presentismo"),
         }
 
     def _render_sheet(self):
@@ -548,23 +1177,12 @@ class ImportadorCadpo(tk.Tk):
 
         tk.Button(
             toolbar,
-            text="VOLVER",
-            command=self._show_championship_selector,
-            bg=COLORS["field"],
-            activebackground=COLORS["border"],
-            fg=COLORS["text"],
-            relief="flat",
-            cursor="hand2",
-            padx=14,
-            pady=8,
-        ).pack(side="right", padx=(8, 0))
-        tk.Button(
-            toolbar,
-            text="REINICIAR",
-            command=self._restart_application,
+            text="SALIR",
+            command=self._close_application,
             bg=COLORS["red"],
             activebackground=COLORS["red_hover"],
             fg=COLORS["text"],
+            activeforeground=COLORS["text"],
             relief="flat",
             cursor="hand2",
             padx=14,
@@ -572,8 +1190,8 @@ class ImportadorCadpo(tk.Tk):
         ).pack(side="right", padx=(8, 0))
         self.columns_button = tk.Button(
             toolbar,
-            text="MOSTRAR COLUMNAS",
-            command=self._toggle_sheet_columns,
+            text="COLUMNAS",
+            command=self._edit_compact_column_order,
             bg=COLORS["field"],
             activebackground=COLORS["border"],
             fg=COLORS["text"],
@@ -583,18 +1201,6 @@ class ImportadorCadpo(tk.Tk):
             pady=8,
         )
         self.columns_button.pack(side="right", padx=(8, 0))
-        tk.Button(
-            toolbar,
-            text="ORDEN COLUMNAS",
-            command=self._edit_compact_column_order,
-            bg=COLORS["field"],
-            activebackground=COLORS["border"],
-            fg=COLORS["text"],
-            relief="flat",
-            cursor="hand2",
-            padx=14,
-            pady=8,
-        ).pack(side="right", padx=(8, 0))
         tk.Button(
             toolbar,
             text="MULTIPLICADORES",
@@ -738,8 +1344,6 @@ class ImportadorCadpo(tk.Tk):
                     state="normal",
                     validate_input=False,
                 )
-            for derived_offset in (0,):
-                self.sheet[num2alpha(start_column + derived_offset)].readonly()
         event_columns_end = 5 + (len(self.import_context["events"]) * 9)
         for column in range(5, event_columns_end):
             self.sheet.column_width(column, 112)
@@ -838,7 +1442,7 @@ class ImportadorCadpo(tk.Tk):
         self.sheet.insert_rows([row], undo=True, emit_event=True)
 
     def _compact_column_indexes(self):
-        columns = [0, 1, 2, 3, 4]
+        columns = [0, 1]
         for event_index, _event in enumerate(self.import_context["events"]):
             start_column = 5 + (event_index * 9)
             columns.extend(start_column + offset for offset in self.compact_column_order)
@@ -846,11 +1450,23 @@ class ImportadorCadpo(tk.Tk):
 
     def _edit_compact_column_order(self):
         labels = {
-            6: "PUNTOS QUALY FINAL",
+            0: "PRESENTISMO",
+            1: "POSICIÓN QUALY SPRINT",
+            2: "PUNTOS QUALY SPRINT",
+            3: "POSICIÓN SPRINT",
             4: "PUNTOS SPRINT",
+            5: "POSICIÓN QUALY FINAL",
+            6: "PUNTOS QUALY FINAL",
+            7: "POSICIÓN FINAL",
             8: "PUNTOS FINAL",
         }
-        order = list(self.compact_column_order)
+        order = list(self.compact_column_order) + [
+            offset for offset in labels if offset not in self.compact_column_order
+        ]
+        visible = {
+            offset: tk.BooleanVar(value=offset in self.compact_column_order)
+            for offset in labels
+        }
 
         dialog = tk.Toplevel(self)
         dialog.title("Orden de columnas")
@@ -861,7 +1477,7 @@ class ImportadorCadpo(tk.Tk):
 
         tk.Label(
             dialog,
-            text="ORDEN DE LAS COLUMNAS VISIBLES",
+            text="COLUMNAS VISIBLES Y ORDEN",
             bg=COLORS["panel"],
             fg=COLORS["text"],
             font=("Arial", 11, "bold"),
@@ -869,63 +1485,92 @@ class ImportadorCadpo(tk.Tk):
 
         content = tk.Frame(dialog, bg=COLORS["panel"])
         content.pack(fill="both", expand=True, padx=18)
-        column_list = tk.Listbox(
-            content,
-            height=3,
-            width=30,
-            bg=COLORS["field"],
-            fg=COLORS["text"],
-            selectbackground=COLORS["red"],
-            selectforeground=COLORS["text"],
-            borderwidth=0,
-            highlightthickness=1,
-            highlightbackground=COLORS["border"],
-            font=("Arial", 10, "bold"),
-        )
-        column_list.pack(side="left", fill="both", expand=True)
 
-        def refresh_list(selected_index=0):
-            column_list.delete(0, "end")
-            for offset in order:
-                column_list.insert("end", labels[offset])
-            column_list.selection_set(selected_index)
-            column_list.activate(selected_index)
-
-        def move(direction):
-            selection = column_list.curselection()
-            if not selection:
-                return
-            current_index = selection[0]
+        def move(offset, direction):
+            current_index = order.index(offset)
             new_index = current_index + direction
             if not 0 <= new_index < len(order):
                 return
             order[current_index], order[new_index] = order[new_index], order[current_index]
-            refresh_list(new_index)
+            refresh_rows()
 
-        controls = tk.Frame(content, bg=COLORS["panel"])
-        controls.pack(side="left", padx=(10, 0))
-        for text, direction in (("SUBIR", -1), ("BAJAR", 1)):
+        def refresh_rows():
+            for widget in content.winfo_children():
+                widget.destroy()
+            for index, offset in enumerate(order):
+                row = tk.Frame(content, bg=COLORS["field"], padx=8, pady=5)
+                row.pack(fill="x", pady=2)
+                tk.Checkbutton(
+                    row,
+                    text=labels[offset],
+                    variable=visible[offset],
+                    bg=COLORS["field"],
+                    activebackground=COLORS["field"],
+                    fg=COLORS["text"],
+                    activeforeground=COLORS["text"],
+                    selectcolor=COLORS["panel"],
+                    font=("Arial", 9, "bold"),
+                    anchor="w",
+                ).pack(side="left", fill="x", expand=True)
+                tk.Button(
+                    row,
+                    text="▼",
+                    command=lambda value=offset: move(value, 1),
+                    state="normal" if index < len(order) - 1 else "disabled",
+                    bg=COLORS["panel"],
+                    activebackground=COLORS["border"],
+                    fg=COLORS["text"],
+                    relief="flat",
+                    width=3,
+                ).pack(side="right", padx=(4, 0))
+                tk.Button(
+                    row,
+                    text="▲",
+                    command=lambda value=offset: move(value, -1),
+                    state="normal" if index > 0 else "disabled",
+                    bg=COLORS["panel"],
+                    activebackground=COLORS["border"],
+                    fg=COLORS["text"],
+                    relief="flat",
+                    width=3,
+                ).pack(side="right")
+
+        def select_all(value):
+            for variable in visible.values():
+                variable.set(value)
+
+        selection_actions = tk.Frame(dialog, bg=COLORS["panel"])
+        selection_actions.pack(fill="x", padx=18, pady=(10, 0))
+        for text, value in (("MARCAR TODAS", True), ("OCULTAR TODAS", False)):
             tk.Button(
-                controls,
+                selection_actions,
                 text=text,
-                command=lambda value=direction: move(value),
+                command=lambda checked=value: select_all(checked),
                 bg=COLORS["field"],
                 activebackground=COLORS["border"],
                 fg=COLORS["text"],
                 relief="flat",
-                width=9,
+                padx=10,
                 pady=7,
-            ).pack(pady=(0, 7))
+            ).pack(side="left", padx=(0, 7))
 
         def apply_order():
-            self.compact_column_order = order
+            selected_order = [offset for offset in order if visible[offset].get()]
+            if not selected_order:
+                messagebox.showwarning(
+                    "Sin columnas",
+                    "Seleccioná al menos una columna para mostrar.",
+                    parent=dialog,
+                )
+                return
+            self.compact_column_order = selected_order
             self.columns_expanded = False
             self._apply_compact_columns(redraw=True)
             if self.columns_button:
-                self.columns_button.configure(text="MOSTRAR COLUMNAS")
+                self.columns_button.configure(text="COLUMNAS")
             dialog.destroy()
 
-        refresh_list()
+        refresh_rows()
         tk.Button(
             dialog,
             text="APLICAR",
@@ -951,7 +1596,7 @@ class ImportadorCadpo(tk.Tk):
 
         tk.Label(
             dialog,
-            text="MULTIPLICADOR DE PUNTOS FINAL POR FECHA",
+            text="MULTIPLICADORES DE SPRINT Y FINAL POR FECHA",
             bg=COLORS["panel"],
             fg=COLORS["text"],
             font=("Arial", 11, "bold"),
@@ -971,14 +1616,24 @@ class ImportadorCadpo(tk.Tk):
                 bg=COLORS["panel"],
                 fg=COLORS["text"],
             ).pack(side="left")
-            variable = tk.StringVar(value=str(multipliers[index]).replace(".", ","))
-            ttk.Entry(row, textvariable=variable, width=8).pack(side="right", ipady=4)
-            entries.append(variable)
+            final_variable = tk.StringVar(value=str(multipliers[index]["final"]).replace(".", ","))
+            sprint_variable = tk.StringVar(value=str(multipliers[index]["sprint"]).replace(".", ","))
+            ttk.Entry(row, textvariable=final_variable, width=8).pack(side="right", ipady=4)
+            tk.Label(row, text="FINAL", bg=COLORS["panel"], fg=COLORS["muted"]).pack(side="right", padx=(10, 5))
+            ttk.Entry(row, textvariable=sprint_variable, width=8).pack(side="right", ipady=4)
+            tk.Label(row, text="SPRINT", bg=COLORS["panel"], fg=COLORS["muted"]).pack(side="right", padx=(10, 5))
+            entries.append((sprint_variable, final_variable))
 
         def save_multipliers():
             try:
-                values = [float(variable.get().strip().replace(",", ".")) for variable in entries]
-                if any(value <= 0 for value in values):
+                values = [
+                    {
+                        "sprint": float(sprint.get().strip().replace(",", ".")),
+                        "final": float(final.get().strip().replace(",", ".")),
+                    }
+                    for sprint, final in entries
+                ]
+                if any(item["sprint"] <= 0 or item["final"] <= 0 for item in values):
                     raise ValueError
             except ValueError:
                 messagebox.showwarning("Multiplicador inválido", "Usá valores mayores a cero, por ejemplo 1, 1,5 o 2.", parent=dialog)
@@ -1034,7 +1689,7 @@ class ImportadorCadpo(tk.Tk):
             self.columns_button.configure(text="OCULTAR COLUMNAS")
         else:
             self._apply_compact_columns(redraw=True)
-            self.columns_button.configure(text="MOSTRAR COLUMNAS")
+            self.columns_button.configure(text="COLUMNAS")
 
     def _restart_application(self):
         if not messagebox.askyesno(
@@ -1053,7 +1708,6 @@ class ImportadorCadpo(tk.Tk):
         self.columns_expanded = False
         self.championship_value.set("")
         self.driver_row_count.set("30")
-        self.attendance_points.set("")
         self.status.set("Iniciando conexión con la base de datos...")
         self._show_connection_screen()
         self.after(150, self._start_connection_test)
@@ -1090,6 +1744,9 @@ class ImportadorCadpo(tk.Tk):
         missing = 0
         scoring = self.import_context["scoring"]
         for row_index, row in enumerate(self.sheet.data):
+            for column in range(5, self.total_points_column):
+                if str(row[column]).strip() == "-":
+                    self.sheet.set_cell_data(row_index, column, "", redraw=False)
             numeric_columns = [3, *range(5, self.total_points_column)]
             for column in numeric_columns:
                 if str(row[column]).strip() == "0":
@@ -1097,7 +1754,7 @@ class ImportadorCadpo(tk.Tk):
 
             for event_index, _event in enumerate(self.import_context["events"]):
                 start_column = 5 + (event_index * 9)
-                multiplier = self.import_context["event_multipliers"][event_index]
+                multipliers = self.import_context["event_multipliers"][event_index]
                 try:
                     qualy_sprint_points = self._number(row[start_column + 2], "puntos Qualy Sprint", 0)
                 except ValueError:
@@ -1115,12 +1772,6 @@ class ImportadorCadpo(tk.Tk):
                 except ValueError:
                     final_points = 0
 
-                self.sheet.set_cell_data(
-                    row_index,
-                    start_column,
-                    scoring["presentismo"] if any((qualy_sprint_points, sprint_points, qualy_final_points, final_points)) else "",
-                    redraw=False,
-                )
                 if qualy_sprint_points:
                     self.sheet.set_cell_data(
                         row_index,
@@ -1139,7 +1790,7 @@ class ImportadorCadpo(tk.Tk):
                         self._position_for_points(
                             scoring["sprint_by_points"],
                             sprint_points,
-                            1,
+                            multipliers["sprint"],
                         ),
                         redraw=False,
                     )
@@ -1161,7 +1812,7 @@ class ImportadorCadpo(tk.Tk):
                         self._position_for_points(
                             scoring["final_by_points"],
                             final_points,
-                            multiplier,
+                            multipliers["final"],
                         ),
                         redraw=False,
                     )
@@ -1249,6 +1900,20 @@ class ImportadorCadpo(tk.Tk):
             except tk.TclError:
                 pass
             self.sheet = None
+        if self.driver_import_sheet is not None:
+            try:
+                self.driver_import_sheet.unbind("<<SheetModified>>")
+                self.driver_import_sheet.destroy()
+            except tk.TclError:
+                pass
+            self.driver_import_sheet = None
+        if self.registration_import_sheet is not None:
+            try:
+                self.registration_import_sheet.unbind("<<SheetModified>>")
+                self.registration_import_sheet.destroy()
+            except tk.TclError:
+                pass
+            self.registration_import_sheet = None
 
     def _header_cell(self, text, column, width=14, row=0, columnspan=1, rowspan=1):
         tk.Label(
@@ -1562,11 +2227,6 @@ class ImportadorCadpo(tk.Tk):
             self._normalize(item["nombre"]): item
             for item in self.import_context["drivers"]
         }
-        car_map = {
-            self._normalize(f'{item["marca"]} {item["modelo"]}'): item
-            for item in self.import_context["cars"]
-        }
-        registrations = []
         results = []
         errors = []
         used_drivers = set()
@@ -1574,31 +2234,20 @@ class ImportadorCadpo(tk.Tk):
 
         for row_index, row in enumerate(self.sheet.data, start=1):
             driver_text = str(row[1] if len(row) > 1 else "").strip()
-            car_text = str(row[2] if len(row) > 2 else "").strip()
             has_event_data = any(
                 self._has_value(value)
                 for value in row[5:self.total_points_column]
             )
-            if not driver_text and not car_text and not has_event_data:
+            if not driver_text and not has_event_data:
                 self.sheet.set_cell_data(row_index - 1, 0, "", redraw=False)
                 continue
 
             row_errors = []
             driver = driver_map.get(self._normalize(driver_text))
-            car = car_map.get(self._normalize(car_text))
             if not driver:
-                row_errors.append("piloto no encontrado")
-            if not car:
-                row_errors.append("auto no encontrado en la categoría")
+                row_errors.append("piloto no encontrado entre los inscriptos del campeonato")
             if driver and driver["id"] in used_drivers:
                 row_errors.append("piloto repetido")
-
-            try:
-                number_text = row[3] if len(row) > 3 else ""
-                number = self._integer(number_text or "0", "número", 0)
-            except (ValueError, TypeError):
-                number = None
-                row_errors.append("número inválido")
 
             row_results = []
             if driver:
@@ -1607,6 +2256,7 @@ class ImportadorCadpo(tk.Tk):
                     values = list(row[start_column:start_column + 9])
                     while len(values) < 9:
                         values.append("")
+                    values = ["" if str(value).strip() == "-" else value for value in values]
                     has_result = any(self._has_value(value) for value in values)
                     if not has_result:
                         continue
@@ -1689,23 +2339,15 @@ class ImportadorCadpo(tk.Tk):
                 redraw=False,
             )
             used_drivers.add(driver["id"])
-            registrations.append(
-                {
-                    "idpiloto": driver["id"],
-                    "idauto": car["id"],
-                    "numero": number,
-                    "pago": 1 if bool(row[4]) else 0,
-                }
-            )
             results.extend(row_results)
 
-        if not registrations:
-            errors.append("No hay filas válidas para guardar.")
+        if not results:
+            errors.append("No hay resultados válidos para guardar.")
         self.sheet.redraw()
-        return registrations, results, errors
+        return results, errors
 
     def _validate_sheet(self):
-        registrations, results, errors = self._build_import_payload()
+        results, errors = self._build_import_payload()
         if errors:
             self.save_button.configure(state="disabled")
             self.sheet_status.configure(
@@ -1716,44 +2358,47 @@ class ImportadorCadpo(tk.Tk):
             return False
 
         self.sheet_status.configure(
-            text=f'{len(registrations)} pilotos y {len(results)} resultados listos para guardar.',
+            text=f'{len(results)} resultados listos para guardar.',
             fg=COLORS["green"],
         )
         self.save_button.configure(state="normal")
         return True
 
     def _save_sheet(self):
-        registrations, results, errors = self._build_import_payload()
+        results, errors = self._build_import_payload()
         if errors:
             self._validate_sheet()
             return
         if not messagebox.askyesno(
             "Confirmar importación",
-            f"Se guardarán {len(registrations)} inscriptos y {len(results)} resultados.\n\n¿Continuar?",
+            f"Se guardarán {len(results)} resultados.\n\n¿Continuar?",
         ):
             return
 
+        self._show_loading("Guardando resultados", f"Insertando {len(results)} resultados. No cierres la aplicación...")
         try:
             self.connection = ensure_connection(self.connection)
             save_import(
                 self.connection,
                 self.import_context["championship"]["id"],
-                registrations,
                 results,
             )
         except Exception as error:
             self.save_button.configure(state="disabled")
+            self._hide_loading()
             messagebox.showerror(
                 "Importación cancelada",
                 f"No se guardó ningún dato.\n\n{error}",
             )
             return
+        finally:
+            self._hide_loading()
 
         self.sheet_status.configure(text="Importación completada correctamente.", fg=COLORS["green"])
         self.save_button.configure(state="disabled")
         messagebox.showinfo(
             "Importación completa",
-            f"Se guardaron {len(registrations)} inscriptos y {len(results)} resultados.",
+            f"Se guardaron {len(results)} resultados.",
         )
 
     def _disconnect(self):
@@ -1766,10 +2411,17 @@ class ImportadorCadpo(tk.Tk):
         self.after(150, self._start_connection_test)
 
     def _close_application(self):
-        self._dispose_sheet()
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
-        self.destroy()
+        try:
+            self._hide_loading()
+            self._dispose_sheet()
+            if self.connection:
+                self.connection.close()
+        except Exception:
+            pass
+        finally:
+            self.connection = None
+            self.quit()
+            self.destroy()
 
 
 if __name__ == "__main__":

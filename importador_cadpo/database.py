@@ -1,4 +1,5 @@
 import os
+import unicodedata
 
 import mysql.connector
 
@@ -67,6 +68,151 @@ def fetch_championships(connection):
         cursor.close()
 
 
+def fetch_all_championships(connection):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT c.id, c.temporada, c.anio, c.idcategoria, cat.categoria
+            FROM campeonatos c
+            JOIN categorias cat ON cat.id = c.idcategoria
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM inscriptos i
+                WHERE i.idcampeonato = c.id
+            )
+            ORDER BY c.anio DESC, cat.categoria ASC, c.temporada DESC
+            """
+        )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+
+
+def fetch_registration_context(connection, championship_id):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT idcategoria FROM campeonatos WHERE id = %s", (championship_id,))
+        championship = cursor.fetchone()
+        if not championship:
+            raise ValueError("El campeonato seleccionado no existe.")
+        cursor.execute("SELECT id, nombre FROM pilotos ORDER BY nombre ASC")
+        drivers = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT a.id, a.modelo, am.marca
+            FROM autos a
+            JOIN autos_marcas am ON am.id = a.marca
+            WHERE a.idcategoria = %s
+            ORDER BY am.marca ASC, a.modelo ASC
+            """,
+            (championship["idcategoria"],),
+        )
+        cars = cursor.fetchall()
+        cursor.execute("SELECT idpiloto FROM inscriptos WHERE idcampeonato = %s", (championship_id,))
+        registered_driver_ids = {row["idpiloto"] for row in cursor.fetchall()}
+        return {"drivers": drivers, "cars": cars, "registered_driver_ids": registered_driver_ids}
+    finally:
+        cursor.close()
+
+
+def save_registrations(connection, championship_id, registrations):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        if connection.in_transaction:
+            connection.rollback()
+        connection.start_transaction()
+        cursor.execute(
+            "SELECT idpiloto FROM inscriptos WHERE idcampeonato = %s FOR UPDATE",
+            (championship_id,),
+        )
+        existing = {row["idpiloto"] for row in cursor.fetchall()}
+        inserted = 0
+        skipped = 0
+        for row in registrations:
+            if row["idpiloto"] in existing:
+                skipped += 1
+                continue
+            cursor.execute(
+                """
+                INSERT INTO inscriptos (idcampeonato, idpiloto, idauto, numero, pago)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (championship_id, row["idpiloto"], row["idauto"], row["numero"], row["pago"]),
+            )
+            existing.add(row["idpiloto"])
+            inserted += 1
+        connection.commit()
+        return inserted, skipped
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
+def _normalize_driver_name(value):
+    normalized = unicodedata.normalize("NFD", str(value or "").strip())
+    return " ".join(
+        "".join(character for character in normalized if unicodedata.category(character) != "Mn")
+        .casefold()
+        .split()
+    )
+
+
+def fetch_driver_names(connection):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, nombre FROM pilotos ORDER BY nombre ASC")
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+
+
+def save_new_drivers(connection, drivers):
+    cursor = connection.cursor(dictionary=True)
+    try:
+        if connection.in_transaction:
+            connection.rollback()
+        connection.start_transaction()
+        cursor.execute("SELECT nombre FROM pilotos FOR UPDATE")
+        existing = {_normalize_driver_name(row["nombre"]) for row in cursor.fetchall()}
+        inserted = []
+        skipped = []
+
+        for driver in drivers:
+            name = driver["nombre"]
+            key = _normalize_driver_name(name)
+            if not key or key in existing:
+                skipped.append(name)
+                continue
+            cursor.execute(
+                """
+                INSERT INTO pilotos
+                    (nombre, localidad, provincia, telefono, nacionalidad, steam)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    name,
+                    driver["localidad"],
+                    driver["provincia"],
+                    driver["telefono"],
+                    driver["nacionalidad"],
+                    driver["steam"],
+                ),
+            )
+            existing.add(key)
+            inserted.append(name)
+
+        connection.commit()
+        return inserted, skipped
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
 def fetch_import_context(connection, championship_id):
     cursor = connection.cursor(dictionary=True)
     try:
@@ -96,7 +242,16 @@ def fetch_import_context(connection, championship_id):
         )
         events = cursor.fetchall()
 
-        cursor.execute("SELECT id, nombre FROM pilotos ORDER BY nombre ASC")
+        cursor.execute(
+            """
+            SELECT p.id, p.nombre
+            FROM inscriptos i
+            JOIN pilotos p ON p.id = i.idpiloto
+            WHERE i.idcampeonato = %s
+            ORDER BY p.nombre ASC
+            """,
+            (championship_id,),
+        )
         drivers = cursor.fetchall()
 
         cursor.execute(
@@ -121,30 +276,12 @@ def fetch_import_context(connection, championship_id):
         cursor.close()
 
 
-def save_import(connection, championship_id, registrations, results):
+def save_import(connection, championship_id, results):
     cursor = connection.cursor()
     try:
         if connection.in_transaction:
             connection.rollback()
         connection.start_transaction()
-
-        cursor.executemany(
-            """
-            INSERT INTO inscriptos
-                (idcampeonato, idpiloto, idauto, numero, pago)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            [
-                (
-                    championship_id,
-                    row["idpiloto"],
-                    row["idauto"],
-                    row["numero"],
-                    row["pago"],
-                )
-                for row in registrations
-            ],
-        )
 
         if results:
             cursor.executemany(

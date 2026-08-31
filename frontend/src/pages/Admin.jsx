@@ -209,7 +209,8 @@ const normalizeCircuitForm = form => ({
 
 const defaultCropSettings = {
   zoom: 1,
-  rotation: 0,
+  offsetX: 0,
+  offsetY: 0,
 };
 
 const loadImage = file =>
@@ -233,15 +234,18 @@ const createSquarePngFile = async (file, settings, filename) => {
   const canvas = document.createElement('canvas');
   const size = 1024;
   const context = canvas.getContext('2d');
-  const radians = (Number(settings.rotation || 0) * Math.PI) / 180;
   const zoom = Number(settings.zoom || 1);
+  const offsetX = Number(settings.offsetX || 0);
+  const offsetY = Number(settings.offsetY || 0);
   const baseScale = Math.min(size / image.width, size / image.height) * zoom;
 
   canvas.width = size;
   canvas.height = size;
   context.clearRect(0, 0, size, size);
-  context.translate(size / 2, size / 2);
-  context.rotate(radians);
+  context.translate(
+    size / 2 + (size * offsetX) / 100,
+    size / 2 + (size * offsetY) / 100,
+  );
   context.scale(baseScale, baseScale);
   context.drawImage(image, -image.width / 2, -image.height / 2);
 
@@ -272,13 +276,15 @@ function SquareCropEditor({ file, settings, onChange, label }) {
 
   return (
     <div className="mt-4 rounded-lg border border-racing-border bg-racing-card p-4">
-      <div className="mx-auto mb-4 flex aspect-square max-w-72 items-center justify-center overflow-hidden rounded-lg border border-dashed border-racing-border bg-transparent">
+      <div className="relative mx-auto mb-4 aspect-square max-w-72 overflow-hidden rounded-lg border border-dashed border-racing-border bg-transparent">
         <img
           src={previewUrl}
           alt={label}
-          className="h-full w-full object-contain"
+          className="absolute h-full w-full object-contain"
           style={{
-            transform: `scale(${settings.zoom}) rotate(${settings.rotation}deg)`,
+            left: `calc(50% + ${settings.offsetX || 0}%)`,
+            top: `calc(50% + ${settings.offsetY || 0}%)`,
+            transform: `translate(-50%, -50%) scale(${settings.zoom})`,
             transformOrigin: 'center',
           }}
         />
@@ -299,29 +305,34 @@ function SquareCropEditor({ file, settings, onChange, label }) {
         </label>
 
         <label className="block">
-          <span className="text-xs uppercase tracking-wider text-gray-500">Rotación</span>
+          <span className="text-xs uppercase tracking-wider text-gray-500">Mover horizontalmente</span>
           <input
             type="range"
-            min="-180"
-            max="180"
+            min="-75"
+            max="75"
             step="1"
-            value={settings.rotation}
-            onChange={event => updateSetting('rotation', Number(event.target.value))}
+            value={settings.offsetX || 0}
+            onChange={event => updateSetting('offsetX', Number(event.target.value))}
             className="mt-2 w-full accent-racing-red"
           />
         </label>
 
-        <div className="grid grid-cols-3 gap-2">
-          <button type="button" className="btn-secondary justify-center px-3 py-2 text-xs" onClick={() => updateSetting('rotation', settings.rotation - 90)}>
-            -90
-          </button>
-          <button type="button" className="btn-secondary justify-center px-3 py-2 text-xs" onClick={() => onChange(defaultCropSettings)}>
-            Reset
-          </button>
-          <button type="button" className="btn-secondary justify-center px-3 py-2 text-xs" onClick={() => updateSetting('rotation', settings.rotation + 90)}>
-            +90
-          </button>
-        </div>
+        <label className="block">
+          <span className="text-xs uppercase tracking-wider text-gray-500">Mover verticalmente</span>
+          <input
+            type="range"
+            min="-75"
+            max="75"
+            step="1"
+            value={settings.offsetY || 0}
+            onChange={event => updateSetting('offsetY', Number(event.target.value))}
+            className="mt-2 w-full accent-racing-red"
+          />
+        </label>
+
+        <button type="button" className="btn-secondary w-full justify-center px-3 py-2 text-xs" onClick={() => onChange(defaultCropSettings)}>
+          Restablecer posición
+        </button>
       </div>
     </div>
   );
@@ -1427,7 +1438,7 @@ export default function Admin() {
 
     try {
       const data = new FormData();
-      data.append('marca', capitalizeValue(carBrandForm.marca));
+      data.append('marca', carBrandForm.marca.trim());
       if (carBrandLogoFile) {
         const croppedLogo = await createSquarePngFile(carBrandLogoFile, carBrandLogoCrop, 'logo-marca.png');
         data.append('logo', croppedLogo);
@@ -1459,7 +1470,7 @@ export default function Admin() {
       const data = new FormData();
       data.append('idcategoria', carForm.idcategoria);
       data.append('marca', carForm.marca);
-      data.append('modelo', capitalizeValue(carForm.modelo));
+      data.append('modelo', carForm.modelo.trim());
       if (carImageFile) data.append('imagen', carImageFile);
 
       if (editingCarId) {
