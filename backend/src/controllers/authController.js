@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { createSession } = require('../utils/adminSessions');
 
 const adminLogin = async (req, res, next) => {
   try {
@@ -14,7 +15,8 @@ const adminLogin = async (req, res, next) => {
       return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    res.json({ ok: true, message: 'Administrador validado' });
+    const session = createSession();
+    res.json({ ok: true, message: 'Administrador validado', ...session });
   } catch (err) {
     next(err);
   }

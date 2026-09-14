@@ -9,6 +9,9 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(config => {
+  const adminToken = typeof localStorage !== 'undefined' ? localStorage.getItem('cadpo_admin_token') : '';
+  if (adminToken) config.headers.Authorization = `Bearer ${adminToken}`;
+
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     delete config.headers['Content-Type'];
   }
@@ -116,6 +119,24 @@ export const resultsApi = {
 
 export const liveTimingApi = {
   get: championshipId => api.get('/live-timing', { params: { championshipId }, timeout: 12000 }),
+};
+
+export const monitorApi = {
+  getStatus: () => api.get('/monitor'),
+  update: enabled => api.put('/monitor', { enabled }),
+  sendTestEmail: () => api.post('/monitor/test-email'),
+};
+
+export const registrationFormsApi = {
+  getAll: () => api.get('/registration-forms'),
+  getById: id => api.get(`/registration-forms/${id}`),
+  start: id => api.post(`/registration-forms/${id}/start`),
+  searchDrivers: (id, search, formToken) => api.get(`/registration-forms/${id}/drivers`, { params: { search, formToken } }),
+  checkNumber: (id, number) => api.get(`/registration-forms/${id}/numbers/${number}`),
+  submit: (id, data) => api.post(`/registration-forms/${id}/submit`, data),
+  getAdminAll: () => api.get('/registration-forms/admin/all'),
+  saveConfig: (id, data) => api.put(`/registration-forms/admin/${id}`, data),
+  removeConfig: id => api.delete(`/registration-forms/admin/${id}`),
 };
 
 export default api;

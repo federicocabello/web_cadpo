@@ -23,7 +23,8 @@
     "express": "^5.2.1",
     "express-validator": "^7.3.2",
     "multer": "^2.2.0",
-    "mysql2": "^3.22.5"
+    "mysql2": "^3.22.5",
+    "nodemailer": "^10.0.9"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

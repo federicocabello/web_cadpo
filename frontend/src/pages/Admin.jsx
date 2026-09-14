@@ -1,6 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDaysIcon,
+  BellAlertIcon,
+  ClipboardDocumentListIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FlagIcon,
@@ -16,9 +18,9 @@ import {
   XMarkIcon,
   UsersIcon,
   WrenchScrewdriverIcon,
-  WrenchIcon
+  WrenchIcon,
 } from '@heroicons/react/24/outline';
-import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, registrationsApi, resultsApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, resultsApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
@@ -50,8 +52,10 @@ const adminSections = [
   { id: 'autos', label: 'AUTOS', icon: WrenchIcon },
   { id: 'campeonatos', label: 'CAMPEONATOS', icon: FireIcon },
   { id: 'inscriptos', label: 'INSCRIPTOS', icon: UsersIcon },
+  { id: 'formularios', label: 'FORMULARIOS', icon: ClipboardDocumentListIcon },
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
+  { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
 const adminSectionStorageKey = 'cadpo-admin-section';
 const resultPointFields = [
@@ -141,6 +145,20 @@ const emptyRegistrationForm = {
   numero: '',
   extra: false,
   pago: false,
+};
+
+const emptyRegistrationConfig = {
+  fecha_apertura: '',
+  fecha_cierre: '',
+  precio: '0',
+  precio_diseno: '0',
+  setup_detalle: '',
+  limite_inscriptos: '30',
+  cupos_reservados: '0',
+  autos_habilitados: [],
+  permite_personalizado: true,
+  permite_diseno_liga: true,
+  permite_extra: true,
 };
 
 const emptyEventForm = {
@@ -382,6 +400,14 @@ export default function Admin() {
   const championshipRulesInputRef = useRef(null);
   const carImageInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
+  const [monitorStatus, setMonitorStatus] = useState(null);
+  const [monitorMessage, setMonitorMessage] = useState('');
+  const [savingMonitor, setSavingMonitor] = useState(false);
+  const [registrationConfigs, setRegistrationConfigs] = useState([]);
+  const [registrationConfigChampionshipId, setRegistrationConfigChampionshipId] = useState('');
+  const [registrationConfig, setRegistrationConfig] = useState(emptyRegistrationConfig);
+  const [registrationConfigMessage, setRegistrationConfigMessage] = useState('');
+  const [savingRegistrationConfig, setSavingRegistrationConfig] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     const savedSection = window.localStorage.getItem(adminSectionStorageKey);
     return adminSections.some(section => section.id === savedSection)
@@ -903,7 +929,10 @@ export default function Admin() {
   }, [driverForm.localidad, drivers, lockedDriverLocality]);
 
   useEffect(() => {
-    setAuthorized(localStorage.getItem('cadpo_admin_auth') === 'true');
+    setAuthorized(
+      localStorage.getItem('cadpo_admin_auth') === 'true'
+      && Boolean(localStorage.getItem('cadpo_admin_token'))
+    );
   }, []);
 
   useEffect(() => {
@@ -915,7 +944,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -924,6 +953,8 @@ export default function Admin() {
           carBrandsApi.getAll(),
           carsApi.getAll(),
           registrationsApi.getAll(),
+          monitorApi.getStatus(),
+          registrationFormsApi.getAdminAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -936,6 +967,8 @@ export default function Admin() {
         setCarBrands(carBrandsRes.data.data ?? []);
         setCars(carsRes.data.data ?? []);
         setRegistrations(registrationsRes.data.data ?? []);
+        setMonitorStatus(monitorRes.data.data ?? null);
+        setRegistrationConfigs(registrationConfigsRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -980,6 +1013,109 @@ export default function Admin() {
     if (name === 'nombre') {
       setLockedCircuitName(false);
       setBaseCircuitImagePath('');
+    }
+  };
+
+  const handleMonitorToggle = async () => {
+    if (!monitorStatus || savingMonitor) return;
+    setSavingMonitor(true);
+    setMonitorMessage('');
+    try {
+      const response = await monitorApi.update(!monitorStatus.enabled);
+      setMonitorStatus(response.data.data);
+      setMonitorMessage(response.data.message);
+    } catch (error) {
+      setMonitorMessage(error.response?.data?.error || 'No se pudo cambiar el estado del monitoreo.');
+    } finally {
+      setSavingMonitor(false);
+    }
+  };
+
+  const selectRegistrationConfigChampionship = id => {
+    setRegistrationConfigChampionshipId(id);
+    setRegistrationConfigMessage('');
+    const existing = registrationConfigs.find(item => String(item.idcampeonato) === String(id));
+    setRegistrationConfig(existing ? {
+      fecha_apertura: toDateTimeInputValue(existing.fecha_apertura),
+      fecha_cierre: toDateTimeInputValue(existing.fecha_cierre),
+      precio: String(existing.precio ?? 0),
+      precio_diseno: String(existing.precio_diseno ?? 0),
+      setup_detalle: existing.setup_detalle || '',
+      limite_inscriptos: String(existing.limite_inscriptos ?? 30),
+      cupos_reservados: String(existing.cupos_reservados ?? 0),
+      autos_habilitados: existing.autos_habilitados || [],
+      permite_personalizado: existing.permite_personalizado,
+      permite_diseno_liga: existing.permite_diseno_liga,
+      permite_extra: existing.permite_extra,
+    } : emptyRegistrationConfig);
+  };
+
+  const handleRegistrationConfigChange = event => {
+    const { name, type, checked, value } = event.target;
+    setRegistrationConfig(current => ({ ...current, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const toggleRegistrationCar = id => {
+    setRegistrationConfig(current => ({
+      ...current,
+      autos_habilitados: current.autos_habilitados.includes(Number(id))
+        ? current.autos_habilitados.filter(carId => carId !== Number(id))
+        : [...current.autos_habilitados, Number(id)],
+    }));
+  };
+
+  const saveRegistrationConfig = async event => {
+    event.preventDefault();
+    if (!registrationConfigChampionshipId) return;
+    setSavingRegistrationConfig(true);
+    setRegistrationConfigMessage('');
+    try {
+      const payload = {
+        ...registrationConfig,
+        fecha_apertura: toMySqlDateTime(registrationConfig.fecha_apertura),
+        fecha_cierre: toMySqlDateTime(registrationConfig.fecha_cierre),
+      };
+      const response = await registrationFormsApi.saveConfig(registrationConfigChampionshipId, payload);
+      const saved = response.data.data;
+      setRegistrationConfigs(current => [saved, ...current.filter(item => String(item.idcampeonato) !== String(saved.idcampeonato))]);
+      setRegistrationConfigMessage(response.data.message);
+    } catch (error) {
+      setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo guardar el formulario.');
+    } finally {
+      setSavingRegistrationConfig(false);
+    }
+  };
+
+  const deleteRegistrationConfig = async id => {
+    const current = registrationConfigs.find(item => String(item.idcampeonato) === String(id));
+    if (!window.confirm(`¿Eliminar el formulario de ${current?.categoria || 'este campeonato'}? Las inscripciones ya realizadas se conservarán.`)) return;
+    setSavingRegistrationConfig(true);
+    setRegistrationConfigMessage('');
+    try {
+      const response = await registrationFormsApi.removeConfig(id);
+      setRegistrationConfigs(items => items.filter(item => String(item.idcampeonato) !== String(id)));
+      if (String(registrationConfigChampionshipId) === String(id)) {
+        setRegistrationConfigChampionshipId('');
+        setRegistrationConfig(emptyRegistrationConfig);
+      }
+      setRegistrationConfigMessage(response.data.message);
+    } catch (error) {
+      setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo eliminar el formulario.');
+    } finally {
+      setSavingRegistrationConfig(false);
+    }
+  };
+
+  const handleMonitorTest = async () => {
+    setSavingMonitor(true);
+    setMonitorMessage('Enviando correo de prueba...');
+    try {
+      const response = await monitorApi.sendTestEmail();
+      setMonitorMessage(response.data.message);
+    } catch (error) {
+      setMonitorMessage(error.response?.data?.error || 'No se pudo enviar el correo de prueba. Revisá la configuración SMTP.');
+    } finally {
+      setSavingMonitor(false);
     }
   };
 
@@ -1894,6 +2030,93 @@ export default function Admin() {
   };
 
   const renderSection = () => {
+    if (activeSection === 'formularios') {
+      const championship = championships.find(item => String(item.id) === String(registrationConfigChampionshipId));
+      const categoryCars = cars.filter(car => championship && String(car.idcategoria) === String(championship.idcategoria));
+      const editingRegistrationConfig = registrationConfigs.find(item => String(item.idcampeonato) === String(registrationConfigChampionshipId));
+      return (
+        <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
+          <section className="card-glass p-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Inscripciones públicas</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">Gestión de formularios</h2>
+            <p className="mt-2 text-sm text-gray-400">Creá uno para un campeonato sin configurar o elegí uno guardado para modificarlo.</p>
+            <label className="mt-6 block"><span className="text-sm font-semibold text-gray-300">Agregar formulario</span><select value={editingRegistrationConfig ? '' : registrationConfigChampionshipId} onChange={event => selectRegistrationConfigChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato sin formulario</option>{championships.filter(item => !registrationConfigs.some(config => String(config.idcampeonato) === String(item.id))).map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
+            <div className="mt-6 space-y-2">
+              <p className="text-sm font-semibold text-gray-300">Formularios guardados</p>
+              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500">Reales: {item.inscriptos_actuales} · Reservados: {item.cupos_reservados} · Límite: {item.limite_inscriptos}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
+              {!registrationConfigs.length ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-500">Todavía no hay formularios guardados.</p> : null}
+            </div>
+          </section>
+
+          <section className="card-glass p-6">
+            {!championship ? <div className="py-20 text-center text-gray-500"><ClipboardDocumentListIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná un campeonato para configurar su formulario.</p></div> : <form onSubmit={saveRegistrationConfig} className="space-y-6">
+              <div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div>
+              <div className="grid gap-4 md:grid-cols-2"><label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Personalizado y extra sin diseño</small></label><label><span className="text-sm text-gray-300">Adicional por diseño de la liga</span><input name="precio_diseno" type="number" min="0" step="0.01" value={registrationConfig.precio_diseno} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suma al precio base</small></label><label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cupos reservados/manuales</span><input name="cupos_reservados" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.cupos_reservados} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suman a los inscriptos reales para calcular disponibilidad</small></label><div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Ocupación administrada</span><p className="mt-1 font-racing text-2xl font-bold">{(editingRegistrationConfig?.inscriptos_actuales || 0) + Number(registrationConfig.cupos_reservados || 0)} / {registrationConfig.limite_inscriptos || 0}</p><p className="mt-1 text-xs text-gray-500">{editingRegistrationConfig?.inscriptos_actuales || 0} inscriptos reales + {registrationConfig.cupos_reservados || 0} cupos reservados</p></div></div>
+              <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
+              <div><p className="text-sm font-semibold text-gray-300">Autos habilitados</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}</div>{!categoryCars.length ? <p className="mt-2 text-sm text-yellow-300">La categoría no tiene autos cargados.</p> : null}</div>
+              <div><p className="text-sm font-semibold text-gray-300">Modalidades disponibles</p><div className="mt-3 grid gap-3 md:grid-cols-3"><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_personalizado" type="checkbox" checked={registrationConfig.permite_personalizado} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado<br/><small className="text-gray-500">Precio base</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_diseno_liga" type="checkbox" checked={registrationConfig.permite_diseno_liga} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado + diseño<br/><small className="text-gray-500">Base + adicional</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_extra" type="checkbox" checked={registrationConfig.permite_extra} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Extra sin diseño<br/><small className="text-gray-500">Precio base</small></span></label></div></div>
+              {registrationConfigMessage ? <div className="border border-racing-red/30 bg-racing-red/10 p-4 text-sm">{registrationConfigMessage}</div> : null}
+              <button type="submit" disabled={savingRegistrationConfig} className="btn-primary w-full justify-center disabled:opacity-40">{savingRegistrationConfig ? 'Guardando...' : editingRegistrationConfig ? 'Guardar modificaciones' : 'Crear formulario'}</button>
+            </form>}
+          </section>
+        </div>
+      );
+    }
+
+    if (activeSection === 'monitoreo') {
+      return (
+        <section className="mx-auto max-w-3xl border border-racing-border bg-racing-gray p-6 sm:p-8">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Alertas automáticas</p>
+              <h2 className="mt-2 font-racing text-3xl font-bold">Monitor de tiempos en vivo</h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-gray-400">
+                Comprueba cada {monitorStatus?.checkIntervalSeconds || 15} segundos los servidores correspondientes a las próximas fechas. Si uno no responde durante más de {monitorStatus?.outageThresholdSeconds || 60} segundos, envía una única alerta por correo.
+              </p>
+            </div>
+            <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase ${monitorStatus?.enabled ? 'bg-green-500/15 text-green-400' : 'bg-gray-500/15 text-gray-400'}`}>
+              <span className={`h-2 w-2 rounded-full ${monitorStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+              {monitorStatus?.enabled ? 'Activo' : 'Desactivado'}
+            </span>
+          </div>
+
+          <div className="mt-8 grid gap-4 border-y border-racing-border py-6 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-semibold uppercase text-gray-500">Destinatario</p>
+              <p className="mt-1 text-white">{monitorStatus?.recipient || 'fede.cabello@hotmail.com'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-gray-500">Configuración SMTP</p>
+              <p className={`mt-1 ${monitorStatus?.smtpConfigured ? 'text-green-400' : 'text-yellow-300'}`}>
+                {monitorStatus?.smtpConfigured ? 'Completa' : 'Pendiente de completar en backend/.env'}
+              </p>
+            </div>
+          </div>
+
+          {monitorMessage ? <p className="mt-5 text-sm text-yellow-300" role="status">{monitorMessage}</p> : null}
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleMonitorToggle}
+              disabled={!monitorStatus || savingMonitor || (!monitorStatus.smtpConfigured && !monitorStatus.enabled)}
+              className={`rounded-lg px-5 py-3 font-racing font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${monitorStatus?.enabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-racing-red hover:bg-red-700'}`}
+            >
+              {savingMonitor ? 'Procesando...' : monitorStatus?.enabled ? 'Desactivar monitoreo' : 'Activar monitoreo'}
+            </button>
+            <button
+              type="button"
+              onClick={handleMonitorTest}
+              disabled={savingMonitor || !monitorStatus?.smtpConfigured}
+              className="rounded-lg border border-racing-border px-5 py-3 font-racing font-bold text-gray-200 transition hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Enviar correo de prueba
+            </button>
+          </div>
+        </section>
+      );
+    }
+
     if (activeSection === 'resultados') {
       return (
         <section className="min-w-0 overflow-hidden border border-racing-border bg-racing-gray">
@@ -4282,7 +4505,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+            <nav className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-11">
               {adminSections.map(section => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;

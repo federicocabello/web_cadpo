@@ -10,7 +10,6 @@ import {
   FlagIcon,
   UsersIcon,
   TagIcon,
-  BookOpenIcon,
   ChartBarIcon,
 } from '@heroicons/react/24/outline'
 import { authApi, eventsApi } from '../services/api'
@@ -44,10 +43,9 @@ const navLinks = [
   { to: '/tiempos-en-vivo', label: 'TIEMPOS EN VIVO', Icon: ClockIcon },
   { to: '/resultados', label: 'RESULTADOS', Icon: TrophyIcon },
   { to: '/proximas-fechas', label: 'PRÓXIMAS FECHAS', Icon: CalendarDaysIcon },
-  { to: '/proximos-campeonatos', label: 'PRÓXIMOS CAMPEONATOS', Icon: FlagIcon },
+  { to: '/campeonatos', label: 'CAMPEONATOS', Icon: FlagIcon },
   { to: '/pilotos', label: 'PILOTOS', Icon: UsersIcon },
   { to: '/categorias', label: 'CATEGORÍAS', Icon: TagIcon },
-  { to: '/historico', label: 'HISTÓRICO', Icon: BookOpenIcon },
   { to: '/estadisticas', label: 'ESTADÍSTICAS', Icon: ChartBarIcon },
 ]
 
@@ -116,7 +114,8 @@ export default function Navbar() {
     if (!password) return
 
     try {
-      await authApi.adminLogin(password)
+      const response = await authApi.adminLogin(password)
+      localStorage.setItem('cadpo_admin_token', response.data.token)
       localStorage.setItem('cadpo_admin_auth', 'true')
       window.open('/admin', '_blank', 'noopener,noreferrer')
     } catch (err) {

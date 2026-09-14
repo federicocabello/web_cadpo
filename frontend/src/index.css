@@ -188,8 +188,17 @@
     animation: race-session-flag 1.5s ease-in-out infinite;
   }
 
-  .server-join-button {
+  .server-action-button {
+    --action-glow: rgba(230, 57, 70, 0.65);
     animation: server-button-pulse 2.2s ease-in-out infinite;
+  }
+
+  .server-action-dark {
+    --action-glow: rgba(255, 255, 255, 0.28);
+  }
+
+  .cta-attention {
+    animation: cta-attention 2.4s ease-in-out infinite;
   }
 
   .server-join-flag {
@@ -264,8 +273,13 @@
 }
 
 @keyframes server-button-pulse {
-  0%, 100% { box-shadow: 0 0 0 rgba(230, 57, 70, 0.2); }
-  50% { box-shadow: 0 0 24px rgba(230, 57, 70, 0.65); }
+  0%, 100% { box-shadow: 0 0 0 color-mix(in srgb, var(--action-glow) 30%, transparent); }
+  50% { box-shadow: 0 0 24px var(--action-glow); }
+}
+
+@keyframes cta-attention {
+  0%, 100% { transform: translateY(0); filter: brightness(1); }
+  50% { transform: translateY(-3px); filter: brightness(1.15); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -279,7 +293,11 @@
   .timing-position-arrow,
   .race-session-checker,
   .race-session-flag,
-  .server-join-button {
+  .server-action-button {
+    animation: none;
+  }
+
+  .cta-attention {
     animation: none;
   }
 }

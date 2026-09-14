@@ -66,7 +66,8 @@ const getAll = async (req, res, next) => {
       `${championshipSelect}
        GROUP BY c.id, cat.id, campeon.id
        ${having}
-       ORDER BY c.anio DESC, c.temporada DESC`,
+       ORDER BY COALESCE(MAX(cal.fecha), STR_TO_DATE(CONCAT(c.anio, '-01-01'), '%Y-%m-%d')) DESC,
+                c.id DESC`,
       params
     );
 

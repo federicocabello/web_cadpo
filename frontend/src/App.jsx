@@ -77,7 +77,6 @@ function App() {
           <Route path="/proximas-fechas" element={<Events initialStatus="upcoming" />} />
           <Route path="/campeonatos" element={<Championships />} />
           <Route path="/proximos-campeonatos" element={<Championships initialStatus="upcoming" />} />
-          <Route path="/historico" element={<Championships initialStatus="completed" />} />
           <Route path="/tiempos-en-vivo" element={<LiveTiming />} />
           <Route path="/resultados" element={<Results />} />
           <Route path="/estadisticas" element={<Statistics />} />
