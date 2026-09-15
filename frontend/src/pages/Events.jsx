@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import EventCard from '../components/EventCard';
 import { eventsApi } from '../services/api';
+import { getLiveTimingEvents, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
 
 const STATUSES = [
   { value: '', label: 'Todas' },
@@ -29,6 +30,13 @@ export default function Events({ initialStatus = '' }) {
     };
     fetchEvents();
   }, [statusFilter]);
+
+  const nearbyEventIds = useMemo(() => new Set(
+    getWeeklyChampionshipEvents(events).map(event => String(event.id)),
+  ), [events]);
+  const liveTimingEventIds = useMemo(() => new Set(
+    getLiveTimingEvents(events).map(event => String(event.id)),
+  ), [events]);
 
   return (
     <div className="animate-fade-in">
@@ -72,7 +80,14 @@ export default function Events({ initialStatus = '' }) {
           <>
             <p className="text-gray-400 text-sm mb-6">{events.length} fecha{events.length !== 1 ? 's' : ''}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map(event => <EventCard key={event.id} event={event} />)}
+              {events.map(event => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  showNearbyActions={nearbyEventIds.has(String(event.id))}
+                  showLiveTiming={liveTimingEventIds.has(String(event.id))}
+                />
+              ))}
             </div>
           </>
         ) : (

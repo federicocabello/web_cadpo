@@ -24,6 +24,7 @@ import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, dr
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
+import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -154,7 +155,7 @@ const emptyRegistrationConfig = {
   precio_diseno: '0',
   setup_detalle: '',
   limite_inscriptos: '30',
-  cupos_reservados: '0',
+  preinscriptos: '0',
   autos_habilitados: [],
   permite_personalizado: true,
   permite_diseno_liga: true,
@@ -187,6 +188,7 @@ const emptyDriverForm = {
   telefono: '',
   nacionalidad: 'ar',
   steam: '',
+  ig: '',
 };
 
 const eventMinuteOptions = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, '0'));
@@ -399,6 +401,7 @@ export default function Admin() {
   const carBrandLogoInputRef = useRef(null);
   const championshipRulesInputRef = useRef(null);
   const carImageInputRef = useRef(null);
+  const registrationImagesInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -408,6 +411,11 @@ export default function Admin() {
   const [registrationConfig, setRegistrationConfig] = useState(emptyRegistrationConfig);
   const [registrationConfigMessage, setRegistrationConfigMessage] = useState('');
   const [savingRegistrationConfig, setSavingRegistrationConfig] = useState(false);
+  const [registrationGallery, setRegistrationGallery] = useState([]);
+  const [registrationGalleryPath, setRegistrationGalleryPath] = useState('');
+  const [registrationImageFiles, setRegistrationImageFiles] = useState([]);
+  const [registrationGalleryMessage, setRegistrationGalleryMessage] = useState('');
+  const [savingRegistrationImages, setSavingRegistrationImages] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     const savedSection = window.localStorage.getItem(adminSectionStorageKey);
     return adminSections.some(section => section.id === savedSection)
@@ -863,7 +871,7 @@ export default function Admin() {
       .filter(driver => {
         if (!search) return true;
 
-        return [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam]
+        return [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam, driver.ig]
           .filter(Boolean)
           .some(value => String(value).toLocaleLowerCase('es-AR').includes(search));
       })
@@ -1031,10 +1039,27 @@ export default function Admin() {
     }
   };
 
+  const loadRegistrationGallery = async id => {
+    if (!id) { setRegistrationGallery([]); setRegistrationGalleryPath(''); return; }
+    try {
+      const response = await registrationFormsApi.getImages(id);
+      setRegistrationGallery(response.data.data || []);
+      setRegistrationGalleryPath(response.data.path || '');
+    } catch (error) {
+      setRegistrationGallery([]);
+      setRegistrationGalleryMessage(error.response?.data?.error || 'No se pudieron cargar las fotos.');
+    }
+  };
+
   const selectRegistrationConfigChampionship = id => {
     setRegistrationConfigChampionshipId(id);
     setRegistrationConfigMessage('');
+    setRegistrationGalleryMessage('');
+    setRegistrationImageFiles([]);
+    if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
     const existing = registrationConfigs.find(item => String(item.idcampeonato) === String(id));
+    if (existing) loadRegistrationGallery(id);
+    else { setRegistrationGallery([]); setRegistrationGalleryPath(''); }
     setRegistrationConfig(existing ? {
       fecha_apertura: toDateTimeInputValue(existing.fecha_apertura),
       fecha_cierre: toDateTimeInputValue(existing.fecha_cierre),
@@ -1042,7 +1067,7 @@ export default function Admin() {
       precio_diseno: String(existing.precio_diseno ?? 0),
       setup_detalle: existing.setup_detalle || '',
       limite_inscriptos: String(existing.limite_inscriptos ?? 30),
-      cupos_reservados: String(existing.cupos_reservados ?? 0),
+      preinscriptos: String(existing.preinscriptos ?? 0),
       autos_habilitados: existing.autos_habilitados || [],
       permite_personalizado: existing.permite_personalizado,
       permite_diseno_liga: existing.permite_diseno_liga,
@@ -1079,10 +1104,43 @@ export default function Admin() {
       const saved = response.data.data;
       setRegistrationConfigs(current => [saved, ...current.filter(item => String(item.idcampeonato) !== String(saved.idcampeonato))]);
       setRegistrationConfigMessage(response.data.message);
+      await loadRegistrationGallery(registrationConfigChampionshipId);
     } catch (error) {
       setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo guardar el formulario.');
     } finally {
       setSavingRegistrationConfig(false);
+    }
+  };
+
+  const uploadRegistrationGallery = async () => {
+    if (!registrationImageFiles.length || !registrationConfigChampionshipId) return;
+    setSavingRegistrationImages(true);
+    setRegistrationGalleryMessage('');
+    try {
+      const data = new FormData();
+      registrationImageFiles.forEach(file => data.append('images', file));
+      const response = await registrationFormsApi.uploadImages(registrationConfigChampionshipId, data);
+      setRegistrationGallery(response.data.data || []);
+      setRegistrationGalleryPath(response.data.path || '');
+      setRegistrationGalleryMessage(response.data.message);
+      setRegistrationImageFiles([]);
+      if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
+    } catch (error) {
+      setRegistrationGalleryMessage(error.response?.data?.error || 'No se pudieron subir las fotos.');
+    } finally {
+      setSavingRegistrationImages(false);
+    }
+  };
+
+  const deleteRegistrationGalleryImage = async image => {
+    if (!window.confirm('¿Eliminar esta foto del carrusel de inscripciones?')) return;
+    setRegistrationGalleryMessage('');
+    try {
+      const response = await registrationFormsApi.removeImage(registrationConfigChampionshipId, image.filename);
+      setRegistrationGallery(response.data.data || []);
+      setRegistrationGalleryMessage(response.data.message);
+    } catch (error) {
+      setRegistrationGalleryMessage(error.response?.data?.error || 'No se pudo eliminar la foto.');
     }
   };
 
@@ -1097,6 +1155,9 @@ export default function Admin() {
       if (String(registrationConfigChampionshipId) === String(id)) {
         setRegistrationConfigChampionshipId('');
         setRegistrationConfig(emptyRegistrationConfig);
+        setRegistrationGallery([]);
+        setRegistrationGalleryPath('');
+        setRegistrationImageFiles([]);
       }
       setRegistrationConfigMessage(response.data.message);
     } catch (error) {
@@ -1267,6 +1328,8 @@ export default function Admin() {
     if (name === 'localidad') setLockedDriverLocality(false);
     const nextValue = name === 'telefono'
       ? value.replace(/\D/g, '')
+      : name === 'ig'
+        ? formatInstagramHandle(value)
       : ['nombre', 'localidad', 'provincia'].includes(name)
         ? capitalizeInputValue(value)
         : value;
@@ -1715,6 +1778,7 @@ export default function Admin() {
       telefono: driverForm.telefono.replace(/\D/g, ''),
       nacionalidad: normalizeCountryCode(driverForm.nacionalidad),
       steam: driverForm.steam.trim(),
+      ig: formatInstagramHandle(driverForm.ig),
     };
     if (driverDuplicate) {
       alertDriverDuplicate();
@@ -2025,6 +2089,7 @@ export default function Admin() {
       telefono: String(driver.telefono || '').replace(/\D/g, ''),
       nacionalidad: normalizeCountryCode(driver.nacionalidad) || 'ar',
       steam: driver.steam || '',
+      ig: formatInstagramHandle(driver.ig),
     });
     setDriverMessage(`Editando ${driver.nombre}.`);
   };
@@ -2043,7 +2108,7 @@ export default function Admin() {
             <label className="mt-6 block"><span className="text-sm font-semibold text-gray-300">Agregar formulario</span><select value={editingRegistrationConfig ? '' : registrationConfigChampionshipId} onChange={event => selectRegistrationConfigChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato sin formulario</option>{championships.filter(item => !registrationConfigs.some(config => String(config.idcampeonato) === String(item.id))).map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
             <div className="mt-6 space-y-2">
               <p className="text-sm font-semibold text-gray-300">Formularios guardados</p>
-              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500">Reales: {item.inscriptos_actuales} · Reservados: {item.cupos_reservados} · Límite: {item.limite_inscriptos}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
+              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500">Pre: {item.preinscriptos || 0} · Reales: {item.inscriptos_actuales} · Límite: {item.limite_inscriptos}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
               {!registrationConfigs.length ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-500">Todavía no hay formularios guardados.</p> : null}
             </div>
           </section>
@@ -2051,8 +2116,17 @@ export default function Admin() {
           <section className="card-glass p-6">
             {!championship ? <div className="py-20 text-center text-gray-500"><ClipboardDocumentListIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná un campeonato para configurar su formulario.</p></div> : <form onSubmit={saveRegistrationConfig} className="space-y-6">
               <div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div>
-              <div className="grid gap-4 md:grid-cols-2"><label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Personalizado y extra sin diseño</small></label><label><span className="text-sm text-gray-300">Adicional por diseño de la liga</span><input name="precio_diseno" type="number" min="0" step="0.01" value={registrationConfig.precio_diseno} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suma al precio base</small></label><label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cupos reservados/manuales</span><input name="cupos_reservados" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.cupos_reservados} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suman a los inscriptos reales para calcular disponibilidad</small></label><div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Ocupación administrada</span><p className="mt-1 font-racing text-2xl font-bold">{(editingRegistrationConfig?.inscriptos_actuales || 0) + Number(registrationConfig.cupos_reservados || 0)} / {registrationConfig.limite_inscriptos || 0}</p><p className="mt-1 text-xs text-gray-500">{editingRegistrationConfig?.inscriptos_actuales || 0} inscriptos reales + {registrationConfig.cupos_reservados || 0} cupos reservados</p></div></div>
+              <div className="grid gap-4 md:grid-cols-2"><label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Personalizado y extra sin diseño</small></label><label><span className="text-sm text-gray-300">Adicional por diseño de la liga</span><input name="precio_diseno" type="number" min="0" step="0.01" value={registrationConfig.precio_diseno} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suma al precio base</small></label><label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Preinscriptos</span><input name="preinscriptos" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.preinscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Antes de abrir se muestran como preinscriptos; al abrir se suman a los inscriptos reales.</small></label><div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · límite total {registrationConfig.limite_inscriptos || 0}</p></div></div>
               <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
+              <section className="border border-yellow-400/25 bg-yellow-400/5 p-5">
+                <div className="flex items-center gap-3"><PhotoIcon className="h-6 w-6 text-yellow-300"/><div><h3 className="font-racing text-xl font-bold text-white">Fondos del campeonato</h3><p className="text-xs text-gray-500">Estas fotos se muestran aleatoriamente en el Inicio.</p></div></div>
+                {!editingRegistrationConfig ? <p className="mt-4 border border-dashed border-racing-border p-4 text-center text-sm text-gray-400">Primero creá el formulario. Después podrás cargar sus fotos.</p> : <>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label><span className="text-sm text-gray-300">Seleccionar fotos</span><input ref={registrationImagesInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setRegistrationImageFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 fotos por carga, 8 MB cada una.</small></label><button type="button" onClick={uploadRegistrationGallery} disabled={!registrationImageFiles.length || savingRegistrationImages} className="inline-flex min-h-12 items-center justify-center gap-2 border border-yellow-300 bg-yellow-400 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingRegistrationImages ? 'Subiendo...' : `Subir ${registrationImageFiles.length || ''} foto${registrationImageFiles.length === 1 ? '' : 's'}`}</button></div>
+                  {registrationGalleryPath ? <p className="mt-3 break-all text-xs text-gray-600">Carpeta: {registrationGalleryPath}</p> : null}
+                  {registrationGalleryMessage ? <p className="mt-3 text-sm text-yellow-200">{registrationGalleryMessage}</p> : null}
+                  <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">{registrationGallery.map(image => <article key={image.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Fondo del campeonato" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteRegistrationGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 opacity-100 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{!registrationGallery.length ? <div className="col-span-full border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no hay fotos cargadas.</div> : null}</div>
+                </>}
+              </section>
               <div><p className="text-sm font-semibold text-gray-300">Autos habilitados</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}</div>{!categoryCars.length ? <p className="mt-2 text-sm text-yellow-300">La categoría no tiene autos cargados.</p> : null}</div>
               <div><p className="text-sm font-semibold text-gray-300">Modalidades disponibles</p><div className="mt-3 grid gap-3 md:grid-cols-3"><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_personalizado" type="checkbox" checked={registrationConfig.permite_personalizado} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado<br/><small className="text-gray-500">Precio base</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_diseno_liga" type="checkbox" checked={registrationConfig.permite_diseno_liga} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado + diseño<br/><small className="text-gray-500">Base + adicional</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_extra" type="checkbox" checked={registrationConfig.permite_extra} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Extra sin diseño<br/><small className="text-gray-500">Precio base</small></span></label></div></div>
               {registrationConfigMessage ? <div className="border border-racing-red/30 bg-racing-red/10 p-4 text-sm">{registrationConfigMessage}</div> : null}
@@ -4356,6 +4430,12 @@ export default function Admin() {
                 <input name="steam" value={driverForm.steam} onChange={handleDriverChange} className="input-field mt-2" placeholder="Steam ID o usuario" />
               </label>
 
+              <label className="block">
+                <span className="text-sm text-gray-300">Instagram</span>
+                <input name="ig" value={driverForm.ig} onChange={handleDriverChange} className="input-field mt-2" placeholder="@usuario o enlace de Instagram" autoComplete="off" />
+                <span className="mt-1 block text-xs text-gray-500">Usuario utilizado para etiquetar al piloto en las publicaciones.</span>
+              </label>
+
               {driverDuplicate ? (
                 <div className="border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-200">
                   Ya existe <strong>{driverDuplicate.driver.nombre}</strong> con {driverDuplicate.fields.join(' y ')} ingresado.
@@ -4405,6 +4485,7 @@ export default function Admin() {
                     <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Teléfono</th>
                     <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Nacionalidad</th>
                     <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Steam</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase tracking-wider text-gray-400">Instagram</th>
                     <th className="px-4 py-3 text-right text-xs uppercase tracking-wider text-gray-400">Acción</th>
                   </tr>
                 </thead>
@@ -4423,6 +4504,9 @@ export default function Admin() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-300">{driver.steam}</td>
+                        <td className="px-4 py-3 text-gray-300">
+                          {driver.ig ? <a href={getInstagramUrl(driver.ig)} target="_blank" rel="noreferrer" className="text-racing-red hover:text-white">{formatInstagramHandle(driver.ig)}</a> : '-'}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <div className="inline-flex items-center gap-2">
                             <button
@@ -4447,7 +4531,7 @@ export default function Admin() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="px-4 py-10 text-center text-gray-500">
+                      <td colSpan="8" className="px-4 py-10 text-center text-gray-500">
                         {drivers.length ? 'No hay pilotos que coincidan con la búsqueda.' : 'Todavía no hay pilotos cargados.'}
                       </td>
                     </tr>

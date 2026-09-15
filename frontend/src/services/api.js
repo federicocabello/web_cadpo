@@ -107,6 +107,7 @@ export const circuitsApi = {
 
 export const mediaApi = {
   getChampionshipImages: params => api.get('/media/championship-images', { params }),
+  getRegistrationImages: params => api.get('/media/registration-images', { params }),
 };
 
 export const resultsApi = {
@@ -115,6 +116,12 @@ export const resultsApi = {
   saveBulk: changes => api.post('/results/bulk', { changes }),
   update: (id, data) => api.put(`/results/${id}`, data),
   remove: id => api.delete(`/results/${id}`),
+};
+
+export const statisticsApi = {
+  getOverview: () => api.get('/statistics'),
+  searchDrivers: search => api.get('/statistics/drivers', { params: { search } }),
+  getDriver: id => api.get(`/statistics/drivers/${id}`),
 };
 
 export const liveTimingApi = {
@@ -135,6 +142,9 @@ export const registrationFormsApi = {
   checkNumber: (id, number) => api.get(`/registration-forms/${id}/numbers/${number}`),
   submit: (id, data) => api.post(`/registration-forms/${id}/submit`, data),
   getAdminAll: () => api.get('/registration-forms/admin/all'),
+  getImages: id => api.get(`/registration-forms/admin/${id}/images`),
+  uploadImages: (id, data) => api.post(`/registration-forms/admin/${id}/images`, data, { timeout: 60000 }),
+  removeImage: (id, filename) => api.delete(`/registration-forms/admin/${id}/images/${encodeURIComponent(filename)}`),
   saveConfig: (id, data) => api.put(`/registration-forms/admin/${id}`, data),
   removeConfig: id => api.delete(`/registration-forms/admin/${id}`),
 };

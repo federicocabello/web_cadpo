@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, CheckCircleIcon, ClockIcon, MagnifyingGlassIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, CheckCircleIcon, ClockIcon, MagnifyingGlassIcon, PlayCircleIcon, UserPlusIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { CountrySelect } from '../components/CountryFlag';
 import { registrationFormsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
+import { formatPrice } from '../utils/currency';
+import { formatInstagramHandle } from '../utils/instagram';
 
-const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: 'ar', steam: '' };
-const formatMoney = value => `$ ${Number(value || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: 'ar', steam: '', ig: '' };
 const formatCountdown = milliseconds => {
   const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 };
-const phaseText = form => form?.phase === 'open' ? 'Inscripciones abiertas' : form?.phase === 'upcoming' ? 'Próximamente' : form?.phase === 'full' ? 'Cupo completo' : 'Inscripciones cerradas';
+const getRegistrationPhase = (form, now) => {
+  if (!form) return 'closed';
+  if ((parseCalendarDate(form.fecha_apertura)?.getTime() || 0) > now) return 'upcoming';
+  if ((parseCalendarDate(form.fecha_cierre)?.getTime() || 0) <= now) return 'closed';
+  return Number(form.inscriptos_actuales) + Number(form.preinscriptos || 0) >= Number(form.limite_inscriptos) ? 'full' : 'open';
+};
+const phaseText = phase => phase === 'open' ? 'Inscripciones abiertas' : phase === 'upcoming' ? 'Próximo campeonato' : phase === 'full' ? 'Cupo completo' : 'Inscripciones cerradas';
 
 export default function Registration() {
   const [searchParams] = useSearchParams();
@@ -32,6 +39,7 @@ export default function Registration() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const configPhase = getRegistrationPhase(config, now);
 
   useEffect(() => {
     registrationFormsApi.getAll()
@@ -109,14 +117,14 @@ export default function Registration() {
     setDriver({
       idpiloto: selected.id, nombre: selected.nombre || '', localidad: selected.localidad || '',
       provincia: selected.provincia || '', telefono: selected.telefono || '',
-      nacionalidad: selected.nacionalidad || 'ar', steam: selected.steam || '',
+      nacionalidad: selected.nacionalidad || 'ar', steam: selected.steam || '', ig: formatInstagramHandle(selected.ig),
     });
     setShowSuggestions(false); setSuggestions([]);
   };
 
   const changeDriver = event => {
     const { name, value } = event.target;
-    setDriver(current => ({ ...current, [name]: value, ...(name === 'nombre' ? { idpiloto: '' } : {}) }));
+    setDriver(current => ({ ...current, [name]: name === 'ig' ? formatInstagramHandle(value) : value, ...(name === 'nombre' ? { idpiloto: '' } : {}) }));
   };
 
   const submit = async event => {
@@ -149,7 +157,7 @@ export default function Registration() {
           <span className="text-sm font-semibold text-gray-300">Campeonato</span>
           <select value={selectedId} onChange={event => { setSelectedId(event.target.value); setFormToken(''); setCompleted(false); setMessage(''); }} className="input-field mt-2">
             <option value="">Seleccionar campeonato</option>
-            {forms.map(item => <option key={item.idcampeonato} value={item.idcampeonato}>{item.categoria} · Temporada {item.temporada} · {item.anio} · {phaseText(item)}</option>)}
+            {forms.map(item => <option key={item.idcampeonato} value={item.idcampeonato}>{item.categoria} · Temporada {item.temporada} · {item.anio} · {phaseText(getRegistrationPhase(item, now))}</option>)}
           </select>
         </label>
 
@@ -160,18 +168,19 @@ export default function Registration() {
               <div>
                 <div className="flex flex-wrap items-center gap-3">
                   <h2 className="font-racing text-3xl font-bold">{config.categoria} · Temporada {config.temporada}</h2>
-                  <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${config.phase === 'open' ? 'bg-green-500/15 text-green-400' : 'bg-racing-red/15 text-racing-red'}`}>{phaseText(config)}</span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${configPhase === 'open' ? 'bg-green-500/15 text-green-400' : 'bg-racing-red/15 text-racing-red'}`}>{phaseText(configPhase)}</span>
                 </div>
                 <p className="mt-2 text-gray-400">{config.plataforma} · {config.cantidad_fechas} fechas · {config.cupos_ocupados}/{config.limite_inscriptos} cupos ocupados</p>
                 <p className="mt-2 text-sm text-gray-300"><strong>Setup:</strong> {config.setup_detalle}</p>
+                <p className={`mt-3 flex items-center gap-2 text-sm font-semibold ${Number(config.precio || 0) > 10000 ? 'text-green-400' : 'text-gray-500'}`}><PlayCircleIcon className="h-5 w-5"/>{Number(config.precio || 0) > 10000 ? 'Transmisión en vivo incluida' : 'Sin transmisión en vivo'}</p>
               </div>
-              <div className="lg:text-right"><p className="text-xs uppercase text-gray-500">Precio base</p><p className="font-racing text-3xl font-bold text-yellow-300">{formatMoney(config.precio)}</p><p className="mt-1 text-sm text-gray-400">{config.lugares_disponibles} lugares disponibles</p></div>
+              <div className="lg:text-right"><p className="text-xs uppercase text-gray-500">Precio base</p><p className="font-racing text-3xl font-bold text-yellow-300">{formatPrice(config.precio)}</p><p className="mt-1 text-sm text-gray-400">{config.lugares_disponibles} lugares disponibles</p></div>
             </div>
             <div className="grid border-t border-racing-border md:grid-cols-2">
               <div className="border-b border-racing-border p-6 md:border-b-0 md:border-r">
                 <p className="text-xs font-semibold uppercase text-gray-500">Apertura</p><p className="mt-1 text-white">{formatCalendarDate(config.fecha_apertura, { dateStyle: 'long', timeStyle: 'short' })}</p>
               </div>
-              <div className="p-6"><p className="text-xs font-semibold uppercase text-gray-500">Cierre</p><p className="mt-1 text-white">{formatCalendarDate(config.fecha_cierre, { dateStyle: 'long', timeStyle: 'short' })}</p>{config.phase === 'open' ? <p className="mt-2 font-racing text-xl font-bold text-yellow-300">Cierra en {formatCountdown(parseCalendarDate(config.fecha_cierre).getTime() - now)}</p> : null}</div>
+              <div className="p-6"><p className="text-xs font-semibold uppercase text-gray-500">Cierre</p><p className="mt-1 text-white">{formatCalendarDate(config.fecha_cierre, { dateStyle: 'long', timeStyle: 'short' })}</p>{configPhase === 'open' ? <p className="mt-2 font-racing text-xl font-bold text-yellow-300">Cierra en {formatCountdown(parseCalendarDate(config.fecha_cierre).getTime() - now)}</p> : null}</div>
             </div>
           </section>
 
@@ -183,9 +192,9 @@ export default function Registration() {
           </section>
 
           {!formToken && !completed ? <div className="mt-8 text-center">
-            <button type="button" onClick={startForm} disabled={config.phase !== 'open'} className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-40">Comenzar inscripción</button>
-            {config.phase === 'upcoming' ? <p className="mt-3 text-sm text-gray-400">El formulario se habilitará automáticamente en la fecha de apertura.</p> : null}
-            {config.phase === 'full' ? <p className="mt-3 text-sm text-yellow-300">Se alcanzó el límite de {config.limite_inscriptos} inscriptos.</p> : null}
+            <button type="button" onClick={startForm} disabled={configPhase !== 'open'} className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-40">Comenzar inscripción</button>
+            {configPhase === 'upcoming' ? <div className="mx-auto mt-4 max-w-xl border border-yellow-400/30 bg-yellow-400/10 p-4"><p className="font-racing text-xl font-bold text-yellow-300">Próximo inicio de campeonato</p><p className="mt-2 text-sm text-gray-300">El formulario se abrirá automáticamente el {formatCalendarDate(config.fecha_apertura, { dateStyle: 'long', timeStyle: 'short' })}.</p></div> : null}
+            {configPhase === 'full' ? <p className="mt-3 text-sm text-yellow-300">Se alcanzó el límite de {config.limite_inscriptos} inscriptos.</p> : null}
           </div> : null}
 
           {formToken && !expired ? <form onSubmit={submit} className="mt-8 space-y-8">
@@ -194,23 +203,24 @@ export default function Registration() {
             <section className="card-glass p-6">
               <h3 className="font-racing text-2xl font-bold">1. Datos del piloto</h3>
               <div className="relative mt-5"><label className="text-sm text-gray-300">Nombre completo</label><div className="relative mt-2"><MagnifyingGlassIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500"/><input name="nombre" value={driver.nombre} onChange={changeDriver} onFocus={() => setShowSuggestions(true)} className="input-field pl-10" autoComplete="off" required placeholder="Escribí tu nombre para buscarte"/></div>
-                {showSuggestions && suggestions.length ? <div className="absolute z-30 mt-1 w-full border border-racing-border bg-racing-dark shadow-xl">{suggestions.map(item => <button key={item.id} type="button" onClick={() => selectDriver(item)} className="block w-full border-b border-racing-border px-4 py-3 text-left hover:bg-racing-red/10"><strong>{item.nombre}</strong><span className="ml-2 text-sm text-gray-500">{item.localidad}</span></button>)}</div> : null}
+                {showSuggestions && suggestions.length ? <div className="absolute z-30 mt-1 w-full border border-racing-border bg-racing-dark shadow-xl">{suggestions.map(item => <button key={item.id} type="button" onClick={() => selectDriver(item)} className="block w-full border-b border-racing-border px-4 py-3 text-left hover:bg-racing-red/10"><strong>{item.nombre}</strong><span className="ml-2 text-sm text-gray-500">{item.localidad}</span>{item.ig ? <span className="ml-2 text-sm text-racing-red">{formatInstagramHandle(item.ig)}</span> : null}</button>)}</div> : null}
               </div>
               <p className="mt-2 text-xs text-gray-500">Si aparecés en la búsqueda, seleccioná tu nombre. Si sos nuevo, completá todos tus datos.</p>
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label><span className="text-sm text-gray-300">Teléfono</span><input name="telefono" value={driver.telefono} onChange={changeDriver} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">ID Steam</span><input name="steam" value={driver.steam} onChange={changeDriver} className="input-field mt-2" required/></label>
+                <label><span className="text-sm text-gray-300">Usuario de Instagram</span><input name="ig" value={driver.ig} onChange={changeDriver} className="input-field mt-2" placeholder="@usuario o enlace de Instagram" autoComplete="off"/></label>
                 <label><span className="text-sm text-gray-300">Localidad</span><input name="localidad" value={driver.localidad} onChange={changeDriver} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">Provincia</span><input name="provincia" value={driver.provincia} onChange={changeDriver} className="input-field mt-2"/></label>
                 <label className="md:col-span-2"><span className="text-sm text-gray-300">Nacionalidad</span><CountrySelect value={driver.nacionalidad} onChange={value => setDriver(current => ({ ...current, nacionalidad: value }))} className="mt-2"/></label>
               </div>
             </section>
 
-            <section className="card-glass p-6"><h3 className="font-racing text-2xl font-bold">2. Auto habilitado</h3><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{config.autos.map(car => <label key={car.id} className={`cursor-pointer border p-4 transition ${String(carId) === String(car.id) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="radio" name="auto" value={car.id} checked={String(carId) === String(car.id)} onChange={event => setCarId(event.target.value)} className="sr-only"/><p className="font-bold text-white">{car.marca}</p><p className="text-sm text-gray-400">{car.modelo}</p></label>)}</div>{!config.autos.length ? <p className="mt-4 text-yellow-300">Todavía no hay autos habilitados para este formulario.</p> : null}</section>
+            <section className="card-glass p-6"><h3 className="font-racing text-2xl font-bold">2. Auto habilitado</h3><p className="mt-2 text-sm text-gray-500">Cada modelo admite hasta {config.limite_por_modelo} pilotos.</p><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{config.autos.map(car => <label key={car.id} className={`border p-4 transition ${!car.disponible ? 'cursor-not-allowed border-racing-border bg-racing-dark opacity-45' : String(carId) === String(car.id) ? 'cursor-pointer border-racing-red bg-racing-red/10' : 'cursor-pointer border-racing-border bg-racing-dark'}`}><input type="radio" name="auto" value={car.id} disabled={!car.disponible} checked={String(carId) === String(car.id)} onChange={event => setCarId(event.target.value)} className="sr-only"/><p className="font-bold text-white">{car.marca}</p><p className="text-sm text-gray-400">{car.modelo}</p><p className={`mt-3 text-xs font-semibold ${car.disponible ? 'text-green-400' : 'text-racing-red'}`}>{car.disponible ? `${car.inscriptos_modelo}/${car.limite_modelo} inscriptos` : 'Modelo completo'}</p></label>)}</div>{!config.autos.length ? <p className="mt-4 text-yellow-300">Todavía no hay autos habilitados para este formulario.</p> : null}</section>
 
-            <section className="card-glass p-6"><h3 className="font-racing text-2xl font-bold">3. Diseño del auto</h3><div className="mt-5 grid gap-3 md:grid-cols-3">{modalities.map(item => <label key={item.id} className={`cursor-pointer border p-4 ${modality === item.id ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="radio" name="modalidad" value={item.id} checked={modality === item.id} onChange={event => { setModality(event.target.value); setNumber(''); }} className="sr-only"/><p className="font-bold text-white">{item.label}</p><p className="mt-1 text-sm text-gray-400">{item.description}</p><p className="mt-3 font-racing text-xl font-bold text-yellow-300">{formatMoney(item.price)}</p></label>)}</div>
+            <section className="card-glass p-6"><h3 className="font-racing text-2xl font-bold">3. Diseño del auto</h3><div className="mt-5 grid gap-3 md:grid-cols-3">{modalities.map(item => <label key={item.id} className={`cursor-pointer border p-4 ${modality === item.id ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="radio" name="modalidad" value={item.id} checked={modality === item.id} onChange={event => { setModality(event.target.value); setNumber(''); }} className="sr-only"/><p className="font-bold text-white">{item.label}</p><p className="mt-1 text-sm text-gray-400">{item.description}</p><p className="mt-3 font-racing text-xl font-bold text-yellow-300">{formatPrice(item.price)}</p></label>)}</div>
               {modality && modality !== 'extra' ? <div className="mt-6 max-w-sm"><label className="text-sm text-gray-300">Número del auto</label><input type="number" min="1" max="200" value={number} onChange={event => setNumber(event.target.value)} className={`input-field mt-2 ${numberAvailable === false ? 'border-red-500' : numberAvailable === true ? 'border-green-500' : ''}`} required/>{numberAvailable === false ? <p className="mt-2 text-sm font-semibold text-red-400">Ese número está ocupado.</p> : null}{numberAvailable === true ? <p className="mt-2 text-sm font-semibold text-green-400">Número disponible.</p> : null}</div> : null}
-              {modality ? <div className="mt-6 flex items-center justify-between border-t border-racing-border pt-5"><span className="font-semibold text-gray-300">Total a abonar</span><strong className="font-racing text-3xl text-yellow-300">{formatMoney(modalities.find(item => item.id === modality)?.price)}</strong></div> : null}
+              {modality ? <div className="mt-6 flex items-center justify-between border-t border-racing-border pt-5"><span className="font-semibold text-gray-300">Total a abonar</span><strong className="font-racing text-3xl text-yellow-300">{formatPrice(modalities.find(item => item.id === modality)?.price)}</strong></div> : null}
             </section>
 
             {message ? <div className="border border-racing-red/30 bg-racing-red/10 p-4 text-sm text-gray-200">{message}</div> : null}

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { CountryFlag } from './CountryFlag';
 import { getCountryName } from '../data/countries';
-import { CalendarIcon, MapPinIcon, TrophyIcon, FlagIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
+import { CalendarIcon, ClockIcon, MapPinIcon, TrophyIcon, FlagIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 import { formatCalendarDate } from '../utils/calendarDate';
 
 const statusConfig = {
@@ -21,7 +21,7 @@ const formatDate = value => {
   });
 };
 
-export default function EventCard({ event }) {
+export default function EventCard({ event, showNearbyActions = false, showLiveTiming = false }) {
   const cfg = statusConfig[event.status] || statusConfig.upcoming;
   const title = `${event.categoria || 'Categoría'} T${event.temporada || '-'} - Ronda ${event.ronda}`;
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
@@ -71,15 +71,16 @@ export default function EventCard({ event }) {
       </div>
 
       <div className="mt-auto grid gap-2">
-        {event.transmision ? (
+        {showNearbyActions && event.transmision ? (
           <a href={event.transmision} target="_blank" rel="noreferrer" className="btn-primary w-full justify-center">
             <PlayCircleIcon className="h-5 w-5" />
             Ver transmisión
           </a>
         ) : null}
-        {event.status === 'upcoming' ? (
-          <Link to="/inscripcion" className="btn-secondary w-full justify-center">
-            Inscribirme
+        {showNearbyActions && showLiveTiming ? (
+          <Link to="/tiempos-en-vivo" className="btn-secondary w-full justify-center">
+            <ClockIcon className="h-5 w-5" />
+            Tiempos online
           </Link>
         ) : null}
       </div>

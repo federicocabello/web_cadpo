@@ -43,4 +43,35 @@ const getChampionshipImages = async (req, res, next) => {
   }
 };
 
-module.exports = { getChampionshipImages };
+const getRegistrationImages = async (req, res, next) => {
+  try {
+    const { categoria, temporada } = req.query;
+    if (!categoria || !temporada) {
+      return res.status(400).json({ error: 'categoria y temporada son requeridos' });
+    }
+
+    const categorySlug = slugify(categoria);
+    const seasonSlug = `temporada-${slugify(temporada)}`;
+    const targetDir = path.join(publicDir, 'media', 'inscripciones', categorySlug, seasonSlug);
+    let files = [];
+    try {
+      files = await fs.readdir(targetDir, { withFileTypes: true });
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+
+    const images = files
+      .filter(file => file.isFile() && imageExtensions.has(path.extname(file.name).toLowerCase()))
+      .map(file => toPublicUrl(path.join(targetDir, file.name)));
+
+    res.json({
+      data: images,
+      total: images.length,
+      path: `/media/inscripciones/${categorySlug}/${seasonSlug}`,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getChampionshipImages, getRegistrationImages };

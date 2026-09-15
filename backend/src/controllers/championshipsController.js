@@ -98,7 +98,7 @@ const getStandings = async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT t.posicion, t.puntos, t.victorias, t.apercibimientos,
               t.expulsado, t.campeon,
-              p.id AS idpiloto, p.nombre, p.localidad
+              p.id AS idpiloto, p.nombre, p.localidad, p.ig
        FROM tablas t
        JOIN pilotos p ON t.idpiloto = p.id
        WHERE t.idcampeonato = ?
@@ -149,7 +149,7 @@ const getEnrolled = async (req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT i.numero, i.pago,
-              p.id AS idpiloto, p.nombre, p.localidad, p.telefono,
+              p.id AS idpiloto, p.nombre, p.localidad, p.telefono, p.ig,
               a.id AS idauto, am.marca, a.modelo, am.logo AS auto_logo
        FROM inscriptos i
        JOIN pilotos p ON i.idpiloto = p.id

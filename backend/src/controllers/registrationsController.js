@@ -6,7 +6,7 @@ const getAll = async (req, res, next) => {
     const { idcampeonato } = req.query;
     let query = `
       SELECT i.numero, i.pago, i.idcampeonato,
-             p.id AS idpiloto, p.nombre, p.localidad, p.telefono,
+             p.id AS idpiloto, p.nombre, p.localidad, p.telefono, p.ig,
              a.id AS idauto, am.id AS idmarca, am.marca, a.modelo, am.logo AS auto_logo,
              c.temporada, c.anio, c.idcategoria, cat.categoria
       FROM inscriptos i

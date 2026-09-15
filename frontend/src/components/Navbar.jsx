@@ -5,7 +5,6 @@ import {
   XMarkIcon,
   HomeIcon,
   ClockIcon,
-  TrophyIcon,
   CalendarDaysIcon,
   FlagIcon,
   UsersIcon,
@@ -41,7 +40,6 @@ const WhatsAppIcon = ({ className = '' }) => (
 const navLinks = [
   { to: '/', label: 'INICIO', Icon: HomeIcon },
   { to: '/tiempos-en-vivo', label: 'TIEMPOS EN VIVO', Icon: ClockIcon },
-  { to: '/resultados', label: 'RESULTADOS', Icon: TrophyIcon },
   { to: '/proximas-fechas', label: 'PRÓXIMAS FECHAS', Icon: CalendarDaysIcon },
   { to: '/campeonatos', label: 'CAMPEONATOS', Icon: FlagIcon },
   { to: '/pilotos', label: 'PILOTOS', Icon: UsersIcon },

@@ -26,16 +26,23 @@ export default function ChampionshipCard({ championship }) {
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-racing opacity-70 group-hover:opacity-100 transition-opacity duration-300" />
 
       <div className="flex items-start justify-between gap-3 pt-1">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <TrophyIcon className="w-5 h-5 text-racing-red" />
-            <span className="text-racing-red font-racing font-bold text-lg">
-              {championship.anio}
-            </span>
+        <div className="flex min-w-0 items-start gap-3">
+          {championship.categoria_logo ? (
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-racing-border bg-black/60 p-2">
+              <img src={championship.categoria_logo} alt={`Logo de ${championship.categoria}`} className="h-full w-full object-contain" />
+            </div>
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <TrophyIcon className="w-5 h-5 text-racing-red" />
+              <span className="text-racing-red font-racing font-bold text-lg">
+                {championship.anio}
+              </span>
+            </div>
+            <h3 className="font-racing text-xl font-bold text-white group-hover:text-racing-red transition-colors duration-200">
+              {championship.categoria} - Temporada {championship.temporada}
+            </h3>
           </div>
-          <h3 className="font-racing text-xl font-bold text-white group-hover:text-racing-red transition-colors duration-200">
-            {championship.categoria} - Temporada {championship.temporada}
-          </h3>
         </div>
         <span className={cfg.className}>{cfg.label}</span>
       </div>
@@ -63,16 +70,16 @@ export default function ChampionshipCard({ championship }) {
         </div>
       )}
 
-      {championship.reglamento && (
-        <a href={championship.reglamento} className="btn-secondary text-center text-xs justify-center mt-auto" target="_blank" rel="noreferrer">
-          Ver reglamento
-        </a>
-      )}
-      {!championship.reglamento && (
-        <Link to="/campeonatos" className="btn-secondary text-center text-xs justify-center mt-auto">
-          Ver campeonato
+      <div className="mt-auto grid gap-2 sm:grid-cols-2">
+        <Link to={`/resultados?campeonato=${championship.id}`} className="btn-primary justify-center text-center text-xs">
+          Ver resultados
         </Link>
-      )}
+        {championship.reglamento ? (
+          <a href={championship.reglamento} className="btn-secondary justify-center text-center text-xs" target="_blank" rel="noreferrer">
+            Ver reglamento
+          </a>
+        ) : null}
+      </div>
     </article>
   );
 }

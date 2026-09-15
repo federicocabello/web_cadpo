@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const normalizeCountryCode = require('../utils/countryCode');
+const normalizeInstagram = require('../utils/instagram');
 
 const capitalizeValue = value =>
   String(value || '')
@@ -8,7 +9,6 @@ const capitalizeValue = value =>
     .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
 
 const digitsOnly = value => String(value || '').replace(/\D/g, '');
-
 const normalizeDriver = body => ({
   nombre: capitalizeValue(body.nombre),
   localidad: capitalizeValue(body.localidad),
@@ -16,6 +16,7 @@ const normalizeDriver = body => ({
   telefono: digitsOnly(body.telefono),
   nacionalidad: normalizeCountryCode(body.nacionalidad),
   steam: String(body.steam || '').trim(),
+  ig: normalizeInstagram(body.ig),
 });
 
 const findDuplicate = async ({ nombre, telefono, steam }, excludeId = null) => {
@@ -64,7 +65,7 @@ const duplicateMessage = (duplicate, driver) => {
 const getAll = async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      `SELECT p.id, p.nombre, p.localidad, p.provincia, p.telefono, p.nacionalidad, p.steam,
+      `SELECT p.id, p.nombre, p.localidad, p.provincia, p.telefono, p.nacionalidad, p.steam, p.ig,
               COUNT(DISTINCT i.idcampeonato) AS campeonatos_disputados
        FROM pilotos p
        LEFT JOIN inscriptos i ON p.id = i.idpiloto
@@ -80,7 +81,7 @@ const getAll = async (req, res, next) => {
 const getById = async (req, res, next) => {
   try {
     const [[piloto]] = await pool.query(
-      'SELECT id, nombre, localidad, provincia, telefono, nacionalidad, steam FROM pilotos WHERE id = ?',
+      'SELECT id, nombre, localidad, provincia, telefono, nacionalidad, steam, ig FROM pilotos WHERE id = ?',
       [req.params.id]
     );
     if (!piloto) return res.status(404).json({ error: 'Piloto no encontrado' });
@@ -122,8 +123,8 @@ const create = async (req, res, next) => {
     }
 
     const [result] = await pool.query(
-      'INSERT INTO pilotos (nombre, localidad, provincia, telefono, nacionalidad, steam) VALUES (?, ?, ?, ?, ?, ?)',
-      [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam]
+      'INSERT INTO pilotos (nombre, localidad, provincia, telefono, nacionalidad, steam, ig) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam, driver.ig]
     );
 
     res.status(201).json({ data: { id: result.insertId, ...driver }, message: 'Piloto registrado' });
@@ -145,8 +146,8 @@ const update = async (req, res, next) => {
     }
 
     const [result] = await pool.query(
-      'UPDATE pilotos SET nombre=?, localidad=?, provincia=?, telefono=?, nacionalidad=?, steam=? WHERE id=?',
-      [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam, req.params.id]
+      'UPDATE pilotos SET nombre=?, localidad=?, provincia=?, telefono=?, nacionalidad=?, steam=?, ig=? WHERE id=?',
+      [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam, driver.ig, req.params.id]
     );
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Piloto no encontrado' });

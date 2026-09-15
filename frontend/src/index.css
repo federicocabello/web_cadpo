@@ -98,6 +98,10 @@
     animation: race-background-zoom 18s ease-in-out infinite alternate;
   }
 
+  .registration-background-transition {
+    animation: registration-background-enter 1.15s ease-out both;
+  }
+
   .race-hero-content {
     animation: race-content-enter 700ms ease-out both;
   }
@@ -197,6 +201,18 @@
     --action-glow: rgba(255, 255, 255, 0.28);
   }
 
+  .server-action-green {
+    --action-glow: rgba(16, 185, 129, 0.62);
+  }
+
+  .server-action-yellow {
+    --action-glow: rgba(250, 204, 21, 0.55);
+  }
+
+  .server-action-violet {
+    --action-glow: rgba(139, 92, 246, 0.62);
+  }
+
   .cta-attention {
     animation: cta-attention 2.4s ease-in-out infinite;
   }
@@ -204,6 +220,43 @@
   .server-join-flag {
     background-image: conic-gradient(#ffffff 25%, #111111 0 50%, #ffffff 0 75%, #111111 0);
     background-size: 8px 8px;
+  }
+
+  .registration-info-flag {
+    transform-origin: left center;
+    animation: registration-flag-wave 1.15s ease-in-out infinite;
+  }
+
+  .registration-info-button {
+    transform: translateX(-50%);
+    transition: transform 300ms ease, background-color 300ms ease, border-color 300ms ease;
+  }
+
+  .registration-info-button:hover,
+  .registration-info-button:focus-visible {
+    transform: translate(-50%, -4px);
+    border-color: #ffffff;
+    background-color: rgb(16 185 129);
+  }
+
+  .registration-info-reveal {
+    display: flex;
+    max-width: 0;
+    align-items: center;
+    gap: 0.65rem;
+    overflow: hidden;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: max-width 420ms ease, margin-left 420ms ease, opacity 250ms ease, transform 420ms ease;
+  }
+
+  .registration-info-button:hover .registration-info-reveal,
+  .registration-info-button:focus-visible .registration-info-reveal {
+    max-width: 12rem;
+    margin-left: 0.9rem;
+    opacity: 1;
+    transform: translateX(0);
   }
 
 }
@@ -277,13 +330,24 @@
   50% { box-shadow: 0 0 24px var(--action-glow); }
 }
 
+@keyframes registration-background-enter {
+  from { opacity: 0; transform: scale(1.045); filter: brightness(0.82); }
+  to { opacity: 1; transform: scale(1); filter: brightness(1); }
+}
+
 @keyframes cta-attention {
   0%, 100% { transform: translateY(0); filter: brightness(1); }
   50% { transform: translateY(-3px); filter: brightness(1.15); }
 }
 
+@keyframes registration-flag-wave {
+  0%, 100% { transform: perspective(60px) rotateY(-8deg) skewY(-2deg); }
+  50% { transform: perspective(60px) rotateY(16deg) skewY(3deg) translateX(2px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .race-hero-background,
+  .registration-background-transition,
   .race-hero-content,
   .race-track-float,
   .countdown-block::after,
@@ -297,7 +361,8 @@
     animation: none;
   }
 
-  .cta-attention {
+  .cta-attention,
+  .registration-info-flag {
     animation: none;
   }
 }

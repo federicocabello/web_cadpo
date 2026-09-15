@@ -54,7 +54,7 @@ const getAll = async (req, res, next) => {
     const { idcampeonato, ronda } = req.query;
     let query = `
       SELECT r.*,
-             p.nombre AS piloto, p.localidad, p.provincia AS piloto_provincia,
+             p.nombre AS piloto, p.localidad, p.provincia AS piloto_provincia, p.ig,
              ci.nombre AS circuito, ci.variante,
              ci.localidad AS circuito_localidad, ci.provincia AS circuito_provincia
       FROM resultados r

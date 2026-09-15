@@ -2,6 +2,12 @@ import { parseCalendarDate } from './calendarDate';
 
 const parseDate = value => parseCalendarDate(value);
 const ACTIVE_WINDOW_MS = 60 * 60 * 1000;
+const calendarDaysUntil = (value, now) => {
+  const date = parseDate(value);
+  const currentDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((eventDay - currentDay) / 86400000);
+};
 
 export const getEventPhase = (event, now = new Date()) => {
   if (!event?.fecha) return 'expired';
@@ -23,7 +29,7 @@ const getWeekBounds = reference => {
   return [start.getTime(), end.getTime()];
 };
 
-export const getWeeklyChampionshipEvents = (events, now = new Date()) => {
+export const getWeeklyEvents = (events, now = new Date()) => {
   const validEvents = (Array.isArray(events) ? events : [])
     .filter(event => !Number.isNaN(parseDate(event.fecha).getTime()))
     .filter(event => getEventPhase(event, now) !== 'expired');
@@ -32,10 +38,22 @@ export const getWeeklyChampionshipEvents = (events, now = new Date()) => {
   const activeEvents = validEvents.filter(event => getEventPhase(event, now) === 'active');
   const referenceEvent = activeEvents[0] || [...validEvents].sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha))[0];
   const [weekStart, weekEnd] = getWeekBounds(parseDate(referenceEvent.fecha));
-  const weeklyEvents = validEvents.filter(event => {
+  return validEvents.filter(event => {
     const timestamp = parseDate(event.fecha).getTime();
     return timestamp >= weekStart && timestamp < weekEnd;
-  });
+  }).sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
+};
+
+export const getFeaturedUpcomingEvents = (events, now = new Date()) => {
+  return (Array.isArray(events) ? events : [])
+    .filter(event => !Number.isNaN(parseDate(event.fecha).getTime()))
+    .filter(event => getEventPhase(event, now) !== 'expired')
+    .filter(event => Number(event.ronda) === 1 || calendarDaysUntil(event.fecha, now) <= 7)
+    .sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
+};
+
+export const getWeeklyChampionshipEvents = (events, now = new Date()) => {
+  const weeklyEvents = getWeeklyEvents(events, now);
 
   const byChampionship = new Map();
   weeklyEvents

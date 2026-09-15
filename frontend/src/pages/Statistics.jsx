@@ -1,84 +1,215 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChartBarIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
-import { championshipsApi, driversApi, eventsApi } from '../services/api';
+import { useEffect, useState } from 'react';
+import {
+  BoltIcon,
+  ChartBarIcon,
+  FlagIcon,
+  MagnifyingGlassIcon,
+  StarIcon,
+  TrophyIcon,
+  UserGroupIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
+import { CountryFlag } from '../components/CountryFlag';
+import { statisticsApi } from '../services/api';
+import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
+
+const summaryCards = [
+  { key: 'carreras_disputadas', label: 'Carreras disputadas', icon: FlagIcon },
+  { key: 'campeonatos_disputados', label: 'Campeonatos', icon: TrophyIcon },
+  { key: 'pilotos_cargados', label: 'Pilotos cargados', icon: UserGroupIcon },
+  { key: 'pilotos_ganadores', label: 'Pilotos ganadores', icon: StarIcon },
+  { key: 'campeones_calculados', label: 'Campeones', icon: ChartBarIcon },
+  { key: 'fechas_con_resultados', label: 'Fechas con resultados', icon: BoltIcon },
+];
+
+const driverStatCards = [
+  { key: 'carreras_disputadas', label: 'Carreras' },
+  { key: 'campeonatos_disputados', label: 'Campeonatos' },
+  { key: 'poles', label: 'Poles' },
+  { key: 'victorias', label: 'Victorias' },
+  { key: 'podios', label: 'Podios' },
+  { key: 'campeonatos_ganados', label: 'Títulos' },
+  { key: 'puntos', label: 'Puntos' },
+];
+
+const formatNumber = value => Number(value || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 
 export default function Statistics() {
-  const [championships, setChampionships] = useState([]);
-  const [drivers, setDrivers] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedDriver, setSelectedDriver] = useState(null);
+  const [driverStats, setDriverStats] = useState(null);
+  const [driverLoading, setDriverLoading] = useState(false);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [championshipsRes, driversRes, eventsRes] = await Promise.all([
-          championshipsApi.getAll(),
-          driversApi.getAll(),
-          eventsApi.getAll(),
-        ]);
-
-        setChampionships(championshipsRes.data.data ?? []);
-        setDrivers(driversRes.data.data ?? []);
-        setEvents(eventsRes.data.data ?? []);
-      } catch (err) {
-        console.error('Error cargando estadísticas:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStats();
+    statisticsApi.getOverview()
+      .then(response => setOverview(response.data.data))
+      .catch(requestError => setError(requestError.response?.data?.error || 'No se pudieron cargar las estadísticas.'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const stats = useMemo(() => [
-    { label: 'Campeonatos', value: championships.length, icon: TrophyIcon },
-    { label: 'Fechas cargadas', value: events.length, icon: FlagIcon },
-    { label: 'Pilotos registrados', value: drivers.length, icon: UserGroupIcon },
-    { label: 'Temporadas históricas', value: championships.filter(item => item.status === 'completed').length, icon: ChartBarIcon },
-  ], [championships, drivers, events]);
+  useEffect(() => {
+    if (selectedDriver || search.trim().length < 2) {
+      setSuggestions([]);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      statisticsApi.searchDrivers(search)
+        .then(response => setSuggestions(response.data.data || []))
+        .catch(() => setSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedDriver]);
+
+  const selectDriver = driver => {
+    setSelectedDriver(driver);
+    setSearch(driver.nombre);
+    setSuggestions([]);
+    setDriverLoading(true);
+    setDriverStats(null);
+    statisticsApi.getDriver(driver.id)
+      .then(response => setDriverStats(response.data.data))
+      .catch(requestError => setError(requestError.response?.data?.error || 'No se pudieron cargar los datos del piloto.'))
+      .finally(() => setDriverLoading(false));
+  };
+
+  const clearDriver = () => {
+    setSearch('');
+    setSuggestions([]);
+    setSelectedDriver(null);
+    setDriverStats(null);
+  };
 
   return (
     <div className="animate-fade-in">
-      <div className="bg-racing-gray border-b border-racing-border py-12 px-4">
-        <div className="max-w-7xl mx-auto">
-          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Datos de liga</p>
-          <h1 className="section-title text-4xl md:text-5xl mb-2">
+      <div className="border-b border-racing-border bg-racing-gray px-4 py-12">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-racing-red">Datos de la liga</p>
+          <h1 className="section-title mb-2 text-4xl md:text-5xl">
             Estadísticas <span className="gradient-text">CADPO</span>
           </h1>
-          <p className="text-gray-400 max-w-xl">Resumen general de la liga y base para rankings históricos.</p>
+          <p className="max-w-2xl text-gray-400">Historia de campeonatos, carreras y pilotos calculada desde los resultados cargados.</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6 lg:px-8">
         {loading ? (
-          <div className="flex justify-center py-24">
-            <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
+          <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
+        ) : error && !overview ? (
+          <div className="card-glass p-10 text-center text-gray-400">{error}</div>
+        ) : overview ? (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {stats.map(({ label, value, icon: Icon }) => (
-                <article key={label} className="card-glass p-6">
-                  <Icon className="w-7 h-7 text-racing-red mb-4" />
-                  <p className="font-racing text-4xl font-bold text-white">{value}</p>
-                  <p className="text-gray-400 text-sm uppercase tracking-wider mt-1">{label}</p>
+            <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+              {summaryCards.map(({ key, label, icon: Icon }) => (
+                <article key={key} className="card-glass p-5">
+                  <Icon className="mb-4 h-7 w-7 text-racing-red" />
+                  <p className="font-racing text-3xl font-bold text-white md:text-4xl">{formatNumber(overview.summary[key])}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wider text-gray-500">{label}</p>
                 </article>
               ))}
-            </div>
+            </section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-10">
-              <section className="card-glass p-6">
-                <h2 className="font-racing text-2xl font-bold mb-3">Pilotos más ganadores</h2>
-                <p className="text-gray-400 text-sm">Pendiente de endpoint agregado sobre resultados y tablas históricas.</p>
+            <section className="card-glass p-6 md:p-8">
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ficha individual</p>
+                <h2 className="mt-1 font-racing text-3xl font-bold">Buscar piloto</h2>
+                <p className="mt-2 text-sm text-gray-400">Buscá por nombre o usuario de Instagram y seleccioná al piloto.</p>
+              </div>
+              <div className="relative mt-6 max-w-2xl">
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={search}
+                  onChange={event => { setSearch(event.target.value); setSelectedDriver(null); setDriverStats(null); }}
+                  className="input-field pl-10 pr-10"
+                  placeholder="Nombre del piloto o @instagram..."
+                  autoComplete="off"
+                />
+                {search ? <button type="button" onClick={clearDriver} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white" aria-label="Limpiar piloto"><XMarkIcon className="h-5 w-5" /></button> : null}
+                {suggestions.length ? (
+                  <div className="absolute z-30 mt-2 max-h-80 w-full overflow-y-auto border border-racing-border bg-racing-dark shadow-2xl">
+                    {suggestions.map(driver => (
+                      <button key={driver.id} type="button" onClick={() => selectDriver(driver)} className="flex w-full items-center gap-3 border-b border-racing-border px-4 py-3 text-left transition-colors hover:bg-racing-red/10">
+                        <CountryFlag country={driver.nacionalidad} className="text-lg" />
+                        <span className="min-w-0"><strong className="block truncate text-white">{driver.nombre}</strong><span className="text-xs text-gray-500">{[driver.localidad, driver.provincia].filter(Boolean).join(', ') || 'Sin localidad'}{driver.ig ? ` · ${formatInstagramHandle(driver.ig)}` : ''}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              {driverLoading ? <div className="mt-8 flex justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div> : null}
+              {driverStats && !driverLoading ? (
+                <div className="mt-8 border-t border-racing-border pt-8">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <CountryFlag country={driverStats.driver.nacionalidad} className="text-3xl" />
+                    <div>
+                      <h3 className="font-racing text-3xl font-bold text-white">{driverStats.driver.nombre}</h3>
+                      <p className="text-sm text-gray-500">{[driverStats.driver.localidad, driverStats.driver.provincia].filter(Boolean).join(', ')}</p>
+                      {driverStats.driver.ig ? <a href={getInstagramUrl(driverStats.driver.ig)} target="_blank" rel="noreferrer" className="text-sm text-racing-red hover:text-white">{formatInstagramHandle(driverStats.driver.ig)}</a> : null}
+                    </div>
+                  </div>
+                  <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+                    {driverStatCards.map(item => (
+                      <div key={item.key} className="border border-racing-border bg-racing-dark p-4 text-center">
+                        <p className="font-racing text-2xl font-bold text-white">{formatNumber(driverStats.totals[item.key])}</p>
+                        <p className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-8 overflow-x-auto border border-racing-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-racing-dark text-xs uppercase tracking-wider text-gray-500">
+                        <tr><th className="px-4 py-3 text-left">Campeonato</th><th className="px-4 py-3 text-center">Carreras</th><th className="px-4 py-3 text-center">Poles</th><th className="px-4 py-3 text-center">Victorias</th><th className="px-4 py-3 text-center">Podios</th><th className="px-4 py-3 text-right">Puntos</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-racing-border">
+                        {driverStats.championships.map(item => (
+                          <tr key={item.idcampeonato} className="hover:bg-racing-card/60">
+                            <td className="px-4 py-3"><div className="flex items-center gap-3">{item.categoria_logo ? <img src={item.categoria_logo} alt="" className="h-9 w-9 object-contain" /> : null}<div><p className="font-semibold text-white">{item.categoria} · T{item.temporada}</p><p className="text-xs text-gray-500">{item.anio}{item.campeon ? ' · Campeón' : ''}</p></div></div></td>
+                            <td className="px-4 py-3 text-center">{item.carreras}</td><td className="px-4 py-3 text-center">{item.poles}</td><td className="px-4 py-3 text-center">{item.victorias}</td><td className="px-4 py-3 text-center">{item.podios}</td><td className="px-4 py-3 text-right font-racing font-bold text-yellow-300">{formatNumber(item.puntos)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section className="card-glass overflow-hidden">
+                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ranking histórico</p><h2 className="mt-1 font-racing text-2xl font-bold">Pilotos más ganadores</h2></div>
+                <div className="divide-y divide-racing-border">
+                  {overview.topWinners.map((driver, index) => (
+                    <button key={driver.id} type="button" onClick={() => selectDriver(driver)} className="grid w-full grid-cols-[40px_1fr_auto] items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-racing-card/60">
+                      <span className="font-racing text-xl font-bold text-racing-red">{index + 1}</span>
+                      <span><strong className="block text-white">{driver.nombre}</strong><span className="text-xs text-gray-500">{driver.poles} poles · {driver.podios} podios</span></span>
+                      <span className="text-right"><strong className="block font-racing text-xl text-yellow-300">{driver.victorias}</strong><span className="text-[10px] uppercase text-gray-500">victorias</span></span>
+                    </button>
+                  ))}
+                </div>
               </section>
 
-              <section className="card-glass p-6">
-                <h2 className="font-racing text-2xl font-bold mb-3">Pilotos más rápidos</h2>
-                <p className="text-gray-400 text-sm">Pendiente de conectar tiempos de vuelta o datos de clasificación.</p>
+              <section className="card-glass overflow-hidden">
+                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Por puntaje final</p><h2 className="mt-1 font-racing text-2xl font-bold">Campeones recientes</h2></div>
+                <div className="max-h-[620px] divide-y divide-racing-border overflow-y-auto">
+                  {overview.champions.map(champion => (
+                    <button key={champion.idcampeonato} type="button" onClick={() => selectDriver({ ...champion, id: champion.idpiloto })} className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-racing-card/60">
+                      {champion.categoria_logo ? <img src={champion.categoria_logo} alt="" className="h-11 w-11 object-contain" /> : <TrophyIcon className="h-8 w-8 text-racing-red" />}
+                      <span className="min-w-0 flex-1"><strong className="block truncate text-white">{champion.nombre}</strong><span className="text-xs text-gray-500">{champion.categoria} · T{champion.temporada} · {champion.anio}</span></span>
+                      <span className="font-racing font-bold text-yellow-300">{formatNumber(champion.puntos)} pts</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="border-t border-racing-border px-6 py-3 text-xs text-gray-600">Campeones calculados por mayor puntaje acumulado en cada campeonato finalizado.</p>
               </section>
             </div>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

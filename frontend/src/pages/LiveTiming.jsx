@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowPathIcon,
   ExclamationTriangleIcon,
@@ -143,6 +144,8 @@ const formatGap = (lap, leaderLap) => {
 };
 
 export default function LiveTiming() {
+  const [searchParams] = useSearchParams();
+  const requestedChampionshipId = searchParams.get('campeonato');
   const [timing, setTiming] = useState(null);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoaded, setCalendarLoaded] = useState(false);
@@ -245,7 +248,8 @@ export default function LiveTiming() {
         const activeEvents = getLiveTimingEvents(loadedEvents);
         setCalendarError(false);
         setCalendarEvents(loadedEvents);
-        setSelectedChampionshipId(current => current || activeEvents[0]?.idcampeonato || null);
+        const requestedEvent = activeEvents.find(event => String(event.idcampeonato) === String(requestedChampionshipId));
+        setSelectedChampionshipId(requestedEvent?.idcampeonato || activeEvents[0]?.idcampeonato || null);
       } catch (err) {
         console.error('No se pudo cargar la fecha del calendario:', err);
         setCalendarError(true);
@@ -257,7 +261,7 @@ export default function LiveTiming() {
     };
 
     loadCalendarEvent();
-  }, []);
+  }, [requestedChampionshipId]);
 
   useEffect(() => {
     if (weeklyEvents.length) {

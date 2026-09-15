@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MagnifyingGlassIcon, UserGroupIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { driversApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
+import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 
 const normalize = value => String(value || '')
   .normalize('NFD')
@@ -36,6 +37,7 @@ export default function Drivers() {
     return drivers.filter(driver => (
       normalize(driver.nombre).includes(term)
       || normalize(driver.localidad).includes(term)
+      || normalize(driver.ig).includes(term)
     ));
   }, [drivers, search]);
 
@@ -75,7 +77,7 @@ export default function Drivers() {
                 type="search"
                 value={search}
                 onChange={event => setSearch(event.target.value)}
-                placeholder="Buscar piloto por nombre o localidad..."
+                placeholder="Buscar por nombre, localidad o Instagram..."
                 className="w-full rounded-lg border border-racing-border bg-racing-card py-3 pl-10 pr-10 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-racing-red"
               />
               {search && (
@@ -107,6 +109,7 @@ export default function Drivers() {
                   <tr className="border-b border-racing-border bg-racing-dark">
                     <th className="px-4 py-3 text-left text-xs font-racing font-semibold text-gray-400 uppercase tracking-wider">Piloto</th>
                     <th className="px-4 py-3 text-left text-xs font-racing font-semibold text-gray-400 uppercase tracking-wider">Localidad</th>
+                    <th className="px-4 py-3 text-left text-xs font-racing font-semibold text-gray-400 uppercase tracking-wider">Instagram</th>
                     <th className="px-4 py-3 text-right text-xs font-racing font-semibold text-gray-400 uppercase tracking-wider">Campeonatos</th>
                   </tr>
                 </thead>
@@ -120,6 +123,9 @@ export default function Drivers() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-400">{driver.localidad || '-'}</td>
+                      <td className="px-4 py-3 text-gray-400">
+                        {driver.ig ? <a href={getInstagramUrl(driver.ig)} target="_blank" rel="noreferrer" className="text-racing-red transition-colors hover:text-white">{formatInstagramHandle(driver.ig)}</a> : '-'}
+                      </td>
                       <td className="px-4 py-3 text-right font-racing text-white">{driver.campeonatos_disputados}</td>
                     </tr>
                   ))}
