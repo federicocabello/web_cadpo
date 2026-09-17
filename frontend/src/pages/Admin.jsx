@@ -66,12 +66,58 @@ const resultPointFields = [
   { key: 'pts_qualy_final', shortLabel: 'QF', label: 'Qualy Final' },
   { key: 'pts_final', shortLabel: 'F', label: 'Final', decimal: true },
 ];
-const resultPositionFields = [
-  { key: 'pos_qualy_sprint', shortLabel: 'PQS', label: 'Posición Qualy Sprint' },
-  { key: 'pos_sprint', shortLabel: 'PS', label: 'Posición Sprint' },
-  { key: 'pos_qualy_final', shortLabel: 'PQF', label: 'Posición Qualy Final' },
-  { key: 'pos_final', shortLabel: 'PF', label: 'Posición Final' },
+const resultSpreadsheetColumns = [
+  { key: 'presentismo', label: 'Presentismo', type: 'integer' },
+  { key: 'pos_qualy_sprint', label: 'Pos. QS', type: 'position' },
+  { key: 'pts_qualy_sprint', label: 'Pts. QS', type: 'integer' },
+  { key: 'pos_qualy_final', label: 'Pos. QF', type: 'position' },
+  { key: 'pts_qualy_final', label: 'Pts. QF', type: 'integer' },
+  { key: 'pos_sprint', label: 'Pos. Sprint', type: 'position' },
+  { key: 'piloto_sprint', label: 'Piloto', type: 'pilot' },
+  { key: 'pts_sprint', label: 'Pts. Sprint', type: 'decimal' },
+  { key: 'pos_final', label: 'Pos. Final', type: 'position' },
+  { key: 'piloto_final', label: 'Piloto', type: 'pilot' },
+  { key: 'pts_final', label: 'Pts. Final', type: 'decimal' },
 ];
+const resultGridColumns = [
+  { key: 'piloto', label: 'Piloto', type: 'pilot' },
+  ...resultSpreadsheetColumns,
+];
+const parseNumericPosition = value => {
+  const normalized = String(value ?? '').trim();
+  return /^\d+$/.test(normalized) && Number(normalized) > 0 ? Number(normalized) : null;
+};
+
+const buildEditableResultRows = rows => {
+  const byRound = new Map();
+  rows.forEach(result => {
+    const roundKey = String(result.ronda);
+    if (!byRound.has(roundKey)) byRound.set(roundKey, []);
+    byRound.get(roundKey).push(result);
+  });
+
+  return [...byRound.values()].flatMap(roundRows => {
+    const baseRows = [...roundRows].sort((a, b) => Number(a.id) - Number(b.id));
+    const sortSession = field => [...roundRows].sort((a, b) => {
+      const positionA = parseNumericPosition(a[field]);
+      const positionB = parseNumericPosition(b[field]);
+      if (positionA || positionB) return (positionA || Number.MAX_SAFE_INTEGER) - (positionB || Number.MAX_SAFE_INTEGER);
+      return Number(a.id) - Number(b.id);
+    });
+    const sprintRows = sortSession('pos_sprint');
+    const finalRows = sortSession('pos_final');
+
+    return baseRows.map((result, index) => ({
+      ...result,
+      piloto_sprint: sprintRows[index]?.piloto || '',
+      pos_sprint: sprintRows[index]?.pos_sprint ?? '',
+      pts_sprint: sprintRows[index]?.pts_sprint ?? '',
+      piloto_final: finalRows[index]?.piloto || '',
+      pos_final: finalRows[index]?.pos_final ?? '',
+      pts_final: finalRows[index]?.pts_final ?? '',
+    }));
+  });
+};
 
 const parseResultPoints = value => {
   const number = Number(String(value ?? 0).replace(',', '.'));
@@ -85,6 +131,7 @@ const getResultPoints = result => Math.round(resultPointFields.reduce(
 const formatResultPoints = value => Number(value || 0).toLocaleString('es-AR', {
   maximumFractionDigits: 2,
 });
+const formatResultPointsCell = value => parseResultPoints(value) === 0 ? '' : formatResultPoints(value);
 
 const emptyCircuitForm = {
   nombre: '',
@@ -394,6 +441,83 @@ function ClearFiltersButton({ active, onClick }) {
   );
 }
 
+function ResultSpreadsheetCell({
+  value,
+  type,
+  disabled,
+  label,
+  rowIndex,
+  columnIndex,
+  selected,
+  error,
+  onCommit,
+  onSelect,
+  onExtendSelection,
+  onPaste,
+  onClearSelection,
+}) {
+  const cellRef = useRef(null);
+  const displayValue = String(value ?? '');
+
+  useEffect(() => {
+    if (cellRef.current && document.activeElement !== cellRef.current) {
+      cellRef.current.textContent = displayValue;
+    }
+  }, [displayValue]);
+
+  const commitValue = () => {
+    if (!cellRef.current || disabled) return;
+    let nextValue = cellRef.current.textContent?.trim() || '';
+    if (type === 'position') nextValue = nextValue.toLocaleUpperCase('es-AR');
+    cellRef.current.textContent = nextValue;
+    if (nextValue !== displayValue) {
+      const accepted = onCommit(nextValue);
+      if (accepted === false) cellRef.current.textContent = displayValue;
+      else if (typeof accepted === 'string') cellRef.current.textContent = accepted;
+    }
+  };
+
+  return (
+    <div
+      ref={cellRef}
+      contentEditable={!disabled}
+      suppressContentEditableWarning
+      role="textbox"
+      tabIndex={0}
+      aria-label={label}
+      onMouseDown={event => onSelect(rowIndex, columnIndex, event.shiftKey)}
+      onMouseEnter={event => {
+        if (event.buttons === 1) onExtendSelection(rowIndex, columnIndex);
+      }}
+      onPaste={event => {
+        event.preventDefault();
+        onPaste(rowIndex, columnIndex, event.clipboardData.getData('text/plain'));
+        event.currentTarget.blur();
+      }}
+      onBlur={commitValue}
+      onKeyDown={event => {
+        if (event.key === 'Delete') {
+          event.preventDefault();
+          onClearSelection();
+          event.currentTarget.blur();
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.currentTarget.textContent = displayValue;
+          event.currentTarget.blur();
+        }
+      }}
+      title={error || undefined}
+      className={`flex h-10 min-w-full items-center px-2 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-racing-red ${type === 'pilot' ? 'justify-start font-semibold' : 'justify-center font-racing'} ${error ? 'bg-red-500/25 ring-2 ring-inset ring-red-500' : selected ? 'bg-sky-500/20 ring-1 ring-inset ring-sky-400' : 'focus:bg-racing-dark'} ${disabled ? 'cursor-cell text-transparent' : 'cursor-cell text-white'}`}
+    />
+  );
+}
+
 export default function Admin() {
   const imageInputRef = useRef(null);
   const layoutInputRef = useRef(null);
@@ -431,7 +555,12 @@ export default function Admin() {
   const [cars, setCars] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [results, setResults] = useState([]);
+  const [savedResults, setSavedResults] = useState([]);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
+  const [resultRoundId, setResultRoundId] = useState('');
+  const [resultSheetSize, setResultSheetSize] = useState(35);
+  const [resultGridSelection, setResultGridSelection] = useState(null);
+  const [resultCellErrors, setResultCellErrors] = useState({});
   const [loadingResults, setLoadingResults] = useState(false);
   const [dirtyResults, setDirtyResults] = useState({});
   const [savingResults, setSavingResults] = useState(false);
@@ -535,21 +664,86 @@ export default function Admin() {
     [events, resultChampionshipId]
   );
 
-  const resultStandings = useMemo(() => {
-    const byDriver = new Map();
+  const resultRound = useMemo(
+    () => resultRounds.find(round => String(round.id) === String(resultRoundId)) || null,
+    [resultRoundId, resultRounds]
+  );
 
+  const resultRegisteredDrivers = useMemo(() => {
+    const byDriver = new Map();
     registrations
       .filter(registration => String(registration.idcampeonato) === String(resultChampionshipId))
       .forEach(registration => {
+        if (!registration.idpiloto) return;
         byDriver.set(String(registration.idpiloto), {
-          idpiloto: registration.idpiloto,
-          piloto: registration.nombre,
-          rounds: new Map(),
-          total: 0,
+          id: registration.idpiloto,
+          nombre: registration.nombre,
+          marca: registration.marca,
+          modelo: registration.modelo,
+          autoLogo: registration.auto_logo,
         });
       });
+    return [...byDriver.values()].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
+  }, [registrations, resultChampionshipId]);
 
-    results.forEach(result => {
+  const resultRoundResults = useMemo(
+    () => results.filter(result => !result._delete && resultRound && Number(result.ronda) === Number(resultRound.ronda)),
+    [resultRound, results]
+  );
+
+  const savedResultRoundResults = useMemo(
+    () => savedResults.filter(result => resultRound && Number(result.ronda) === Number(resultRound.ronda)),
+    [resultRound, savedResults]
+  );
+
+  const resultSheetRows = useMemo(() => {
+    if (!resultRound) return [];
+    const positioned = new Map();
+    const savedIds = new Set(savedResultRoundResults.map(result => String(result.id)));
+    const currentById = new Map(resultRoundResults
+      .filter(result => result.id)
+      .map(result => [String(result.id), result]));
+
+    [...savedResultRoundResults]
+      .sort((a, b) => Number(a.id) - Number(b.id))
+      .forEach((savedResult, index) => {
+      const currentResult = currentById.get(String(savedResult.id));
+      if (!currentResult) return;
+      positioned.set(index + 1, currentResult);
+      });
+
+    resultRoundResults
+      .filter(result => !result.id || !savedIds.has(String(result.id)))
+      .forEach(result => {
+        const sheetPosition = parseNumericPosition(result._sheetPosition);
+        let targetPosition = sheetPosition || 1;
+        while (positioned.has(targetPosition)) targetPosition += 1;
+        positioned.set(targetPosition, result);
+      });
+
+    const maxPosition = Math.max(0, ...positioned.keys());
+    const size = Math.max(resultSheetSize, maxPosition);
+    const rows = Array.from({ length: size }, (_, index) => ({
+      position: index + 1,
+      result: positioned.get(index + 1) || null,
+      unpositioned: false,
+    }));
+
+    return rows;
+  }, [resultRound, resultRoundResults, resultSheetSize, savedResultRoundResults]);
+
+  const resultChampionshipStandings = useMemo(() => {
+    const byDriver = new Map(resultRegisteredDrivers.map(driver => [String(driver.id), {
+      idpiloto: driver.id,
+      piloto: driver.nombre,
+      marca: driver.marca,
+      modelo: driver.modelo,
+      autoLogo: driver.autoLogo,
+      rounds: new Map(),
+      total: 0,
+    }]));
+
+    savedResults.filter(result => !result._delete).forEach(result => {
       const driverKey = String(result.idpiloto);
       if (!byDriver.has(driverKey)) {
         byDriver.set(driverKey, {
@@ -559,19 +753,50 @@ export default function Admin() {
           total: 0,
         });
       }
-
       const standing = byDriver.get(driverKey);
-      standing.rounds.set(String(result.ronda), result);
-      standing.total += getResultPoints(result);
+      const roundKey = String(result.ronda);
+      const points = getResultPoints(result);
+      const roundDetail = standing.rounds.get(roundKey) || {
+        presentismo: 0,
+        qualy: 0,
+        sprint: 0,
+        final: 0,
+        points: 0,
+        position: '',
+      };
+      roundDetail.presentismo += parseResultPoints(result.presentismo);
+      roundDetail.qualy += parseResultPoints(result.pts_qualy_sprint) + parseResultPoints(result.pts_qualy_final);
+      roundDetail.sprint += parseResultPoints(result.pts_sprint);
+      roundDetail.final += parseResultPoints(result.pts_final);
+      roundDetail.points += points;
+      roundDetail.position = result.pos_final || roundDetail.position;
+      standing.rounds.set(roundKey, roundDetail);
+      standing.total += points;
     });
 
     return [...byDriver.values()]
-      .sort((a, b) =>
-        b.total - a.total
-        || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' })
-      )
+      .sort((a, b) => b.total - a.total || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' }))
       .map((standing, index) => ({ ...standing, position: index + 1 }));
-  }, [registrations, resultChampionshipId, results]);
+  }, [resultRegisteredDrivers, savedResults]);
+
+  const resultTotalColumnWidth = useMemo(() => {
+    const characters = Math.max('TOTAL'.length, ...resultChampionshipStandings.map(standing => formatResultPoints(standing.total).length));
+    return Math.max(7, characters + 2);
+  }, [resultChampionshipStandings]);
+
+  useEffect(() => {
+    if (!resultRounds.length) {
+      setResultRoundId('');
+      return;
+    }
+    if (!resultRounds.some(round => String(round.id) === String(resultRoundId))) {
+      setResultRoundId(String(resultRounds[0].id));
+    }
+  }, [resultRoundId, resultRounds]);
+
+  useEffect(() => {
+    setResultSheetSize(current => Math.max(current, savedResultRoundResults.length, 35));
+  }, [savedResultRoundResults]);
 
   const displayedCircuits = useMemo(() => {
     const search = circuitSearch.trim().toLocaleLowerCase('es-AR');
@@ -993,16 +1218,24 @@ export default function Admin() {
     const fetchResults = async () => {
       if (!authorized || !resultChampionshipId) {
         setResults([]);
+        setSavedResults([]);
+        setResultCellErrors({});
         return;
       }
 
       setLoadingResults(true);
       setResultMessage('');
+      setResults([]);
+      setSavedResults([]);
+      setDirtyResults({});
+      setResultCellErrors({});
       try {
         const res = await resultsApi.getAll({
           idcampeonato: resultChampionshipId,
         });
-        setResults(res.data.data ?? []);
+        const loadedResults = res.data.data ?? [];
+        setResults(buildEditableResultRows(loadedResults));
+        setSavedResults(loadedResults);
         setDirtyResults({});
       } catch (err) {
         console.error('Error cargando resultados:', err);
@@ -1441,14 +1674,7 @@ export default function Admin() {
   const handleResultFieldChange = (standing, round, currentResult, field, value) => {
     const resultKey = currentResult?._key
       || (currentResult?.id ? `id-${currentResult.id}` : `new-${standing.idpiloto}-${round.ronda}`);
-    const pointsField = resultPointFields.find(item => item.key === field);
-    let normalizedValue = value.toLocaleUpperCase('es-AR');
-    if (pointsField?.decimal) {
-      if (!/^\d*[.,]?\d*$/.test(value)) return;
-      normalizedValue = value;
-    } else if (pointsField) {
-      normalizedValue = value === '' ? '' : Math.max(0, Number.parseInt(value, 10) || 0);
-    }
+    const normalizedValue = field.startsWith('pos_') ? value.toLocaleUpperCase('es-AR') : value;
 
     setResults(current => {
       const index = current.findIndex(result =>
@@ -1476,6 +1702,7 @@ export default function Admin() {
           idpiloto: Number(standing.idpiloto),
           piloto: standing.piloto,
           circuito: round.circuito,
+          _sheetPosition: null,
           [field]: normalizedValue,
         },
       ];
@@ -1484,51 +1711,458 @@ export default function Admin() {
     setResultMessage('');
   };
 
+  const handleResultPilotChange = (row, currentResult, value, pilotField = 'piloto') => {
+    const requestedName = String(value || '').trim();
+    const matchedDriver = resultRegisteredDrivers.find(driver =>
+      String(driver.nombre || '').localeCompare(requestedName, 'es-AR', { sensitivity: 'base' }) === 0
+    );
+
+    const resultKey = currentResult?._key
+      || (currentResult?.id ? `id-${currentResult.id}` : `new-row-${resultRound.ronda}-${row.position || results.length + 1}`);
+
+    setResults(current => {
+      const index = current.findIndex(result =>
+        result._key === resultKey
+        || (currentResult?.id && result.id === currentResult.id)
+      );
+      const driverData = {
+        _key: resultKey,
+        ...(pilotField === 'piloto' ? { idpiloto: matchedDriver ? Number(matchedDriver.id) : null } : {}),
+        [pilotField]: requestedName,
+      };
+
+      if (index >= 0) {
+        return current.map((result, resultIndex) =>
+          resultIndex === index ? { ...result, ...driverData } : result
+        );
+      }
+
+      return [
+        ...current,
+        {
+          ...driverData,
+          _isNew: true,
+          idcampeonato: Number(resultChampionshipId),
+          fecha: String(resultRound.fecha || '').slice(0, 10),
+          ronda: Number(resultRound.ronda),
+          idcircuito: Number(resultRound.idcircuito),
+          circuito: resultRound.circuito,
+          _sheetPosition: row.position,
+        },
+      ];
+    });
+    setDirtyResults(current => ({ ...current, [resultKey]: true }));
+    setResultMessage('');
+    return requestedName;
+  };
+
+  const handleResultCellSelect = (rowIndex, columnIndex, extend = false) => {
+    setResultGridSelection(current => {
+      if (extend && current) {
+        return { ...current, focusRow: rowIndex, focusColumn: columnIndex };
+      }
+      return {
+        anchorRow: rowIndex,
+        anchorColumn: columnIndex,
+        focusRow: rowIndex,
+        focusColumn: columnIndex,
+      };
+    });
+  };
+
+  const handleResultCellSelectionExtend = (rowIndex, columnIndex) => {
+    setResultGridSelection(current => current
+      ? { ...current, focusRow: rowIndex, focusColumn: columnIndex }
+      : current);
+  };
+
+  const getResultSelectionBounds = () => {
+    if (!resultGridSelection) return null;
+    return {
+      firstRow: Math.min(resultGridSelection.anchorRow, resultGridSelection.focusRow),
+      lastRow: Math.max(resultGridSelection.anchorRow, resultGridSelection.focusRow),
+      firstColumn: Math.min(resultGridSelection.anchorColumn, resultGridSelection.focusColumn),
+      lastColumn: Math.max(resultGridSelection.anchorColumn, resultGridSelection.focusColumn),
+    };
+  };
+
+  const isResultCellSelected = (rowIndex, columnIndex) => {
+    const bounds = getResultSelectionBounds();
+    return Boolean(bounds
+      && rowIndex >= bounds.firstRow
+      && rowIndex <= bounds.lastRow
+      && columnIndex >= bounds.firstColumn
+      && columnIndex <= bounds.lastColumn);
+  };
+
+  const getResultGridCellValue = (row, column) => {
+    if (!row?.result) return '';
+    if (column.type === 'pilot') return row.result[column.key] ?? row.result.piloto ?? '';
+    const value = row.result[column.key] ?? '';
+    return String(value);
+  };
+
+  const handleResultGridCopy = event => {
+    const bounds = getResultSelectionBounds();
+    if (!bounds) return;
+
+    const copiedRows = [];
+    for (let rowIndex = bounds.firstRow; rowIndex <= bounds.lastRow; rowIndex += 1) {
+      const row = resultSheetRows[rowIndex];
+      copiedRows.push(resultGridColumns
+        .slice(bounds.firstColumn, bounds.lastColumn + 1)
+        .map(column => getResultGridCellValue(row, column))
+        .join('\t'));
+    }
+
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', copiedRows.join('\n'));
+  };
+
+  const handleResultGridPaste = (startRow, startColumn, clipboardText) => {
+    if (!resultRound || !clipboardText) return;
+
+    const selectionBounds = getResultSelectionBounds();
+    if (selectionBounds) {
+      startRow = selectionBounds.firstRow;
+      startColumn = selectionBounds.firstColumn;
+    }
+
+    const matrix = clipboardText
+      .replace(/\r/g, '')
+      .split('\n')
+      .map(line => line.split('\t'));
+    if (matrix.length > 1 && matrix.at(-1).every(value => value === '')) matrix.pop();
+
+    const maxRows = Math.min(matrix.length, 100 - startRow);
+    const maxColumns = Math.min(
+      Math.max(0, ...matrix.map(row => row.length)),
+      resultGridColumns.length - startColumn
+    );
+    if (!maxRows || !maxColumns) return;
+
+    const nextResults = [...results];
+    const pastedDirtyResults = {};
+    let changedRows = 0;
+
+    for (let matrixRowIndex = 0; matrixRowIndex < maxRows; matrixRowIndex += 1) {
+      const targetRowIndex = startRow + matrixRowIndex;
+      const targetRow = resultSheetRows[targetRowIndex] || {
+        position: targetRowIndex + 1,
+        result: null,
+        unpositioned: false,
+      };
+      const sourceCells = matrix[matrixRowIndex];
+      const originalResult = targetRow.result;
+      let nextResult = originalResult ? { ...originalResult } : null;
+      let rowChanged = false;
+      const pastedCells = sourceCells.slice(0, maxColumns);
+      const hasData = pastedCells.some(value => String(value ?? '').trim() !== '');
+      if (!nextResult && !hasData) continue;
+
+      if (!nextResult) {
+        const resultKey = `new-row-${resultRound.ronda}-${targetRowIndex + 1}`;
+        nextResult = {
+          _key: resultKey,
+          _isNew: true,
+          idcampeonato: Number(resultChampionshipId),
+          fecha: String(resultRound.fecha || '').slice(0, 10),
+          ronda: Number(resultRound.ronda),
+          idcircuito: Number(resultRound.idcircuito),
+          idpiloto: null,
+          piloto: '',
+          circuito: resultRound.circuito,
+          _sheetPosition: targetRow.position,
+        };
+        rowChanged = true;
+      }
+
+      for (let sourceColumnIndex = 0; sourceColumnIndex < Math.min(sourceCells.length, maxColumns); sourceColumnIndex += 1) {
+        const column = resultGridColumns[startColumn + sourceColumnIndex];
+        const rawValue = String(sourceCells[sourceColumnIndex] ?? '').trim();
+        if (column.type === 'pilot') {
+          const currentValue = nextResult[column.key] ?? (column.key === 'piloto' ? '' : nextResult.piloto) ?? '';
+          if (String(currentValue) !== rawValue) {
+            nextResult[column.key] = rawValue;
+            if (column.key === 'piloto') {
+              const matchedDriver = resultRegisteredDrivers.find(item =>
+                String(item.nombre || '').localeCompare(rawValue, 'es-AR', { sensitivity: 'base' }) === 0
+              );
+              nextResult.idpiloto = matchedDriver ? Number(matchedDriver.id) : null;
+            }
+            rowChanged = true;
+          }
+          continue;
+        }
+
+        const normalizedValue = column.type === 'position'
+          ? rawValue.toLocaleUpperCase('es-AR')
+          : rawValue;
+        if (String(nextResult[column.key] ?? '') !== normalizedValue) {
+          nextResult[column.key] = normalizedValue;
+          rowChanged = true;
+        }
+      }
+
+      if (!rowChanged) continue;
+      const resultKey = nextResult._key || `id-${nextResult.id}`;
+      nextResult._key = resultKey;
+      pastedDirtyResults[resultKey] = true;
+      changedRows += 1;
+
+      if (originalResult) {
+        const resultIndex = nextResults.findIndex(result => result === originalResult);
+        if (resultIndex >= 0) nextResults[resultIndex] = nextResult;
+      } else {
+        nextResults.push(nextResult);
+      }
+    }
+
+    if (!changedRows) {
+      setResultMessage('Los datos pegados son iguales a los que ya estaban cargados.');
+      return;
+    }
+
+    setResults(nextResults);
+    setDirtyResults(current => ({ ...current, ...pastedDirtyResults }));
+    setResultSheetSize(current => Math.max(current, Math.min(100, startRow + maxRows)));
+    setResultGridSelection({
+      anchorRow: startRow,
+      anchorColumn: startColumn,
+      focusRow: startRow + maxRows - 1,
+      focusColumn: startColumn + maxColumns - 1,
+    });
+    setResultMessage(`${changedRows} fila${changedRows === 1 ? '' : 's'} pegada${changedRows === 1 ? '' : 's'}. Revisá los datos y presioná Guardar.`);
+  };
+
+  const handleResultGridClear = () => {
+    const bounds = getResultSelectionBounds();
+    if (!bounds) return;
+
+    const nextResults = [...results];
+    const clearedDirtyResults = {};
+    let clearedCells = 0;
+
+    for (let rowIndex = bounds.firstRow; rowIndex <= bounds.lastRow; rowIndex += 1) {
+      const row = resultSheetRows[rowIndex];
+      if (!row?.result) continue;
+
+      const originalResult = row.result;
+      const nextResult = { ...originalResult };
+      let rowChanged = false;
+
+      for (let columnIndex = bounds.firstColumn; columnIndex <= bounds.lastColumn; columnIndex += 1) {
+        const column = resultGridColumns[columnIndex];
+        if (!column) continue;
+
+        if (column.type === 'pilot') {
+          const currentValue = nextResult[column.key] ?? (column.key === 'piloto' ? '' : nextResult.piloto) ?? '';
+          if (currentValue) {
+            nextResult[column.key] = '';
+            if (column.key === 'piloto') nextResult.idpiloto = null;
+            rowChanged = true;
+            clearedCells += 1;
+          }
+          continue;
+        }
+
+        if (String(nextResult[column.key] ?? '') !== '') {
+          nextResult[column.key] = '';
+          rowChanged = true;
+          clearedCells += 1;
+        }
+      }
+
+      if (!rowChanged) continue;
+      const resultKey = nextResult._key || `id-${nextResult.id}`;
+      nextResult._key = resultKey;
+      clearedDirtyResults[resultKey] = true;
+      const resultIndex = nextResults.findIndex(result => result === originalResult);
+      if (resultIndex >= 0) nextResults[resultIndex] = nextResult;
+    }
+
+    if (!clearedCells) return;
+    setResults(nextResults);
+    setDirtyResults(current => ({ ...current, ...clearedDirtyResults }));
+    setResultMessage(`${clearedCells} celda${clearedCells === 1 ? '' : 's'} borrada${clearedCells === 1 ? '' : 's'}. Presioná Guardar para confirmar.`);
+  };
+
   const handleSaveResults = async () => {
-    const pendingResults = results.filter(result => {
+    const dirtyRows = results.filter(result => {
       const resultKey = result._key || `id-${result.id}`;
       return dirtyResults[resultKey];
     });
+    const isEmptyNewRow = result => result._isNew
+      && ['piloto', 'piloto_sprint', 'piloto_final', ...resultSpreadsheetColumns.filter(column => column.type !== 'pilot').map(column => column.key)]
+        .every(field => !String(result[field] ?? '').trim());
+    const emptyNewRows = dirtyRows.filter(isEmptyNewRow);
+    const pendingResults = dirtyRows.filter(result => !isEmptyNewRow(result));
+
+    if (emptyNewRows.length) {
+      const emptyKeys = new Set(emptyNewRows.map(result => result._key));
+      setResults(current => current.filter(result => !emptyKeys.has(result._key)));
+      setDirtyResults(current => Object.fromEntries(Object.entries(current).filter(([key]) => !emptyKeys.has(key))));
+    }
     if (!pendingResults.length) return;
 
+    const validationErrors = {};
+    const validationMessages = [];
+    const resolvedPilots = new Map();
+    const integerFields = [
+      ['presentismo', 'Presentismo'],
+      ['pts_qualy_sprint', 'Pts. QS'],
+      ['pts_qualy_final', 'Pts. QF'],
+    ];
+    const decimalFields = [
+      ['pts_sprint', 'Pts. Sprint'],
+      ['pts_final', 'Pts. Final'],
+    ];
+    const resultGroups = [
+      {
+        pilotField: 'piloto',
+        label: 'clasificación',
+        fields: ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_qualy_final', 'pts_qualy_final'],
+      },
+      { pilotField: 'piloto_sprint', label: 'Sprint', fields: ['pos_sprint', 'pts_sprint'] },
+      { pilotField: 'piloto_final', label: 'Final', fields: ['pos_final', 'pts_final'] },
+    ];
+
+    for (const result of pendingResults) {
+      if (result._delete) continue;
+      const resultKey = result._key || `id-${result.id}`;
+      integerFields.forEach(([field, label]) => {
+        if (/^\d*$/.test(String(result[field] ?? '').trim())) return;
+        const message = `${label} debe ser un número entero.`;
+        validationErrors[`${resultKey}:${field}`] = message;
+        validationMessages.push(message);
+      });
+      decimalFields.forEach(([field, label]) => {
+        if (/^\d*[.,]?\d*$/.test(String(result[field] ?? '').trim())) return;
+        const message = `${label} debe ser un número.`;
+        validationErrors[`${resultKey}:${field}`] = message;
+        validationMessages.push(message);
+      });
+    }
+
+    const dirtyRounds = new Set(pendingResults.filter(result => !result._delete).map(result => String(result.ronda)));
+    dirtyRounds.forEach(roundKey => {
+      const roundRows = results.filter(result => !result._delete && String(result.ronda) === roundKey);
+      resultGroups.forEach(group => {
+        const pilotsInGroup = new Map();
+        roundRows.forEach(result => {
+          const resultKey = result._key || `id-${result.id}`;
+          const rawPilot = result[group.pilotField] ?? (group.pilotField === 'piloto' ? '' : result.piloto) ?? '';
+          const requestedName = String(rawPilot).trim();
+          const hasGroupData = group.fields.some(field => String(result[field] ?? '').trim() !== '');
+          if (!requestedName && !hasGroupData) return;
+
+          const driver = resultRegisteredDrivers.find(item =>
+            String(item.nombre || '').localeCompare(requestedName, 'es-AR', { sensitivity: 'base' }) === 0
+          );
+          const pilotCellKey = `${resultKey}:${group.pilotField}`;
+          if (!driver) {
+            const message = requestedName
+              ? `El piloto "${requestedName}" de ${group.label} no está inscripto.`
+              : `Falta el piloto de ${group.label}.`;
+            validationErrors[pilotCellKey] = message;
+            validationMessages.push(message);
+            return;
+          }
+
+          resolvedPilots.set(pilotCellKey, driver);
+          const duplicateKey = String(driver.id);
+          if (pilotsInGroup.has(duplicateKey)) {
+            const firstCellKey = pilotsInGroup.get(duplicateKey);
+            const message = `${driver.nombre} está repetido en la columna de ${group.label}.`;
+            validationErrors[firstCellKey] = message;
+            validationErrors[pilotCellKey] = message;
+            validationMessages.push(message);
+          } else {
+            pilotsInGroup.set(duplicateKey, pilotCellKey);
+          }
+        });
+      });
+    });
+
+    if (Object.keys(validationErrors).length) {
+      setResultCellErrors(validationErrors);
+      setResultMessage(`No se pudo guardar. Revisá las celdas marcadas en rojo. ${validationMessages[0]}`);
+      return;
+    }
+
+    setResultCellErrors({});
     setSavingResults(true);
     setResultMessage('');
 
     try {
-      const changes = pendingResults.map(result => {
-        const editableData = {
-          presentismo: Number(result.presentismo || 0),
-          pos_qualy_sprint: String(result.pos_qualy_sprint || '').trim(),
-          pts_qualy_sprint: Number(result.pts_qualy_sprint || 0),
-          pos_sprint: String(result.pos_sprint || '').trim(),
-          pts_sprint: parseResultPoints(result.pts_sprint),
-          pos_qualy_final: String(result.pos_qualy_final || '').trim(),
-          pts_qualy_final: Number(result.pts_qualy_final || 0),
-          pos_final: String(result.pos_final || '').trim(),
-          pts_final: parseResultPoints(result.pts_final),
-        };
+      const editableFields = ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_sprint', 'pts_sprint', 'pos_qualy_final', 'pts_qualy_final', 'pos_final', 'pts_final'];
+      const assignments = new Map();
 
-        return {
-          id: result._isNew ? null : result.id,
-          data: result._isNew
-            ? {
-                idcampeonato: result.idcampeonato,
-                fecha: result.fecha,
-                ronda: result.ronda,
-                idcircuito: result.idcircuito,
-                idpiloto: result.idpiloto,
-                ...editableData,
-              }
-            : editableData,
-        };
+      dirtyRounds.forEach(roundKey => {
+        const roundRows = results.filter(result => !result._delete && String(result.ronda) === roundKey);
+        const savedRoundRows = savedResults.filter(result => String(result.ronda) === roundKey);
+        const savedByDriver = new Map(savedRoundRows.map(result => [String(result.idpiloto), result]));
+        const roundEvent = resultRounds.find(round => String(round.ronda) === roundKey);
+
+        resultGroups.forEach(group => {
+          roundRows.forEach(result => {
+            const resultKey = result._key || `id-${result.id}`;
+            const driver = resolvedPilots.get(`${resultKey}:${group.pilotField}`);
+            if (!driver) return;
+            const assignmentKey = `${roundKey}:${driver.id}`;
+            if (!assignments.has(assignmentKey)) {
+              const savedResult = savedByDriver.get(String(driver.id));
+              assignments.set(assignmentKey, {
+                savedResult,
+                data: Object.fromEntries(editableFields.map(field => [field, savedResult?.[field] ?? ''])),
+                metadata: {
+                  idcampeonato: Number(resultChampionshipId),
+                  fecha: String(roundEvent?.fecha || result.fecha || '').slice(0, 10),
+                  ronda: Number(roundKey),
+                  idcircuito: Number(roundEvent?.idcircuito || result.idcircuito),
+                  idpiloto: Number(driver.id),
+                },
+              });
+            }
+            const assignment = assignments.get(assignmentKey);
+            group.fields.forEach(field => {
+              assignment.data[field] = result[field] ?? '';
+            });
+          });
+        });
       });
+
+      const changes = [
+        ...pendingResults.filter(result => result._delete).map(result => ({ id: result.id, delete: true })),
+        ...[...assignments.values()].map(({ savedResult, data, metadata }) => {
+          const editableData = {
+            idpiloto: metadata.idpiloto,
+            presentismo: Number(data.presentismo || 0),
+            pos_qualy_sprint: String(data.pos_qualy_sprint || '').trim(),
+            pts_qualy_sprint: Number(data.pts_qualy_sprint || 0),
+            pos_sprint: String(data.pos_sprint || '').trim(),
+            pts_sprint: parseResultPoints(data.pts_sprint),
+            pos_qualy_final: String(data.pos_qualy_final || '').trim(),
+            pts_qualy_final: Number(data.pts_qualy_final || 0),
+            pos_final: String(data.pos_final || '').trim(),
+            pts_final: parseResultPoints(data.pts_final),
+          };
+          return {
+            id: savedResult?.id || null,
+            data: savedResult ? editableData : { ...metadata, ...editableData },
+          };
+        }),
+      ];
 
       await resultsApi.saveBulk(changes);
 
       const response = await resultsApi.getAll({ idcampeonato: resultChampionshipId });
-      setResults(response.data.data ?? []);
+      const savedRows = response.data.data ?? [];
+      setResults(buildEditableResultRows(savedRows));
+      setSavedResults(savedRows);
       setDirtyResults({});
-      setResultMessage(`${pendingResults.length} resultado${pendingResults.length === 1 ? '' : 's'} guardado${pendingResults.length === 1 ? '' : 's'} correctamente.`);
+      setResultCellErrors({});
+      setResultMessage(`${changes.length} resultado${changes.length === 1 ? '' : 's'} guardado${changes.length === 1 ? '' : 's'} correctamente.`);
     } catch (err) {
       setResultMessage(err.response?.data?.error || 'No se pudieron guardar todos los cambios.');
     } finally {
@@ -1577,7 +2211,7 @@ export default function Admin() {
 
     try {
       const data = new FormData();
-      data.append('categoria', capitalizeValue(categoryForm.categoria));
+      data.append('categoria', categoryForm.categoria);
       if (categoryLogoFile) {
         const croppedLogo = await createSquarePngFile(categoryLogoFile, categoryLogoCrop, 'logo.png');
         data.append('logo', croppedLogo);
@@ -2194,45 +2828,67 @@ export default function Admin() {
     if (activeSection === 'resultados') {
       return (
         <section className="min-w-0 overflow-hidden border border-racing-border bg-racing-gray">
-          <div className="flex flex-col gap-4 border-b border-racing-border px-4 py-4 lg:flex-row lg:items-end lg:justify-between lg:px-6">
-            <div>
-              <p className="text-xs font-semibold uppercase text-racing-red">Clasificación general</p>
-              <h2 className="mt-1 font-racing text-2xl font-bold">Tabla de posiciones</h2>
-              <p className="mt-1 text-sm text-gray-400">
-                {resultChampionship
-                  ? `${resultChampionship.categoria} · Temporada ${resultChampionship.temporada} · ${resultChampionship.anio}`
-                  : 'Seleccioná un campeonato'}
-              </p>
-            </div>
+          <div className="border-b border-racing-border px-4 py-4 lg:px-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase text-racing-red">Carga de resultados</p>
+                <h2 className="mt-1 font-racing text-2xl font-bold">Planilla de posiciones y puntajes</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  {resultChampionship
+                    ? `${resultChampionship.categoria} · Temporada ${resultChampionship.temporada} · ${resultChampionship.anio}`
+                    : 'Seleccioná un campeonato y una fecha para comenzar'}
+                </p>
+              </div>
 
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end lg:w-auto">
-              <label className="w-full lg:w-96">
-                <span className="text-xs font-semibold uppercase text-gray-400">Campeonato</span>
-                <select
-                  value={resultChampionshipId}
-                  onChange={event => setResultChampionshipId(event.target.value)}
-                  className="input-field mt-2"
-                  disabled={savingResults}
+              <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-[minmax(260px,350px)_minmax(210px,270px)_90px_auto] xl:items-end">
+                <label>
+                  <span className="text-xs font-semibold uppercase text-gray-400">Campeonato</span>
+                  <select
+                    value={resultChampionshipId}
+                    onChange={event => {
+                      setResultChampionshipId(event.target.value);
+                      setResultRoundId('');
+                      setResultSheetSize(35);
+                      setResultGridSelection(null);
+                    }}
+                    className="input-field mt-2"
+                    disabled={savingResults}
+                  >
+                    <option value="">Seleccionar campeonato</option>
+                    {displayedChampionships.map(championship => (
+                      <option key={championship.id} value={championship.id}>
+                        {championship.categoria} · T{championship.temporada} · {championship.anio}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="text-xs font-semibold uppercase text-gray-400">Fecha</span>
+                  <select value={resultRoundId} onChange={event => {
+                    setResultRoundId(event.target.value);
+                    setResultGridSelection(null);
+                  }} className="input-field mt-2" disabled={!resultRounds.length || savingResults}>
+                    <option value="">Seleccionar fecha</option>
+                    {resultRounds.map(round => (
+                      <option key={round.id} value={round.id}>Fecha {round.ronda} · {round.circuito}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="text-xs font-semibold uppercase text-gray-400">Filas</span>
+                  <input type="number" min="1" max="100" value={resultSheetSize} onChange={event => setResultSheetSize(Math.min(100, Math.max(1, Number(event.target.value) || 1)))} className="input-field mt-2 text-center" />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSaveResults}
+                  disabled={!Object.keys(dirtyResults).length || savingResults}
+                  className="btn-primary h-[46px] shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <option value="">Seleccionar campeonato</option>
-                  {displayedChampionships.map(championship => (
-                    <option key={championship.id} value={championship.id}>
-                      {championship.categoria} · T{championship.temporada} · {championship.anio}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={handleSaveResults}
-                disabled={!Object.keys(dirtyResults).length || savingResults}
-                className="btn-primary h-[46px] shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {savingResults
-                  ? 'Guardando...'
-                  : `Guardar cambios${Object.keys(dirtyResults).length ? ` (${Object.keys(dirtyResults).length})` : ''}`}
-              </button>
+                  {savingResults ? 'Guardando...' : `Guardar${Object.keys(dirtyResults).length ? ` (${Object.keys(dirtyResults).length})` : ''}`}
+                </button>
+              </div>
             </div>
+            {resultRound ? <p className="mt-3 text-xs text-gray-500">La grilla mantiene un orden fijo mientras trabajás. Arrastrá o usá Shift + clic para seleccionar celdas; Ctrl+C, Ctrl+V y Supr funcionan como en Excel. La validación se realiza al guardar.</p> : null}
           </div>
 
           {resultMessage && (
@@ -2241,121 +2897,179 @@ export default function Admin() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
-            <table className="w-max min-w-full table-auto border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-racing-border bg-racing-dark">
-                  <th className="sticky left-0 z-20 w-16 bg-racing-dark px-3 py-3 text-center text-xs uppercase text-gray-400">Pos.</th>
-                  <th className="sticky left-16 z-20 w-40 bg-racing-dark px-3 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
-                  {resultRounds.map(round => (
-                    <th key={round.id} className="whitespace-nowrap border-l border-racing-border px-2 py-2 text-center">
-                      <span className="block font-racing text-sm text-white">R{round.ronda}</span>
-                      <span className="block max-w-44 truncate text-[10px] font-normal text-gray-500" title={`${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}>
-                        {round.circuito}{round.variante ? ` · ${round.variante}` : ''}
-                      </span>
+          <div className="overflow-x-auto" onCopy={handleResultGridCopy}>
+            <table className="w-max min-w-full table-fixed border-collapse text-sm">
+              <thead className="sticky top-0 z-30">
+                <tr className="bg-racing-dark">
+                  <th className="sticky left-0 z-40 w-16 border border-racing-border bg-racing-dark px-2 py-3 text-center text-[10px] uppercase tracking-wider text-gray-400">#</th>
+                  <th className="sticky left-16 z-40 w-64 border border-racing-border bg-racing-dark px-3 py-3 text-left text-[10px] uppercase tracking-wider text-gray-400">Piloto</th>
+                  {resultSpreadsheetColumns.map(column => (
+                    <th key={column.key} className={`${column.type === 'pilot' ? 'w-64 text-left' : 'w-24 text-center'} border border-racing-border bg-racing-dark px-2 py-3 text-[10px] uppercase tracking-wider text-gray-400`} title={column.label}>
+                      {column.label}
                     </th>
                   ))}
-                  <th className="sticky right-0 z-20 min-w-28 border-l border-racing-border bg-racing-dark px-4 py-3 text-center text-xs uppercase text-gray-400">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-racing-border">
+              <tbody>
                 {loadingResults ? (
-                  <tr>
-                    <td colSpan={resultRounds.length + 3} className="px-6 py-14 text-center text-gray-500">
-                      Cargando resultados...
-                    </td>
-                  </tr>
-                ) : resultStandings.length ? (
-                  resultStandings.map(standing => (
-                    <tr key={standing.idpiloto} className="group bg-racing-gray hover:bg-racing-card/70">
-                      <td className="sticky left-0 z-10 bg-racing-gray px-3 py-4 text-center group-hover:bg-racing-card">
-                        <span className={`font-racing text-xl ${standing.position <= 3 ? 'text-racing-red' : 'text-gray-300'}`}>
-                          {standing.position}
-                        </span>
-                      </td>
-                      <td className="sticky left-16 z-10 w-40 max-w-40 truncate bg-racing-gray px-3 py-3 font-semibold text-white group-hover:bg-racing-card" title={standing.piloto}>
-                        {standing.piloto}
-                      </td>
-                      {resultRounds.map(round => {
-                        const result = standing.rounds.get(String(round.ronda));
-                        const resultKey = result?._key
-                          || (result?.id ? `id-${result.id}` : `new-${standing.idpiloto}-${round.ronda}`);
-                        const isDirty = Boolean(dirtyResults[resultKey]);
-                        const wasPresent = Boolean(result) && Number(result.presentismo || 0) >= 1;
-                        return (
-                          <td
-                            key={round.id}
-                            className={`w-px whitespace-nowrap border-l px-1.5 py-1.5 ${
-                              isDirty
-                                ? 'border-amber-400/70 bg-amber-400/5'
-                                : wasPresent
-                                  ? 'border-yellow-300/25 bg-gradient-to-r from-yellow-400/15 via-yellow-300/[0.07] to-transparent'
-                                  : 'border-racing-border/70'
-                            }`}
-                          >
-                            <div>
-                              <div className="flex items-end justify-center gap-1">
-                                {resultPointFields.map(field => {
-                                  const fieldValue = result?.[field.key];
-                                  return (
-                                    <label key={field.key} className="block w-8 shrink-0" title={field.label}>
-                                      <span className="block text-center text-[9px] font-semibold uppercase text-gray-500">
-                                        {field.shortLabel}
-                                      </span>
-                                      <input
-                                        type={field.decimal ? 'text' : 'number'}
-                                        inputMode={field.decimal ? 'decimal' : 'numeric'}
-                                        min={field.decimal ? undefined : '0'}
-                                        value={parseResultPoints(fieldValue) === 0 ? '' : fieldValue}
-                                        onChange={event => handleResultFieldChange(standing, round, result, field.key, event.target.value)}
-                                        className="mt-0.5 h-8 w-8 appearance-none border border-racing-border bg-racing-dark px-0.5 text-center font-racing text-sm text-white outline-none transition focus:border-racing-red [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                        aria-label={`${field.label}, ${standing.piloto}, ronda ${round.ronda}`}
-                                      />
-                                    </label>
-                                  );
-                                })}
-                                <div className="ml-1 flex h-8 min-w-10 items-center justify-center border-l border-racing-border pl-1.5 font-racing text-sm text-amber-400" title="Total de la ronda">
-                                  {formatResultPoints(getResultPoints(result))}
-                                </div>
-                              </div>
-                              <div className="mt-1 flex justify-center gap-1 border-t border-racing-border/60 pt-1">
-                                {resultPositionFields.map(field => (
-                                  <label key={field.key} className="block w-11 shrink-0" title={field.label}>
-                                    <span className="block text-center text-[9px] font-semibold uppercase text-gray-500">
-                                      {field.shortLabel}
-                                    </span>
-                                    <input
-                                      type="text"
-                                      value={result?.[field.key] || ''}
-                                      onChange={event => handleResultFieldChange(standing, round, result, field.key, event.target.value)}
-                                      className="mt-0.5 h-8 w-11 border border-racing-border bg-racing-dark px-1 text-center font-racing text-xs uppercase text-white outline-none transition focus:border-racing-red"
-                                      aria-label={`${field.label}, ${standing.piloto}, ronda ${round.ronda}`}
-                                    />
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="sticky right-0 z-10 border-l border-racing-border bg-racing-dark px-4 py-4 text-center">
-                        <span className="font-racing text-2xl font-bold text-amber-400">{formatResultPoints(standing.total)}</span>
-                        <span className="ml-1 text-xs text-gray-500">PTS</span>
-                      </td>
-                    </tr>
-                  ))
+                  <tr><td colSpan={resultSpreadsheetColumns.length + 2} className="border border-racing-border px-6 py-14 text-center text-gray-500">Cargando resultados...</td></tr>
+                ) : !resultRound ? (
+                  <tr><td colSpan={resultSpreadsheetColumns.length + 2} className="border border-racing-border px-6 py-14 text-center text-gray-500">Seleccioná un campeonato y una fecha para abrir la planilla.</td></tr>
                 ) : (
-                  <tr>
-                    <td colSpan={resultRounds.length + 3} className="px-6 py-14 text-center text-gray-500">
-                      {resultChampionshipId
-                        ? 'No hay resultados cargados para este campeonato.'
-                        : 'Seleccioná un campeonato para ver la tabla.'}
-                    </td>
-                  </tr>
+                  resultSheetRows.map((row, rowIndex) => {
+                    const result = row.result;
+                    const resultKey = result?._key || (result?.id ? `id-${result.id}` : `empty-${row.position}`);
+                    const isDirty = Boolean(result && dirtyResults[resultKey]);
+                    return (
+                      <tr key={row.unpositioned ? `unpositioned-${resultKey}` : `position-${row.position}`} className={isDirty ? 'bg-amber-400/[0.07]' : rowIndex % 2 ? 'bg-black/10' : 'bg-racing-gray'}>
+                        <td className={`sticky left-0 z-10 h-10 border border-racing-border p-0 text-center font-racing text-base ${row.unpositioned ? 'bg-gray-900 text-gray-500' : row.position <= 3 ? 'bg-racing-dark text-racing-red' : 'bg-racing-dark text-gray-300'}`}>
+                          {row.unpositioned ? '—' : row.position}
+                        </td>
+                        <td className="sticky left-16 z-10 h-10 w-64 max-w-64 border border-racing-border bg-racing-gray p-0 font-semibold text-white">
+                          <ResultSpreadsheetCell
+                            value={result?.piloto || ''}
+                            type="pilot"
+                            disabled={row.unpositioned && !result}
+                            label={`Piloto, fila ${row.position || 'sin posición'}`}
+                            rowIndex={rowIndex}
+                            columnIndex={0}
+                            selected={isResultCellSelected(rowIndex, 0)}
+                            error={result ? resultCellErrors[`${resultKey}:piloto`] : ''}
+                            onCommit={nextValue => handleResultPilotChange(row, result, nextValue)}
+                            onSelect={handleResultCellSelect}
+                            onExtendSelection={handleResultCellSelectionExtend}
+                            onPaste={handleResultGridPaste}
+                            onClearSelection={handleResultGridClear}
+                          />
+                        </td>
+                        {resultSpreadsheetColumns.map((column, columnIndex) => {
+                          const gridColumnIndex = columnIndex + 1;
+                          if (column.type === 'pilot') {
+                            return (
+                              <td key={column.key} className="h-10 w-64 max-w-64 border border-racing-border p-0 font-semibold text-white">
+                                <ResultSpreadsheetCell
+                                  value={result?.[column.key] ?? result?.piloto ?? ''}
+                                  type="pilot"
+                                  disabled={row.unpositioned && !result}
+                                  label={`${column.label}, fila ${row.position || 'sin posición'}`}
+                                  rowIndex={rowIndex}
+                                  columnIndex={gridColumnIndex}
+                                  selected={isResultCellSelected(rowIndex, gridColumnIndex)}
+                                  error={result ? resultCellErrors[`${resultKey}:${column.key}`] : ''}
+                                  onCommit={nextValue => handleResultPilotChange(row, result, nextValue, column.key)}
+                                  onSelect={handleResultCellSelect}
+                                  onExtendSelection={handleResultCellSelectionExtend}
+                                  onPaste={handleResultGridPaste}
+                                  onClearSelection={handleResultGridClear}
+                                />
+                              </td>
+                            );
+                          }
+                          const value = result?.[column.key] ?? '';
+                          return (
+                            <td key={column.key} className="h-10 w-24 border border-racing-border p-0">
+                              <ResultSpreadsheetCell
+                                value={value}
+                                type={column.type}
+                                disabled={!result}
+                                label={`${column.label}, ${result?.piloto || `fila ${row.position}`}`}
+                                rowIndex={rowIndex}
+                                columnIndex={gridColumnIndex}
+                                selected={isResultCellSelected(rowIndex, gridColumnIndex)}
+                                error={result ? resultCellErrors[`${resultKey}:${column.key}`] : ''}
+                                onCommit={nextValue => handleResultFieldChange({ idpiloto: result.idpiloto, piloto: result.piloto }, resultRound, result, column.key, nextValue)}
+                                onSelect={handleResultCellSelect}
+                                onExtendSelection={handleResultCellSelectionExtend}
+                                onPaste={handleResultGridPaste}
+                                onClearSelection={handleResultGridClear}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          {resultChampionshipId ? (
+            <div className="mt-14 border-y-4 border-black bg-racing-gray shadow-2xl">
+              <div className="flex flex-col gap-1 border-b border-racing-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-amber-400">Actualización al guardar</p>
+                  <h3 className="mt-1 font-racing text-xl font-bold text-white">Tabla completa del campeonato</h3>
+                </div>
+                <p className="text-xs text-gray-500">Incluye presentismo, clasificaciones, sprint y final de todas las fechas.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-max min-w-full table-auto border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-black/45">
+                      <th rowSpan={2} className="w-14 whitespace-nowrap border border-racing-border px-2 py-2.5 text-center uppercase text-gray-400">Pos.</th>
+                      <th rowSpan={2} className="min-w-64 border border-racing-border px-3 py-2.5 text-left uppercase text-gray-400">Piloto / Auto</th>
+                      {resultRounds.map(round => (
+                        <th
+                          key={round.id}
+                          colSpan={5}
+                          className="whitespace-nowrap border border-racing-border px-3 py-3 text-center font-racing text-sm uppercase text-gray-300"
+                          title={`Fecha ${round.ronda}: ${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}
+                        >
+                          Fecha {round.ronda} · {round.circuito}
+                        </th>
+                      ))}
+                      <th rowSpan={2} className="whitespace-nowrap border border-cyan-400/30 bg-cyan-400/10 px-3 py-2.5 text-center font-racing text-sm uppercase text-cyan-300" style={{ width: `${resultTotalColumnWidth}ch` }}>Total</th>
+                    </tr>
+                    <tr className="bg-black/30 text-[10px] uppercase text-gray-500">
+                      {resultRounds.flatMap(round => [
+                        <th key={`${round.id}-presentismo`} className="min-w-11 border border-racing-border px-2 py-2" title="Presentismo">P</th>,
+                        <th key={`${round.id}-qualy`} className="min-w-11 border border-racing-border px-2 py-2" title="Clasificación">Q</th>,
+                        <th key={`${round.id}-sprint`} className="min-w-11 border border-racing-border px-2 py-2" title="Sprint">S</th>,
+                        <th key={`${round.id}-final`} className="min-w-11 border border-racing-border px-2 py-2" title="Final">F</th>,
+                        <th key={`${round.id}-points`} className="min-w-14 border border-amber-400/30 bg-amber-400/10 px-2 py-2 font-bold text-amber-300" title="Puntos de la fecha">PTS</th>,
+                      ])}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultChampionshipStandings.map((standing, index) => (
+                      <tr key={standing.idpiloto} className={index % 2 ? 'bg-black/10' : 'bg-transparent'}>
+                        <td className={`whitespace-nowrap border border-racing-border px-2 py-2 text-center font-racing text-lg font-bold ${standing.position === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.position === 2 ? 'bg-slate-300/10 text-slate-200' : standing.position === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.position}</td>
+                        <td className="border border-racing-border px-3 py-2 text-white">
+                          <div className="flex min-w-60 items-center gap-3">
+                            {standing.autoLogo ? <img src={standing.autoLogo} alt={`Logo ${standing.marca || ''}`} className="h-9 w-12 shrink-0 object-contain" /> : <div className="h-9 w-12 shrink-0" />}
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold" title={standing.piloto}>{standing.piloto}</p>
+                              <p className="truncate text-[11px] font-normal text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        {resultRounds.flatMap(round => {
+                          const detail = standing.rounds.get(String(round.ronda));
+                          if (!detail || detail.points === 0) {
+                            return [
+                              <td key={`${round.id}-absent`} colSpan={5} className="border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] text-red-500">
+                                AUSENTE
+                              </td>,
+                            ];
+                          }
+                          return [
+                            <td key={`${round.id}-presentismo`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.presentismo)}</td>,
+                            <td key={`${round.id}-qualy`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.qualy)}</td>,
+                            <td key={`${round.id}-sprint`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.sprint)}</td>,
+                            <td key={`${round.id}-final`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.final)}</td>,
+                            <td key={`${round.id}-points`} className="border border-amber-400/30 bg-amber-400/10 px-2 py-2 text-center font-racing text-base font-bold text-amber-300">{formatResultPointsCell(detail.points)}</td>,
+                          ];
+                        })}
+                        <td className="whitespace-nowrap border border-cyan-400/30 bg-cyan-400/[0.08] px-3 py-2 text-center font-racing text-xl font-bold text-cyan-300">{formatResultPointsCell(standing.total)}</td>
+                      </tr>
+                    ))}
+                    {!resultChampionshipStandings.length ? <tr><td colSpan={(resultRounds.length * 5) + 3} className="border border-racing-border px-6 py-10 text-center text-gray-500">No hay pilotos para calcular la tabla.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </section>
       );
     }

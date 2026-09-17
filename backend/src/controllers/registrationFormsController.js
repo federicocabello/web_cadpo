@@ -115,7 +115,7 @@ const loadForm = async id => {
   const config = normalizeConfig(row);
   const [calendar] = await pool.query(
     `SELECT cal.ronda, cal.fecha, cal.especial, cal.especialidad, cal.coronacion,
-            ci.id AS idcircuito, ci.nombre AS circuito, ci.variante, ci.localidad, ci.provincia, ci.pais, ci.imagen
+            ci.id AS idcircuito, ci.nombre AS circuito, ci.variante, ci.localidad, ci.provincia, ci.pais, ci.imagen, ci.trazado
      FROM calendario cal JOIN circuitos ci ON ci.id = cal.idcircuito
      WHERE cal.idcampeonato = ? ORDER BY cal.ronda`, [id]
   );
@@ -144,6 +144,7 @@ const loadForm = async id => {
     calendario: calendar.map(event => ({
       ...event,
       circuito_foto_url: event.imagen || `/media/circuitos/fotos/${slugify(event.circuito)}.png`,
+      circuito_trazado_url: event.trazado || `/media/circuitos/trazados/${slugify(event.circuito)}.png`,
     })),
     autos: cars,
   };

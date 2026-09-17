@@ -6,11 +6,7 @@ const toPublicLogoPath = file => {
   return `/media/categorias/logos/${file.filename}`;
 };
 
-const capitalizeValue = value =>
-  String(value || '')
-    .trim()
-    .toLocaleLowerCase('es-AR')
-    .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
+const normalizeCategoryValue = value => String(value || '').trim();
 
 const getAll = async (req, res, next) => {
   try {
@@ -34,7 +30,7 @@ const getById = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    const categoria = capitalizeValue(req.body.categoria);
+    const categoria = normalizeCategoryValue(req.body.categoria);
     if (!categoria) return res.status(400).json({ error: 'categoria es requerida' });
 
     const logo = toPublicLogoPath(req.file);
@@ -54,7 +50,7 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const categoria = capitalizeValue(req.body.categoria);
+    const categoria = normalizeCategoryValue(req.body.categoria);
     if (!categoria) return res.status(400).json({ error: 'categoria es requerida' });
 
     const [[current]] = await pool.query('SELECT logo FROM categorias WHERE id = ?', [req.params.id]);

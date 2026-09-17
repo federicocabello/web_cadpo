@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Contenido multimedia generado/cargado en producción.
+# Se conserva solamente la estructura de directorios mediante .gitkeep.
+/public/media/**
+!/public/media/**/
+!/public/media/**/.gitkeep

@@ -154,6 +154,13 @@ const saveBulk = async (req, res, next) => {
     await connection.beginTransaction();
 
     for (const change of changes) {
+      if (change?.delete) {
+        if (change.id) {
+          await connection.query('DELETE FROM resultados WHERE id = ?', [change.id]);
+        }
+        continue;
+      }
+
       const data = change?.data || {};
       if (change.id) {
         const fields = RESULT_FIELDS.filter(field =>

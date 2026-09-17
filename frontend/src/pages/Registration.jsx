@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, CheckCircleIcon, ClockIcon, MagnifyingGlassIcon, PlayCircleIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, CheckCircleIcon, ClockIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
-import { CountrySelect } from '../components/CountryFlag';
-import { registrationFormsApi } from '../services/api';
+import { CountryFlag, CountrySelect } from '../components/CountryFlag';
+import { mediaApi, registrationFormsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { formatPrice } from '../utils/currency';
 import { formatInstagramHandle } from '../utils/instagram';
@@ -19,12 +19,30 @@ const getRegistrationPhase = (form, now) => {
   return Number(form.inscriptos_actuales) + Number(form.preinscriptos || 0) >= Number(form.limite_inscriptos) ? 'full' : 'open';
 };
 const phaseText = phase => phase === 'open' ? 'Inscripciones abiertas' : phase === 'upcoming' ? 'Próximo campeonato' : phase === 'full' ? 'Cupo completo' : 'Inscripciones cerradas';
+const getOpeningCountdown = (value, now) => {
+  const openingDate = parseCalendarDate(value);
+  if (!openingDate) return null;
+
+  const currentDate = new Date(now);
+  const currentDay = Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  const openingDay = Date.UTC(openingDate.getFullYear(), openingDate.getMonth(), openingDate.getDate());
+  const calendarDays = Math.round((openingDay - currentDay) / 86400000);
+
+  if (calendarDays > 1) return { label: 'Las inscripciones abren en', value: `${calendarDays} días` };
+  if (calendarDays === 1) return { label: 'Las inscripciones abren', value: 'mañana' };
+
+  const difference = Math.max(0, openingDate.getTime() - now);
+  const hours = Math.floor(difference / 3600000);
+  const minutes = Math.floor((difference / 60000) % 60);
+  return { label: 'Las inscripciones abren en', value: `${hours} h ${String(minutes).padStart(2, '0')} min` };
+};
 
 export default function Registration() {
   const [searchParams] = useSearchParams();
-  const [forms, setForms] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
+  const selectedId = searchParams.get('campeonato') || '';
   const [config, setConfig] = useState(null);
+  const [galleryImages, setGalleryImages] = useState([]);
+  const [activeGalleryImage, setActiveGalleryImage] = useState(0);
   const [formToken, setFormToken] = useState('');
   const [expiresAt, setExpiresAt] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -40,27 +58,48 @@ export default function Registration() {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const configPhase = getRegistrationPhase(config, now);
+  const openingCountdown = configPhase === 'upcoming' ? getOpeningCountdown(config?.fecha_apertura, now) : null;
 
   useEffect(() => {
-    registrationFormsApi.getAll()
-      .then(response => {
-        const loaded = response.data.data || [];
-        setForms(loaded);
-        const requestedId = searchParams.get('campeonato');
-        if (requestedId && loaded.some(item => String(item.idcampeonato) === String(requestedId))) setSelectedId(requestedId);
-      })
-      .catch(() => setMessage('No se pudieron cargar los formularios de inscripción.'))
-      .finally(() => setLoading(false));
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!selectedId) { setConfig(null); return; }
+    let cancelled = false;
+    setConfig(null);
+    setGalleryImages([]);
+    setActiveGalleryImage(0);
+    setFormToken('');
+    setCompleted(false);
+    setMessage('');
+    if (!selectedId) {
+      setLoading(false);
+      setMessage('No se indicó el campeonato en el enlace de inscripción.');
+      return () => { cancelled = true; };
+    }
     setLoading(true);
     registrationFormsApi.getById(selectedId)
-      .then(response => setConfig(response.data.data))
-      .catch(error => setMessage(error.response?.data?.error || 'No se pudo cargar el campeonato.'))
-      .finally(() => setLoading(false));
+      .then(async response => {
+        const loadedConfig = response.data.data;
+        if (cancelled) return;
+        setConfig(loadedConfig);
+        try {
+          const imagesResponse = await mediaApi.getRegistrationImages({ categoria: loadedConfig.categoria, temporada: loadedConfig.temporada });
+          if (!cancelled) setGalleryImages(imagesResponse.data.data || []);
+        } catch {
+          if (!cancelled) setGalleryImages([]);
+        }
+      })
+      .catch(error => { if (!cancelled) setMessage(error.response?.data?.error || 'No se pudo cargar el campeonato.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedId]);
+
+  useEffect(() => {
+    if (galleryImages.length < 2) return undefined;
+    const timer = window.setInterval(() => setActiveGalleryImage(current => {
+      let next = current;
+      while (next === current) next = Math.floor(Math.random() * galleryImages.length);
+      return next;
+    }), 9000);
+    return () => window.clearInterval(timer);
+  }, [galleryImages]);
 
   useEffect(() => {
     if (!config) return undefined;
@@ -144,58 +183,48 @@ export default function Registration() {
 
   return (
     <main className="animate-fade-in">
-      <header className="border-b border-racing-border bg-racing-gray px-4 py-12">
-        <div className="mx-auto max-w-7xl">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-racing-red">Participá</p>
-          <h1 className="section-title text-4xl md:text-5xl">Inscripción <span className="gradient-text">a campeonato</span></h1>
-          <p className="mt-3 max-w-2xl text-gray-400">Elegí el campeonato, revisá sus condiciones y completá tu inscripción.</p>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <label className="block max-w-2xl">
-          <span className="text-sm font-semibold text-gray-300">Campeonato</span>
-          <select value={selectedId} onChange={event => { setSelectedId(event.target.value); setFormToken(''); setCompleted(false); setMessage(''); }} className="input-field mt-2">
-            <option value="">Seleccionar campeonato</option>
-            {forms.map(item => <option key={item.idcampeonato} value={item.idcampeonato}>{item.categoria} · Temporada {item.temporada} · {item.anio} · {phaseText(getRegistrationPhase(item, now))}</option>)}
-          </select>
-        </label>
-
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
         {loading ? <div className="py-20 text-center text-gray-400">Cargando...</div> : null}
         {config && !loading ? <>
-          <section className="mt-8 overflow-hidden border border-racing-border bg-racing-gray">
-            <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto]">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="font-racing text-3xl font-bold">{config.categoria} · Temporada {config.temporada}</h2>
-                  <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${configPhase === 'open' ? 'bg-green-500/15 text-green-400' : 'bg-racing-red/15 text-racing-red'}`}>{phaseText(configPhase)}</span>
+          {openingCountdown ? <div className="mb-5 flex w-full items-center justify-center gap-4 border border-yellow-300/55 bg-black/75 p-5 text-center backdrop-blur-sm sm:p-6"><div className="flex h-14 w-14 shrink-0 items-center justify-center border border-yellow-300/50 bg-yellow-400 text-black"><ClockIcon className="h-7 w-7"/></div><div className="text-left"><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-yellow-200 sm:text-xs">{openingCountdown.label}</p><p className="mt-1 font-racing text-3xl font-bold uppercase leading-none text-white sm:text-4xl">{openingCountdown.value}</p></div></div> : null}
+          <section className="relative min-h-[34rem] overflow-hidden border border-racing-border bg-black shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+            {galleryImages[activeGalleryImage] ? <img key={galleryImages[activeGalleryImage]} src={galleryImages[activeGalleryImage]} alt="" className="registration-background-transition absolute inset-0 h-full w-full object-cover"/> : null}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 to-black/20"/>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30"/>
+            <div className="race-hero-grid absolute inset-0 opacity-20"/>
+            <div className="relative z-10 flex min-h-[34rem] flex-col justify-between p-6 sm:p-9 lg:p-12">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className={`border px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] backdrop-blur-md ${configPhase === 'open' ? 'border-green-400/60 bg-green-500/20 text-green-300' : 'border-yellow-400/60 bg-yellow-400/15 text-yellow-300'}`}>{phaseText(configPhase)}</span>
+                <span className="border border-white/20 bg-black/55 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-gray-200 backdrop-blur-md">{config.plataforma}</span>
+              </div>
+
+              <div className="max-w-4xl py-12">
+                <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-7">
+                  {config.categoria_logo ? <img src={config.categoria_logo} alt={`Logo de ${config.categoria}`} className="h-24 w-28 shrink-0 object-contain drop-shadow-[0_12px_28px_rgba(0,0,0,0.9)] sm:h-32 sm:w-40 lg:h-40 lg:w-48"/> : null}
+                  <div><p className="mb-2 text-xs font-bold uppercase tracking-[0.3em] text-yellow-300">Temporada {config.temporada}</p><h2 className="font-racing text-5xl font-bold uppercase leading-[0.9] text-white drop-shadow-[0_7px_25px_rgba(0,0,0,0.95)] sm:text-6xl lg:text-7xl">{config.categoria}</h2></div>
                 </div>
-                <p className="mt-2 text-gray-400">{config.plataforma} · {config.cantidad_fechas} fechas · {config.cupos_ocupados}/{config.limite_inscriptos} cupos ocupados</p>
-                <p className="mt-2 text-sm text-gray-300"><strong>Setup:</strong> {config.setup_detalle}</p>
-                <p className={`mt-3 flex items-center gap-2 text-sm font-semibold ${Number(config.precio || 0) > 10000 ? 'text-green-400' : 'text-gray-500'}`}><PlayCircleIcon className="h-5 w-5"/>{Number(config.precio || 0) > 10000 ? 'Transmisión en vivo incluida' : 'Sin transmisión en vivo'}</p>
+                <p className="mt-7 max-w-3xl text-sm leading-relaxed text-gray-200 sm:text-base"><strong className="text-white">Setup:</strong> {config.setup_detalle}</p>
               </div>
-              <div className="lg:text-right"><p className="text-xs uppercase text-gray-500">Precio base</p><p className="font-racing text-3xl font-bold text-yellow-300">{formatPrice(config.precio)}</p><p className="mt-1 text-sm text-gray-400">{config.lugares_disponibles} lugares disponibles</p></div>
-            </div>
-            <div className="grid border-t border-racing-border md:grid-cols-2">
-              <div className="border-b border-racing-border p-6 md:border-b-0 md:border-r">
-                <p className="text-xs font-semibold uppercase text-gray-500">Apertura</p><p className="mt-1 text-white">{formatCalendarDate(config.fecha_apertura, { dateStyle: 'long', timeStyle: 'short' })}</p>
+
+              <div className="grid gap-3 border-t border-white/15 pt-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Calendario</p><p className="mt-1 font-racing text-xl font-bold text-white">{config.cantidad_fechas} fechas</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Cupos</p><p className="mt-1 font-racing text-xl font-bold text-white">{configPhase === 'upcoming' ? Number(config.preinscriptos || 0) : config.cupos_ocupados}/{config.limite_inscriptos} {configPhase === 'upcoming' ? 'pre-inscriptos' : 'inscriptos'}</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Precio base</p><p className="mt-1 font-racing text-2xl font-bold text-yellow-300">{formatPrice(config.precio)}</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Servicio</p>{Number(config.precio || 0) > 10000 ? <a href="https://www.youtube.com/@alPodioEnVivo" target="_blank" rel="noreferrer" className="mt-1 flex w-fit items-center gap-2 text-sm font-semibold text-green-400 transition-colors hover:text-green-300"><PlayCircleIcon className="h-5 w-5"/>Transmisión en vivo</a> : <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-gray-400"><PlayCircleIcon className="h-5 w-5"/>Sin transmisión en vivo</p>}</div>
               </div>
-              <div className="p-6"><p className="text-xs font-semibold uppercase text-gray-500">Cierre</p><p className="mt-1 text-white">{formatCalendarDate(config.fecha_cierre, { dateStyle: 'long', timeStyle: 'short' })}</p>{configPhase === 'open' ? <p className="mt-2 font-racing text-xl font-bold text-yellow-300">Cierra en {formatCountdown(parseCalendarDate(config.fecha_cierre).getTime() - now)}</p> : null}</div>
             </div>
+            {galleryImages.length > 1 ? <div className="absolute bottom-3 right-4 z-20 flex gap-1.5">{galleryImages.map((image, index) => <button key={image} type="button" onClick={() => setActiveGalleryImage(index)} aria-label={`Mostrar imagen ${index + 1}`} className={`h-1.5 transition-all ${index === activeGalleryImage ? 'w-8 bg-yellow-300' : 'w-3 bg-white/40 hover:bg-white/70'}`}/>)}</div> : null}
           </section>
 
           <section className="mt-6 border border-racing-border bg-racing-card p-6">
             <div className="mb-5 flex items-center gap-3"><CalendarDaysIcon className="h-6 w-6 text-racing-red"/><h3 className="font-racing text-2xl font-bold">Calendario</h3></div>
             <div className="grid gap-3 md:grid-cols-2">
-              {config.calendario.map(event => <div key={event.ronda} className="flex gap-4 border border-racing-border bg-racing-dark p-4"><span className="font-racing text-2xl font-bold text-racing-red">{event.ronda}</span><div><p className="font-semibold text-white">{event.circuito}{event.variante ? ` · ${event.variante}` : ''}</p><p className="text-sm text-gray-400">{formatCalendarDate(event.fecha, { dateStyle: 'medium', timeStyle: 'short' })}</p></div></div>)}
+              {config.calendario.map(event => <article key={event.ronda} className="relative min-h-48 overflow-hidden border border-racing-border bg-racing-dark"><img src={event.circuito_foto_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/><div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 to-black/25"/><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30"/><div className="relative z-10 flex min-h-48 items-stretch justify-between gap-4 p-5"><div className="flex min-w-0 flex-col"><span className="w-fit bg-racing-red px-3 py-1 font-racing text-sm font-bold uppercase text-white">Fecha {event.ronda}</span><div className="mt-auto"><div className="flex items-center gap-2"><CountryFlag country={event.pais} className="text-xl"/><p className="font-racing text-2xl font-bold uppercase leading-tight text-white">{event.circuito}{event.variante ? ` · ${event.variante}` : ''}</p></div><p className="mt-2 flex items-center gap-2 text-sm capitalize text-gray-200"><CalendarDaysIcon className="h-4 w-4 text-racing-red"/>{formatCalendarDate(event.fecha, { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H</p>{[event.localidad, event.provincia].filter(Boolean).length ? <p className="mt-1 flex items-center gap-2 text-xs text-gray-400"><MapPinIcon className="h-4 w-4 text-racing-red"/>{[event.localidad, event.provincia].filter(Boolean).join(', ')}</p> : null}</div></div>{event.circuito_trazado_url ? <img src={event.circuito_trazado_url} alt={`Trazado de ${event.circuito}`} className="h-28 w-32 shrink-0 self-center object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.9)] sm:h-32 sm:w-40" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/> : null}</div></article>)}
             </div>
           </section>
 
-          {!formToken && !completed ? <div className="mt-8 text-center">
-            <button type="button" onClick={startForm} disabled={configPhase !== 'open'} className="btn-primary justify-center disabled:cursor-not-allowed disabled:opacity-40">Comenzar inscripción</button>
-            {configPhase === 'upcoming' ? <div className="mx-auto mt-4 max-w-xl border border-yellow-400/30 bg-yellow-400/10 p-4"><p className="font-racing text-xl font-bold text-yellow-300">Próximo inicio de campeonato</p><p className="mt-2 text-sm text-gray-300">El formulario se abrirá automáticamente el {formatCalendarDate(config.fecha_apertura, { dateStyle: 'long', timeStyle: 'short' })}.</p></div> : null}
-            {configPhase === 'full' ? <p className="mt-3 text-sm text-yellow-300">Se alcanzó el límite de {config.limite_inscriptos} inscriptos.</p> : null}
-          </div> : null}
+          {!formToken && !completed && configPhase === 'open' ? <div className="mt-8 text-center"><button type="button" onClick={startForm} className="btn-primary justify-center">Comenzar inscripción</button></div> : null}
+          {!formToken && !completed && configPhase === 'full' ? <p className="mt-8 text-center text-sm text-yellow-300">Se alcanzó el límite de {config.limite_inscriptos} inscriptos.</p> : null}
 
           {formToken && !expired ? <form onSubmit={submit} className="mt-8 space-y-8">
             <div className="sticky top-2 z-20 flex items-center justify-between border border-yellow-400/30 bg-yellow-400/10 px-4 py-3 backdrop-blur"><span className="flex items-center gap-2 text-sm text-yellow-200"><ClockIcon className="h-5 w-5"/>Tiempo para completar</span><strong className="font-racing text-2xl text-yellow-300">{formatCountdown(expiresAt - now)}</strong></div>
@@ -231,7 +260,6 @@ export default function Registration() {
           {completed ? <div className="mt-8 border border-green-500/30 bg-green-500/10 p-8 text-center"><CheckCircleIcon className="mx-auto h-14 w-14 text-green-400"/><h3 className="mt-4 font-racing text-3xl font-bold">¡Inscripción completada!</h3><p className="mt-2 text-gray-300">{message}</p></div> : null}
         </> : null}
 
-        {!loading && !forms.length ? <div className="mt-10 border border-racing-border bg-racing-card p-10 text-center"><UserPlusIcon className="mx-auto h-12 w-12 text-gray-600"/><p className="mt-4 text-gray-400">No hay formularios de inscripción configurados.</p></div> : null}
         {message && !formToken && !completed ? <p className="mt-6 text-sm text-yellow-300">{message}</p> : null}
       </div>
     </main>

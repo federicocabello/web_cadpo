@@ -160,6 +160,10 @@ def _normalize_driver_name(value):
     )
 
 
+def _capitalize_location(value):
+    return " ".join(part.capitalize() for part in str(value or "").strip().split())
+
+
 def fetch_driver_names(connection):
     cursor = connection.cursor(dictionary=True)
     try:
@@ -194,8 +198,8 @@ def save_new_drivers(connection, drivers):
                 """,
                 (
                     name,
-                    driver["localidad"],
-                    driver["provincia"],
+                    _capitalize_location(driver["localidad"]),
+                    _capitalize_location(driver["provincia"]),
                     driver["telefono"],
                     driver["nacionalidad"],
                     driver["steam"],
