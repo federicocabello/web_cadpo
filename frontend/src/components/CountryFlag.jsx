@@ -9,11 +9,11 @@ export function CountryFlag({ country, className = '' }) {
   return <span className={`fi fi-${code} shrink-0 ${className}`} aria-label={getCountryName(code)} title={getCountryName(code)} />;
 }
 
-export function CountrySelect({ value, onChange, disabled = false, className = '', options = countries }) {
+export function CountrySelect({ value, onChange, disabled = false, className = '', options = countries, allowEmpty = false }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef(null);
-  const selectedCode = normalizeCountryCode(value) || 'ar';
+  const selectedCode = normalizeCountryCode(value) || (allowEmpty ? '' : 'ar');
   const selected = options.find(country => country.code === selectedCode)
     || countries.find(country => country.code === selectedCode);
   const filteredCountries = useMemo(() => {
@@ -54,8 +54,8 @@ export function CountrySelect({ value, onChange, disabled = false, className = '
         aria-expanded={open}
       >
         <span className="flex items-center gap-3">
-          <CountryFlag country={selectedCode} className="text-xl" />
-          <span>{selected?.name}</span>
+          {selectedCode ? <CountryFlag country={selectedCode} className="text-xl" /> : null}
+          <span className={selected ? '' : 'text-gray-500'}>{selected?.name || 'Seleccionar país'}</span>
         </span>
         <ChevronDownIcon className={`h-4 w-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -73,6 +73,7 @@ export function CountrySelect({ value, onChange, disabled = false, className = '
             />
           </div>
           <div className="max-h-64 overflow-y-auto">
+            {allowEmpty ? <button type="button" onClick={() => { onChange(''); setOpen(false); setSearch(''); }} className="flex w-full items-center px-3 py-2 text-left text-sm text-gray-400 hover:bg-racing-red/10 hover:text-white">Sin especificar</button> : null}
             {filteredCountries.map(country => (
               <button
                 key={country.code}

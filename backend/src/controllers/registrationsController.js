@@ -1,5 +1,45 @@
 const pool = require('../config/db');
 
+const parseIds = value => {
+  let values = value;
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values); } catch { values = values.split(','); }
+  }
+  return [...new Set((Array.isArray(values) ? values : []).map(Number).filter(Number.isInteger))];
+};
+
+const assertPaymentCapacity = async (connection, championshipId, driverId, carId) => {
+  const [[config]] = await connection.query(
+    `SELECT limite_inscriptos, preinscriptos, autos_habilitados
+     FROM inscripciones_config WHERE idcampeonato = ? FOR UPDATE`,
+    [championshipId]
+  );
+  if (!config) return;
+
+  const enabledCars = parseIds(config.autos_habilitados);
+  if (!enabledCars.includes(Number(carId))) {
+    throw Object.assign(new Error('El auto ya no está habilitado para este campeonato'), { statusCode: 409 });
+  }
+
+  const [[total]] = await connection.query(
+    'SELECT COUNT(*) AS cantidad FROM inscriptos WHERE idcampeonato = ? AND pago = 1 AND idpiloto <> ?',
+    [championshipId, driverId]
+  );
+  if (Number(total.cantidad) + Number(config.preinscriptos || 0) >= Number(config.limite_inscriptos)) {
+    throw Object.assign(new Error('No quedan cupos disponibles para confirmar este pago'), { statusCode: 409 });
+  }
+
+  const modelLimit = enabledCars.length ? Math.ceil(Number(config.limite_inscriptos) / enabledCars.length) : 0;
+  const [[model]] = await connection.query(
+    `SELECT COUNT(*) AS cantidad FROM inscriptos
+     WHERE idcampeonato = ? AND idauto = ? AND pago = 1 AND idpiloto <> ?`,
+    [championshipId, carId, driverId]
+  );
+  if (Number(model.cantidad) >= modelLimit) {
+    throw Object.assign(new Error('El modelo seleccionado ya no tiene lugares para confirmar este pago'), { statusCode: 409 });
+  }
+};
+
 // ── GET /api/inscriptos?idcampeonato=X ────────────────────────────────────────
 const getAll = async (req, res, next) => {
   try {
@@ -37,8 +77,8 @@ const create = async (req, res, next) => {
       return res.status(400).json({ error: 'idcampeonato, idpiloto, idauto y numero son requeridos' });
     }
     const numericNumber = Number(numero);
-    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 200) {
-      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 200' });
+    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 199) {
+      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 199' });
     }
 
     const [[championship]] = await pool.query('SELECT idcategoria FROM campeonatos WHERE id = ?', [idcampeonato]);
@@ -78,18 +118,29 @@ const create = async (req, res, next) => {
 
 // ── PATCH /api/inscriptos/:idcampeonato/:idpiloto/pago ────────────────────────
 const updatePayment = async (req, res, next) => {
+  const connection = await pool.getConnection();
   try {
     const { idcampeonato, idpiloto } = req.params;
     const { pago } = req.body;
-    const [result] = await pool.query(
+    await connection.beginTransaction();
+    const [[registration]] = await connection.query(
+      'SELECT idauto, pago FROM inscriptos WHERE idcampeonato=? AND idpiloto=? FOR UPDATE',
+      [idcampeonato, idpiloto]
+    );
+    if (!registration) throw Object.assign(new Error('Inscripción no encontrada'), { statusCode: 404 });
+    if (pago && !registration.pago) {
+      await assertPaymentCapacity(connection, idcampeonato, idpiloto, registration.idauto);
+    }
+    await connection.query(
       'UPDATE inscriptos SET pago=? WHERE idcampeonato=? AND idpiloto=?',
       [pago ? 1 : 0, idcampeonato, idpiloto]
     );
-    if (!result.affectedRows) return res.status(404).json({ error: 'Inscripción no encontrada' });
+    await connection.commit();
     res.json({ message: 'Estado de pago actualizado', pago: pago ? 1 : 0 });
   } catch (err) {
+    await connection.rollback();
     next(err);
-  }
+  } finally { connection.release(); }
 };
 
 const updateBulk = async (req, res, next) => {
@@ -113,8 +164,8 @@ const updateBulk = async (req, res, next) => {
         error.statusCode = 400;
         throw error;
       }
-      if (!Number.isInteger(numero) || numero < 0 || numero > 200) {
-        const error = new Error('El número debe ser un entero entre 0 y 200');
+      if (!Number.isInteger(numero) || numero < 0 || numero > 199) {
+        const error = new Error('El número debe ser un entero entre 0 y 199');
         error.statusCode = 400;
         throw error;
       }
@@ -151,6 +202,8 @@ const updateBulk = async (req, res, next) => {
           throw error;
         }
       }
+
+      if (pago) await assertPaymentCapacity(connection, idcampeonato, idpiloto, idauto);
 
       await connection.query(
         'UPDATE inscriptos SET idauto = ?, numero = ?, pago = ? WHERE idcampeonato = ? AND idpiloto = ?',

@@ -11,6 +11,8 @@ const FORM_TTL_MS = 10 * 60 * 1000;
 const tokenSecret = () => process.env.ADMIN_SESSION_SECRET || process.env.DB_PASSWORD;
 const capitalize = value => String(value || '').trim().toLocaleLowerCase('es-AR')
   .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
+const foldText = value => String(value || '').trim().toLocaleLowerCase('es-AR')
+  .normalize('NFD').replace(/\p{Diacritic}/gu, '');
 const digitsOnly = value => String(value || '').replace(/\D/g, '');
 const asBoolean = value => value === true || value === 1 || value === '1' || value === 'true';
 const parseIds = value => {
@@ -49,6 +51,60 @@ const listRegistrationImages = async gallery => {
     .sort((a, b) => a.filename.localeCompare(b.filename));
 };
 
+const resultPointsExpression = alias => `
+  COALESCE(${alias}.presentismo, 0)
+  + COALESCE(${alias}.pts_qualy_sprint, 0)
+  + COALESCE(${alias}.pts_sprint, 0)
+  + COALESCE(${alias}.pts_qualy_final, 0)
+  + COALESCE(${alias}.pts_final, 0)
+`;
+
+const getPreviousSeasonRanking = async (championshipId, database = pool) => {
+  const [[previousChampionship]] = await database.query(
+    `SELECT previous.id
+     FROM campeonatos current
+     JOIN campeonatos previous ON previous.idcategoria = current.idcategoria AND previous.id <> current.id
+     WHERE current.id = ?
+       AND (
+         previous.anio < current.anio
+         OR (previous.anio = current.anio AND CAST(previous.temporada AS UNSIGNED) < CAST(current.temporada AS UNSIGNED))
+         OR (previous.anio = current.anio AND previous.temporada = current.temporada AND previous.id < current.id)
+       )
+     ORDER BY previous.anio DESC, CAST(previous.temporada AS UNSIGNED) DESC, previous.id DESC
+     LIMIT 1`,
+    [championshipId]
+  );
+  if (!previousChampionship) return { championshipId: null, positions: new Map() };
+
+  const [officialStandings] = await database.query(
+    `SELECT idpiloto, posicion
+     FROM tablas
+     WHERE idcampeonato = ? AND posicion BETWEEN 1 AND 199
+     ORDER BY posicion ASC`,
+    [previousChampionship.id]
+  );
+  if (officialStandings.length) {
+    return {
+      championshipId: previousChampionship.id,
+      positions: new Map(officialStandings.map(row => [Number(row.idpiloto), Number(row.posicion)])),
+    };
+  }
+
+  const [calculatedStandings] = await database.query(
+    `SELECT r.idpiloto, p.nombre, ROUND(SUM(${resultPointsExpression('r')}), 2) AS puntos
+     FROM resultados r
+     JOIN pilotos p ON p.id = r.idpiloto
+     WHERE r.idcampeonato = ?
+     GROUP BY r.idpiloto, p.nombre
+     ORDER BY puntos DESC, p.nombre ASC`,
+    [previousChampionship.id]
+  );
+  return {
+    championshipId: previousChampionship.id,
+    positions: new Map(calculatedStandings.slice(0, 199).map((row, index) => [Number(row.idpiloto), index + 1])),
+  };
+};
+
 const createFormToken = championshipId => {
   const expiresAt = Date.now() + FORM_TTL_MS;
   const payload = `${championshipId}.${expiresAt}.${crypto.randomBytes(12).toString('hex')}`;
@@ -72,11 +128,11 @@ const configSelect = `
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
          cat.categoria, cat.logo AS categoria_logo,
          COUNT(DISTINCT cal.ronda) AS cantidad_fechas,
-         (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato) AS inscriptos_actuales,
+         (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) AS inscriptos_actuales,
          CASE
            WHEN NOW() < cfg.fecha_apertura THEN 'upcoming'
            WHEN NOW() >= cfg.fecha_cierre THEN 'closed'
-           WHEN (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato) + cfg.preinscriptos >= cfg.limite_inscriptos THEN 'full'
+           WHEN (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) + cfg.preinscriptos >= cfg.limite_inscriptos THEN 'full'
            ELSE 'open'
          END AS phase
   FROM inscripciones_config cfg
@@ -124,7 +180,8 @@ const loadForm = async id => {
   if (carIds.length) {
     const [rows] = await pool.query(
       `SELECT a.id, a.idcategoria, a.modelo, a.imagen, am.marca, am.logo,
-              COUNT(i.idpiloto) AS inscriptos_modelo
+              SUM(CASE WHEN i.pago = 1 THEN 1 ELSE 0 END) AS ocupados_modelo,
+              SUM(CASE WHEN i.pago = 0 THEN 1 ELSE 0 END) AS lista_espera_modelo
        FROM autos a JOIN autos_marcas am ON am.id = a.marca
        LEFT JOIN inscriptos i ON i.idcampeonato = ? AND i.idauto = a.id
        WHERE a.id IN (?) AND a.idcategoria = ?
@@ -135,8 +192,8 @@ const loadForm = async id => {
     cars = rows.map(car => ({
       ...car,
       limite_modelo: config.limite_por_modelo,
-      lugares_modelo: Math.max(0, config.limite_por_modelo - Number(car.inscriptos_modelo)),
-      disponible: Number(car.inscriptos_modelo) < config.limite_por_modelo,
+      lugares_modelo: Math.max(0, config.limite_por_modelo - Number(car.ocupados_modelo)),
+      disponible: Number(car.ocupados_modelo) < config.limite_por_modelo,
     }));
   }
   return {
@@ -183,18 +240,38 @@ const searchDrivers = async (req, res, next) => {
     if (search.length < 2) return res.json({ data: [] });
     const [rows] = await pool.query(
       `SELECT id, nombre, localidad, provincia, telefono, nacionalidad, steam, ig
-       FROM pilotos WHERE nombre LIKE ? ORDER BY nombre LIMIT 8`, [`%${search}%`]
+       FROM pilotos ORDER BY nombre`
     );
-    res.json({ data: rows });
+    const normalizedSearch = foldText(search);
+    const ranking = await getPreviousSeasonRanking(req.params.id);
+    const matches = rows.filter(driver => foldText(driver.nombre).includes(normalizedSearch)).slice(0, 8)
+      .map(driver => ({
+        ...driver,
+        ranking_position: ranking.positions.get(Number(driver.id)) || null,
+        ranking_championship_id: ranking.championshipId,
+      }));
+    res.json({ data: matches });
   } catch (error) { next(error); }
 };
 
 const checkNumber = async (req, res, next) => {
   try {
     const number = Number(req.params.number);
-    if (!Number.isInteger(number) || number < 1 || number > 200) return res.status(400).json({ error: 'Número inválido' });
+    if (!Number.isInteger(number) || number < 1 || number > 199) return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
+    const driverId = Number(req.query.idpiloto) || null;
     const [[row]] = await pool.query('SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND numero = ? LIMIT 1', [req.params.id, number]);
-    res.json({ data: { available: !row } });
+    const ranking = await getPreviousSeasonRanking(req.params.id);
+    const rankedPosition = driverId ? ranking.positions.get(driverId) || null : null;
+    const reservedDriver = [...ranking.positions.entries()].find(([, position]) => position === number)?.[0] || null;
+    const available = !row
+      && (!rankedPosition || rankedPosition === number)
+      && (!reservedDriver || reservedDriver === driverId);
+    res.json({ data: {
+      available,
+      ranked: Boolean(rankedPosition),
+      assignedNumber: rankedPosition,
+      reason: row ? 'occupied' : rankedPosition && rankedPosition !== number ? 'ranked_number' : reservedDriver && reservedDriver !== driverId ? 'reserved_ranking' : null,
+    } });
   } catch (error) { next(error); }
 };
 
@@ -315,9 +392,21 @@ const submit = async (req, res, next) => {
     if (!allowedModalities[modality]) return res.status(400).json({ error: 'Modalidad de diseño no habilitada' });
     const carId = Number(req.body.idauto);
     if (!form.autos_habilitados.includes(carId)) return res.status(400).json({ error: 'El auto seleccionado no está habilitado' });
-    const number = modality === 'extra' ? 0 : Number(req.body.numero);
-    if (modality !== 'extra' && (!Number.isInteger(number) || number < 1 || number > 200)) {
-      return res.status(400).json({ error: 'El número debe estar entre 1 y 200' });
+    const submittedDriverId = Number(req.body.idpiloto) || null;
+    let number = modality === 'extra' ? 0 : Number(req.body.numero);
+    const ranking = modality === 'extra'
+      ? { positions: new Map() }
+      : await getPreviousSeasonRanking(id, connection);
+    const rankedPosition = submittedDriverId ? ranking.positions.get(submittedDriverId) || null : null;
+    if (rankedPosition) number = rankedPosition;
+    if (modality !== 'extra' && (!Number.isInteger(number) || number < 1 || number > 199)) {
+      return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
+    }
+    const reservedDriver = modality === 'extra'
+      ? null
+      : [...ranking.positions.entries()].find(([, position]) => position === number)?.[0] || null;
+    if (reservedDriver && reservedDriver !== submittedDriverId) {
+      return res.status(409).json({ error: `El número ${number} está reservado para un piloto rankeado` });
     }
     const driver = {
       nombre: capitalize(req.body.nombre), localidad: capitalize(req.body.localidad),
@@ -325,46 +414,60 @@ const submit = async (req, res, next) => {
       nacionalidad: normalizeCountryCode(req.body.nacionalidad), steam: String(req.body.steam || '').trim(),
       ig: normalizeInstagram(req.body.ig),
     };
-    if (!driver.nombre || !driver.telefono || !driver.localidad || !driver.steam) {
-      return res.status(400).json({ error: 'Completá nombre, teléfono, localidad e ID Steam' });
-    }
+    if (!driver.nombre) return res.status(400).json({ error: 'Completá el nombre y apellido' });
 
     await connection.beginTransaction();
     const [[lockedConfig]] = await connection.query(
-      'SELECT limite_inscriptos, preinscriptos, autos_habilitados FROM inscripciones_config WHERE idcampeonato = ? FOR UPDATE', [id]
+      `SELECT limite_inscriptos, preinscriptos, autos_habilitados, fecha_apertura, fecha_cierre,
+              CASE WHEN NOW() >= fecha_apertura AND NOW() < fecha_cierre THEN 1 ELSE 0 END AS inscripcion_abierta
+       FROM inscripciones_config
+       WHERE idcampeonato = ? FOR UPDATE`, [id]
     );
+    if (!lockedConfig || !Number(lockedConfig.inscripcion_abierta)) {
+      throw Object.assign(new Error('Las inscripciones ya no están abiertas'), { statusCode: 409 });
+    }
     const [[registrationCount]] = await connection.query(
-      'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ?', [id]
+      'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ? AND pago = 1', [id]
     );
-    if (!lockedConfig || Number(registrationCount.total) + Number(lockedConfig.preinscriptos || 0) >= Number(lockedConfig.limite_inscriptos)) {
-      throw Object.assign(new Error('El campeonato alcanzó el límite de inscriptos'), { statusCode: 409 });
+    if (Number(registrationCount.total) + Number(lockedConfig.preinscriptos || 0) >= Number(lockedConfig.limite_inscriptos)) {
+      throw Object.assign(new Error('No quedan cupos disponibles en el campeonato'), { statusCode: 409 });
     }
     const lockedCarIds = parseIds(lockedConfig.autos_habilitados);
     const modelLimit = lockedCarIds.length ? Math.ceil(Number(lockedConfig.limite_inscriptos) / lockedCarIds.length) : 0;
     const [[modelCount]] = await connection.query(
-      'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ? AND idauto = ?', [id, carId]
+      'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ? AND idauto = ? AND pago = 1', [id, carId]
     );
     if (!lockedCarIds.includes(carId) || Number(modelCount.total) >= modelLimit) {
-      throw Object.assign(new Error('El modelo seleccionado alcanzó su límite de inscriptos'), { statusCode: 409 });
+      throw Object.assign(new Error('El modelo seleccionado ya no tiene lugares disponibles'), { statusCode: 409 });
     }
     let driverId = Number(req.body.idpiloto);
     if (driverId) {
-      const [[existing]] = await connection.query('SELECT id FROM pilotos WHERE id = ? FOR UPDATE', [driverId]);
+      const [[existing]] = await connection.query('SELECT id, nombre FROM pilotos WHERE id = ? FOR UPDATE', [driverId]);
       if (!existing) throw Object.assign(new Error('Piloto no encontrado'), { statusCode: 404 });
-      const [[duplicateDriver]] = await connection.query(
-        `SELECT id FROM pilotos
-         WHERE id <> ? AND (LOWER(nombre)=LOWER(?) OR telefono=? OR LOWER(steam)=LOWER(?)) LIMIT 1 FOR UPDATE`,
-        [driverId, driver.nombre, driver.telefono, driver.steam]
-      );
+      driver.nombre = existing.nombre;
+      const duplicateConditions = [];
+      const duplicateParams = [driverId];
+      if (driver.telefono) { duplicateConditions.push('telefono=?'); duplicateParams.push(driver.telefono); }
+      if (driver.steam) { duplicateConditions.push('LOWER(steam)=LOWER(?)'); duplicateParams.push(driver.steam); }
+      let duplicateDriver = null;
+      if (duplicateConditions.length) {
+        [[duplicateDriver]] = await connection.query(
+          `SELECT id FROM pilotos WHERE id <> ? AND (${duplicateConditions.join(' OR ')}) LIMIT 1 FOR UPDATE`,
+          duplicateParams
+        );
+      }
       if (duplicateDriver) throw Object.assign(new Error('Los datos modificados pertenecen a otro piloto.'), { statusCode: 409 });
       await connection.query(
         'UPDATE pilotos SET nombre=?, localidad=?, provincia=?, telefono=?, nacionalidad=?, steam=?, ig=? WHERE id=?',
         [driver.nombre, driver.localidad, driver.provincia, driver.telefono, driver.nacionalidad, driver.steam, driver.ig, driverId]
       );
     } else {
+      const duplicateConditions = ['LOWER(nombre)=LOWER(?)'];
+      const duplicateParams = [driver.nombre];
+      if (driver.telefono) { duplicateConditions.push('telefono=?'); duplicateParams.push(driver.telefono); }
+      if (driver.steam) { duplicateConditions.push('LOWER(steam)=LOWER(?)'); duplicateParams.push(driver.steam); }
       const [[duplicate]] = await connection.query(
-        'SELECT id FROM pilotos WHERE LOWER(nombre)=LOWER(?) OR telefono=? OR LOWER(steam)=LOWER(?) LIMIT 1 FOR UPDATE',
-        [driver.nombre, driver.telefono, driver.steam]
+        `SELECT id FROM pilotos WHERE ${duplicateConditions.join(' OR ')} LIMIT 1 FOR UPDATE`, duplicateParams
       );
       if (duplicate) throw Object.assign(new Error('Ya existe un piloto con esos datos. Buscalo por su nombre.'), { statusCode: 409 });
       const [created] = await connection.query(
