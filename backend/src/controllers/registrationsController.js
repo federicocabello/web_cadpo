@@ -25,7 +25,7 @@ const assertPaymentCapacity = async (connection, championshipId, driverId, carId
     'SELECT COUNT(*) AS cantidad FROM inscriptos WHERE idcampeonato = ? AND pago = 1 AND idpiloto <> ?',
     [championshipId, driverId]
   );
-  if (Number(total.cantidad) + Number(config.preinscriptos || 0) >= Number(config.limite_inscriptos)) {
+  if (Number(total.cantidad) >= Number(config.limite_inscriptos)) {
     throw Object.assign(new Error('No quedan cupos disponibles para confirmar este pago'), { statusCode: 409 });
   }
 
@@ -45,14 +45,16 @@ const getAll = async (req, res, next) => {
   try {
     const { idcampeonato } = req.query;
     let query = `
-      SELECT i.numero, i.pago, i.idcampeonato,
+      SELECT i.numero, i.pago, i.tipo_inscripcion, i.idauto_oficial, i.precio_inscripcion, i.idcampeonato,
              p.id AS idpiloto, p.nombre, p.localidad, p.telefono, p.ig,
              a.id AS idauto, am.id AS idmarca, am.marca, a.modelo, am.logo AS auto_logo,
+             official.descripcion AS auto_oficial_descripcion, official.foto AS auto_oficial_foto,
              c.temporada, c.anio, c.idcategoria, cat.categoria
       FROM inscriptos i
       JOIN pilotos p ON i.idpiloto = p.id
       JOIN autos a   ON i.idauto   = a.id
       JOIN autos_marcas am ON a.marca = am.id
+      LEFT JOIN inscripciones_autos_oficiales official ON official.id = i.idauto_oficial
       JOIN campeonatos c ON i.idcampeonato = c.id
       JOIN categorias cat ON c.idcategoria = cat.id
     `;
@@ -171,7 +173,8 @@ const updateBulk = async (req, res, next) => {
       }
 
       const [[registration]] = await connection.query(
-        `SELECT c.idcategoria AS campeonato_categoria, a.idcategoria AS auto_categoria
+        `SELECT c.idcategoria AS campeonato_categoria, a.idcategoria AS auto_categoria,
+                i.idauto_oficial
          FROM inscriptos i
          JOIN campeonatos c ON c.id = i.idcampeonato
          JOIN autos a ON a.id = ?
@@ -191,12 +194,14 @@ const updateBulk = async (req, res, next) => {
 
       if (numero !== 0) {
         const [[duplicateNumber]] = await connection.query(
-          `SELECT idpiloto FROM inscriptos
+          `SELECT idpiloto, idauto_oficial FROM inscriptos
            WHERE idcampeonato = ? AND numero = ? AND idpiloto <> ?
            LIMIT 1`,
           [idcampeonato, numero, idpiloto]
         );
-        if (duplicateNumber) {
+        const officialNumberPair = duplicateNumber
+          && (registration.idauto_oficial || duplicateNumber.idauto_oficial);
+        if (duplicateNumber && !officialNumberPair) {
           const error = new Error(`El número ${numero} ya está utilizado en este campeonato`);
           error.statusCode = 409;
           throw error;

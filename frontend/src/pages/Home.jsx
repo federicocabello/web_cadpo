@@ -44,7 +44,7 @@ const getYouTubeVideoId = value => {
 const getRegistrationPhase = (form, now) => {
   if ((parseCalendarDate(form.fecha_apertura)?.getTime() || 0) > now) return 'upcoming';
   if ((parseCalendarDate(form.fecha_cierre)?.getTime() || 0) <= now) return 'closed';
-  return Number(form.inscriptos_actuales) + Number(form.preinscriptos || 0) >= Number(form.limite_inscriptos) ? 'full' : 'open';
+  return Number(form.inscriptos_actuales) >= Number(form.limite_inscriptos) ? 'full' : 'open';
 };
 
 const getCountdown = (value, now) => {
@@ -60,6 +60,11 @@ const getCountdown = (value, now) => {
   };
 };
 
+const formatCountdownHoursMinutes = countdown => [
+  countdown.hours > 0 ? `${countdown.hours} HORAS` : '',
+  `${String(countdown.minutes).padStart(2, '0')} min`,
+].filter(Boolean).join(' ');
+
 const formatRegistrationOpening = (value, now) => {
   const openingDate = parseCalendarDate(value);
   if (!openingDate) return 'Inscripciones próximamente';
@@ -74,7 +79,7 @@ const formatRegistrationOpening = (value, now) => {
 
   const countdown = getCountdown(value, now);
   if (!countdown) return 'Inscripciones próximamente';
-  return `Inscripciones abren en ${countdown.hours} h ${String(countdown.minutes).padStart(2, '0')} min`;
+  return `Inscripciones abren en ${formatCountdownHoursMinutes(countdown)}`;
 };
 
 const formatRegistrationClosing = (value, now) => {
@@ -91,7 +96,7 @@ const formatRegistrationClosing = (value, now) => {
 
   const countdown = getCountdown(value, now);
   if (!countdown) return null;
-  return { label: 'Inscripciones cierran en', value: `${countdown.hours} h ${String(countdown.minutes).padStart(2, '0')} min` };
+  return { label: 'Inscripciones cierran en', value: formatCountdownHoursMinutes(countdown) };
 };
 
 const registrationThemes = {
@@ -171,9 +176,9 @@ function RegistrationSection({ registration, details, images, activeImage, now, 
   const raceDay = firstEvent ? formatCalendarDate(firstEvent.fecha, { weekday: 'long' }).toLocaleUpperCase('es-AR') : '';
   const closingNotice = open ? formatRegistrationClosing(registration.fecha_cierre, now) : null;
   const registrationLimit = Number(registration.limite_inscriptos || 0);
-  const occupiedPlaces = Number(registration.inscriptos_actuales || 0) + Number(registration.preinscriptos || 0);
-  const remainingPlaces = Math.max(0, registrationLimit - occupiedPlaces);
-  const lowAvailability = open && registrationLimit > 0 && occupiedPlaces / registrationLimit >= 0.75 && remainingPlaces > 0;
+  const realOccupiedPlaces = Number(registration.inscriptos_actuales || 0);
+  const remainingPlaces = Math.max(0, registrationLimit - realOccupiedPlaces);
+  const lowAvailability = open && registrationLimit > 0 && realOccupiedPlaces / registrationLimit >= 0.75 && remainingPlaces > 0;
   const background = images[activeImage] || '';
 
   return (

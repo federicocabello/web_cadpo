@@ -14,13 +14,67 @@ const capitalize = value => String(value || '').trim().toLocaleLowerCase('es-AR'
 const foldText = value => String(value || '').trim().toLocaleLowerCase('es-AR')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '');
 const digitsOnly = value => String(value || '').replace(/\D/g, '');
-const asBoolean = value => value === true || value === 1 || value === '1' || value === 'true';
 const parseIds = value => {
   let values = value;
   if (typeof values === 'string') {
     try { values = JSON.parse(values); } catch { values = values.split(','); }
   }
   return [...new Set((Array.isArray(values) ? values : []).map(Number).filter(Number.isInteger))];
+};
+const planTypes = new Set(['sin_numero', 'con_numero', 'pintura_oficial']);
+const fixedPlanDefinitions = [
+  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás sin pintura personalizada y sin elegir número.', precio_adicional: 0, tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Presentás tu propio diseño y elegís el número del auto.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'El diseñador de la liga te asesora y prepara el auto.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Competís con uno de los diseños oficiales disponibles.', precio_adicional: 0, tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
+];
+const planAliases = {
+  extra: ['extra', 'extra-sin-diseno'],
+  personalizado: ['personalizado', 'diseno-propio'],
+  diseno_liga: ['diseno_liga', 'diseno-liga', 'personalizado_liga'],
+  diseno_oficial: ['diseno_oficial', 'pintura_oficial'],
+};
+const parsePlans = value => {
+  let plans = value;
+  if (typeof plans === 'string') {
+    try { plans = JSON.parse(plans); } catch { plans = []; }
+  }
+  if (!Array.isArray(plans)) return [];
+  return plans.map((plan, index) => ({
+    id: String(plan?.id || `plan-${index + 1}`).trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64),
+    titulo: String(plan?.titulo || '').trim().slice(0, 120),
+    descripcion: String(plan?.descripcion || '').trim().slice(0, 600),
+    precio_adicional: Number(plan?.precio_adicional || 0),
+    tipo: planTypes.has(plan?.tipo) ? plan.tipo : 'con_numero',
+    habilitado: plan?.habilitado !== false,
+    autos_habilitados: parseIds(plan?.autos_habilitados),
+  }));
+};
+const normalizeFixedPlans = row => {
+  const configured = parsePlans(row.planes);
+  const legacyEnabled = {
+    extra: Boolean(row.permite_extra),
+    personalizado: Boolean(row.permite_personalizado),
+    diseno_liga: Boolean(row.permite_diseno_liga),
+    diseno_oficial: Boolean(row.permite_pintura_oficial),
+  };
+  return fixedPlanDefinitions.map(definition => {
+    const existing = configured.find(plan => planAliases[definition.id].includes(plan.id));
+    const legacyPrice = definition.id === 'diseno_liga'
+      ? Number(row.precio_diseno || 0)
+      : definition.id === 'diseno_oficial' ? Number(row.precio_pintura_oficial || 0) : 0;
+    return {
+      ...definition,
+      ...(existing || {}),
+      id: definition.id,
+      tipo: definition.tipo,
+      habilitado: existing ? existing.habilitado : legacyEnabled[definition.id],
+      precio_adicional: ['diseno_liga', 'diseno_oficial'].includes(definition.id)
+        ? Number(existing?.precio_adicional ?? legacyPrice) : 0,
+      autos_habilitados: definition.id === 'diseno_oficial'
+        ? parseIds(existing?.autos_habilitados || row.autos_habilitados) : [],
+    };
+  });
 };
 const registrationImageExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
@@ -51,6 +105,40 @@ const listRegistrationImages = async gallery => {
     .sort((a, b) => a.filename.localeCompare(b.filename));
 };
 
+const listOfficialCars = async championshipId => {
+  const [rows] = await pool.query(
+    `SELECT official.id, official.idcampeonato, official.idauto, official.numero,
+            official.descripcion, official.foto,
+            a.modelo, am.marca, am.logo,
+            EXISTS(
+              SELECT 1 FROM inscriptos i
+              WHERE i.idcampeonato = official.idcampeonato AND i.numero = official.numero
+            ) AS ocupado
+     FROM inscripciones_autos_oficiales official
+     JOIN autos a ON a.id = official.idauto
+     JOIN autos_marcas am ON am.id = a.marca
+     WHERE official.idcampeonato = ?
+     ORDER BY am.marca, a.modelo, official.numero`,
+    [championshipId],
+  );
+  return rows.map(row => ({ ...row, ocupado: Boolean(row.ocupado) }));
+};
+
+const officialCarsDirectory = gallery => ({
+  directory: path.join(gallery.directory, 'oficiales'),
+  publicPath: `${gallery.publicPath}/oficiales`,
+});
+
+const removePublicFile = async publicPath => {
+  if (!publicPath) return;
+  const target = path.resolve(publicDir, String(publicPath).replace(/^[/\\]+/, ''));
+  const allowedRoot = path.resolve(publicDir, 'media', 'inscripciones');
+  if (!target.startsWith(`${allowedRoot}${path.sep}`)) return;
+  try { await fs.unlink(target); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+};
+
 const resultPointsExpression = alias => `
   COALESCE(${alias}.presentismo, 0)
   + COALESCE(${alias}.pts_qualy_sprint, 0)
@@ -65,12 +153,8 @@ const getPreviousSeasonRanking = async (championshipId, database = pool) => {
      FROM campeonatos current
      JOIN campeonatos previous ON previous.idcategoria = current.idcategoria AND previous.id <> current.id
      WHERE current.id = ?
-       AND (
-         previous.anio < current.anio
-         OR (previous.anio = current.anio AND CAST(previous.temporada AS UNSIGNED) < CAST(current.temporada AS UNSIGNED))
-         OR (previous.anio = current.anio AND previous.temporada = current.temporada AND previous.id < current.id)
-       )
-     ORDER BY previous.anio DESC, CAST(previous.temporada AS UNSIGNED) DESC, previous.id DESC
+       AND previous.id < current.id
+     ORDER BY previous.id DESC
      LIMIT 1`,
     [championshipId]
   );
@@ -123,8 +207,8 @@ const verifyFormToken = (token, championshipId) => {
 
 const configSelect = `
   SELECT cfg.idcampeonato, cfg.fecha_apertura, cfg.fecha_cierre,
-         cfg.precio, cfg.precio_diseno, cfg.setup_detalle, cfg.limite_inscriptos, cfg.preinscriptos, cfg.autos_habilitados,
-         cfg.permite_personalizado, cfg.permite_diseno_liga, cfg.permite_extra,
+         cfg.precio, cfg.precio_diseno, cfg.precio_pintura_oficial, cfg.setup_detalle, cfg.limite_inscriptos, cfg.preinscriptos, cfg.autos_habilitados, cfg.planes,
+         cfg.permite_personalizado, cfg.permite_diseno_liga, cfg.permite_pintura_oficial, cfg.permite_extra,
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
          cat.categoria, cat.logo AS categoria_logo,
          COUNT(DISTINCT cal.ronda) AS cantidad_fechas,
@@ -132,7 +216,7 @@ const configSelect = `
          CASE
            WHEN NOW() < cfg.fecha_apertura THEN 'upcoming'
            WHEN NOW() >= cfg.fecha_cierre THEN 'closed'
-           WHEN (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) + cfg.preinscriptos >= cfg.limite_inscriptos THEN 'full'
+           WHEN (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) >= cfg.limite_inscriptos THEN 'full'
            ELSE 'open'
          END AS phase
   FROM inscripciones_config cfg
@@ -155,8 +239,10 @@ const normalizeConfig = row => {
     ...row,
     permite_personalizado: Boolean(row.permite_personalizado),
     permite_diseno_liga: Boolean(row.permite_diseno_liga),
+    permite_pintura_oficial: Boolean(row.permite_pintura_oficial),
     permite_extra: Boolean(row.permite_extra),
     autos_habilitados: enabledCarIds,
+    planes: normalizeFixedPlans(row),
     limite_por_modelo: enabledCarIds.length ? Math.ceil(totalLimit / enabledCarIds.length) : 0,
     preinscriptos: preEnrolled,
     cupos_ocupados: Math.min(totalLimit, occupied),
@@ -196,6 +282,7 @@ const loadForm = async id => {
       disponible: Number(car.ocupados_modelo) < config.limite_por_modelo,
     }));
   }
+  const officialCars = await listOfficialCars(id);
   return {
     ...config,
     calendario: calendar.map(event => ({
@@ -204,6 +291,7 @@ const loadForm = async id => {
       circuito_trazado_url: event.trazado || `/media/circuitos/trazados/${slugify(event.circuito)}.png`,
     })),
     autos: cars,
+    autos_oficiales: officialCars,
   };
 };
 
@@ -259,19 +347,102 @@ const checkNumber = async (req, res, next) => {
     const number = Number(req.params.number);
     if (!Number.isInteger(number) || number < 1 || number > 199) return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
     const driverId = Number(req.query.idpiloto) || null;
-    const [[row]] = await pool.query('SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND numero = ? LIMIT 1', [req.params.id, number]);
+    const [numberRegistrations] = await pool.query(
+      'SELECT idpiloto, idauto_oficial FROM inscriptos WHERE idcampeonato = ? AND numero = ?',
+      [req.params.id, number],
+    );
     const ranking = await getPreviousSeasonRanking(req.params.id);
     const rankedPosition = driverId ? ranking.positions.get(driverId) || null : null;
     const reservedDriver = [...ranking.positions.entries()].find(([, position]) => position === number)?.[0] || null;
-    const available = !row
+    const rankedOfficialException = rankedPosition === number;
+    const blockingRegistration = numberRegistrations.find(registration => (
+      !rankedOfficialException || !registration.idauto_oficial
+    ));
+    const available = !blockingRegistration
       && (!rankedPosition || rankedPosition === number)
       && (!reservedDriver || reservedDriver === driverId);
     res.json({ data: {
       available,
       ranked: Boolean(rankedPosition),
       assignedNumber: rankedPosition,
-      reason: row ? 'occupied' : rankedPosition && rankedPosition !== number ? 'ranked_number' : reservedDriver && reservedDriver !== driverId ? 'reserved_ranking' : null,
+      reason: blockingRegistration ? 'occupied' : rankedPosition && rankedPosition !== number ? 'ranked_number' : reservedDriver && reservedDriver !== driverId ? 'reserved_ranking' : null,
     } });
+  } catch (error) { next(error); }
+};
+
+const checkRegistrationAvailability = async (req, res, next) => {
+  try {
+    const championshipId = Number(req.params.id);
+    if (!verifyFormToken(req.body.formToken, championshipId)) {
+      return res.status(410).json({ error: 'El formulario venció. Volvé a comenzar la inscripción.' });
+    }
+    const driverId = Number(req.body.idpiloto) || null;
+    const number = Number(req.body.numero) || 0;
+    const officialCarId = Number(req.body.idauto_oficial) || null;
+    let driverRegistration = null;
+    if (driverId) {
+      [[driverRegistration]] = await pool.query(
+        'SELECT numero FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
+        [championshipId, driverId],
+      );
+    }
+    if (driverRegistration) {
+      return res.json({ data: { available: false, reason: 'driver_registered' }, message: 'El piloto ya está inscripto en este campeonato, aunque su pago todavía no esté confirmado.' });
+    }
+    if (number > 0) {
+      const [numberRegistrations] = await pool.query(
+        'SELECT idpiloto, idauto_oficial FROM inscriptos WHERE idcampeonato = ? AND numero = ?',
+        [championshipId, number],
+      );
+      const ranking = driverId ? await getPreviousSeasonRanking(championshipId) : { positions: new Map() };
+      const rankedPosition = driverId ? ranking.positions.get(driverId) || null : null;
+      const rankedOfficialException = !officialCarId && rankedPosition === number;
+      const blockingRegistration = numberRegistrations.find(registration => (
+        !rankedOfficialException || !registration.idauto_oficial
+      ));
+      if (blockingRegistration) {
+        return res.json({ data: { available: false, reason: 'number_occupied' }, message: `El número ${number} ya está ocupado por otra inscripción, aunque el pago todavía no esté confirmado.` });
+      }
+    }
+    if (officialCarId) {
+      const [[officialCar]] = await pool.query(
+        'SELECT numero FROM inscripciones_autos_oficiales WHERE id = ? AND idcampeonato = ? LIMIT 1',
+        [officialCarId, championshipId],
+      );
+      if (!officialCar || Number(officialCar.numero) !== number) {
+        return res.json({ data: { available: false, reason: 'official_car_unavailable' }, message: 'El diseño oficial seleccionado ya no está disponible.' });
+      }
+    }
+    res.json({ data: { available: true } });
+  } catch (error) { next(error); }
+};
+
+const getPreviousRanking = async (req, res, next) => {
+  try {
+    if (!verifyFormToken(req.query.formToken, req.params.id)) {
+      return res.status(410).json({ error: 'El formulario venció. Volvé a comenzar la inscripción.' });
+    }
+    const ranking = await getPreviousSeasonRanking(req.params.id);
+    if (!ranking.championshipId || !ranking.positions.size) {
+      return res.json({ data: { campeonato: null, pilotos: [] } });
+    }
+    const driverIds = [...ranking.positions.keys()];
+    const [championshipResult, driversResult] = await Promise.all([
+      pool.query(
+        `SELECT c.id, c.temporada, c.anio, cat.categoria
+         FROM campeonatos c JOIN categorias cat ON cat.id = c.idcategoria
+         WHERE c.id = ?`,
+        [ranking.championshipId],
+      ),
+      pool.query('SELECT id, nombre FROM pilotos WHERE id IN (?)', [driverIds]),
+    ]);
+    const championship = championshipResult[0][0] || null;
+    const drivers = driversResult[0];
+    const driversById = new Map(drivers.map(driver => [Number(driver.id), driver.nombre]));
+    const pilots = [...ranking.positions.entries()]
+      .map(([idpiloto, posicion]) => ({ idpiloto, nombre: driversById.get(idpiloto) || 'Piloto sin identificar', posicion, numero: posicion }))
+      .sort((a, b) => a.posicion - b.posicion);
+    res.json({ data: { campeonato: championship || null, pilotos: pilots } });
   } catch (error) { next(error); }
 };
 
@@ -327,6 +498,142 @@ const removeAdminImage = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+const getAdminOfficialCars = async (req, res, next) => {
+  try {
+    res.json({ data: await listOfficialCars(req.params.id) });
+  } catch (error) { next(error); }
+};
+
+const parseOfficialCarInput = async (championshipId, body) => {
+  const carId = Number(body.idauto);
+  const number = Number(body.numero);
+  const description = String(body.descripcion || '').trim().slice(0, 500);
+  if (!Number.isInteger(number) || number < 1 || number > 199) {
+    throw Object.assign(new Error('El número del auto oficial debe estar entre 1 y 199'), { statusCode: 400 });
+  }
+  if (!description) throw Object.assign(new Error('Ingresá una descripción para el auto oficial'), { statusCode: 400 });
+  const [[config]] = await pool.query(
+    `SELECT cfg.autos_habilitados, c.idcategoria
+     FROM inscripciones_config cfg JOIN campeonatos c ON c.id = cfg.idcampeonato
+     WHERE cfg.idcampeonato = ?`,
+    [championshipId],
+  );
+  if (!config) throw Object.assign(new Error('Formulario no encontrado'), { statusCode: 404 });
+  if (!parseIds(config.autos_habilitados).includes(carId)) {
+    throw Object.assign(new Error('El modelo debe estar habilitado en el formulario'), { statusCode: 400 });
+  }
+  const [[car]] = await pool.query('SELECT id FROM autos WHERE id = ? AND idcategoria = ?', [carId, config.idcategoria]);
+  if (!car) throw Object.assign(new Error('El modelo no pertenece a la categoría del campeonato'), { statusCode: 400 });
+  return { carId, number, description };
+};
+
+const createAdminOfficialCar = async (req, res, next) => {
+  let uploadedPath = '';
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Seleccioná una foto para el auto oficial' });
+    const championshipId = Number(req.params.id);
+    const input = await parseOfficialCarInput(championshipId, req.body);
+    const [[duplicate]] = await pool.query(
+      'SELECT id FROM inscripciones_autos_oficiales WHERE idcampeonato = ? AND numero = ? LIMIT 1',
+      [championshipId, input.number],
+    );
+    if (duplicate) return res.status(409).json({ error: `El número ${input.number} ya está cargado en los diseños oficiales` });
+    const [[registeredNumber]] = await pool.query(
+      'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND numero = ? LIMIT 1',
+      [championshipId, input.number],
+    );
+    if (registeredNumber) return res.status(409).json({ error: `El número ${input.number} ya está ocupado en el campeonato` });
+    const gallery = await getRegistrationGallery(championshipId);
+    if (!gallery) return res.status(404).json({ error: 'Campeonato no encontrado' });
+    const target = officialCarsDirectory(gallery);
+    await fs.mkdir(target.directory, { recursive: true });
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${extension}`;
+    uploadedPath = `${target.publicPath}/${filename}`;
+    await fs.writeFile(path.join(target.directory, filename), req.file.buffer);
+    await pool.query(
+      `INSERT INTO inscripciones_autos_oficiales
+       (idcampeonato, idauto, numero, descripcion, foto) VALUES (?, ?, ?, ?, ?)`,
+      [championshipId, input.carId, input.number, input.description, uploadedPath],
+    );
+    res.status(201).json({ data: await listOfficialCars(championshipId), message: 'Auto oficial cargado' });
+  } catch (error) {
+    if (uploadedPath) await removePublicFile(uploadedPath).catch(() => {});
+    next(error);
+  }
+};
+
+const updateAdminOfficialCar = async (req, res, next) => {
+  let uploadedPath = '';
+  try {
+    const championshipId = Number(req.params.id);
+    const officialCarId = Number(req.params.officialCarId);
+    const input = await parseOfficialCarInput(championshipId, req.body);
+    const [[existing]] = await pool.query(
+      `SELECT official.foto, official.idauto, official.numero,
+              EXISTS(SELECT 1 FROM inscriptos i WHERE i.idauto_oficial = official.id) AS utilizado
+       FROM inscripciones_autos_oficiales official
+       WHERE official.id = ? AND official.idcampeonato = ?`,
+      [officialCarId, championshipId],
+    );
+    if (!existing) return res.status(404).json({ error: 'Auto oficial no encontrado' });
+    if (existing.utilizado && (Number(existing.idauto) !== input.carId || Number(existing.numero) !== input.number)) {
+      return res.status(409).json({ error: 'Este diseño ya fue elegido. Podés modificar su foto y descripción, pero no el modelo ni el número.' });
+    }
+    const [[duplicate]] = await pool.query(
+      `SELECT id FROM inscripciones_autos_oficiales
+       WHERE idcampeonato = ? AND numero = ? AND id <> ? LIMIT 1`,
+      [championshipId, input.number, officialCarId],
+    );
+    if (duplicate) return res.status(409).json({ error: `El número ${input.number} ya está cargado en los diseños oficiales` });
+    const [[registeredNumber]] = await pool.query(
+      `SELECT idpiloto FROM inscriptos
+       WHERE idcampeonato = ? AND numero = ? AND (idauto_oficial IS NULL OR idauto_oficial <> ?) LIMIT 1`,
+      [championshipId, input.number, officialCarId],
+    );
+    if (registeredNumber) return res.status(409).json({ error: `El número ${input.number} ya está ocupado en el campeonato` });
+    let photo = existing.foto;
+    if (req.file) {
+      const gallery = await getRegistrationGallery(championshipId);
+      const target = officialCarsDirectory(gallery);
+      await fs.mkdir(target.directory, { recursive: true });
+      const extension = path.extname(req.file.originalname).toLowerCase();
+      const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${extension}`;
+      uploadedPath = `${target.publicPath}/${filename}`;
+      await fs.writeFile(path.join(target.directory, filename), req.file.buffer);
+      photo = uploadedPath;
+    }
+    await pool.query(
+      `UPDATE inscripciones_autos_oficiales
+       SET idauto = ?, numero = ?, descripcion = ?, foto = ?
+       WHERE id = ? AND idcampeonato = ?`,
+      [input.carId, input.number, input.description, photo, officialCarId, championshipId],
+    );
+    if (uploadedPath) await removePublicFile(existing.foto).catch(() => {});
+    res.json({ data: await listOfficialCars(championshipId), message: 'Auto oficial actualizado' });
+  } catch (error) {
+    if (uploadedPath) await removePublicFile(uploadedPath).catch(() => {});
+    next(error);
+  }
+};
+
+const removeAdminOfficialCar = async (req, res, next) => {
+  try {
+    const championshipId = Number(req.params.id);
+    const officialCarId = Number(req.params.officialCarId);
+    const [[existing]] = await pool.query(
+      'SELECT foto FROM inscripciones_autos_oficiales WHERE id = ? AND idcampeonato = ?',
+      [officialCarId, championshipId],
+    );
+    if (!existing) return res.status(404).json({ error: 'Auto oficial no encontrado' });
+    const [[registration]] = await pool.query('SELECT idpiloto FROM inscriptos WHERE idauto_oficial = ? LIMIT 1', [officialCarId]);
+    if (registration) return res.status(409).json({ error: 'No podés eliminar un diseño oficial que ya fue elegido por un piloto' });
+    await pool.query('DELETE FROM inscripciones_autos_oficiales WHERE id = ? AND idcampeonato = ?', [officialCarId, championshipId]);
+    await removePublicFile(existing.foto);
+    res.json({ data: await listOfficialCars(championshipId), message: 'Auto oficial eliminado' });
+  } catch (error) { next(error); }
+};
+
 const saveConfig = async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -334,15 +641,31 @@ const saveConfig = async (req, res, next) => {
     const closeAt = String(req.body.fecha_cierre || '').replace('T', ' ');
     const price = Number(req.body.precio);
     const designPrice = Number(req.body.precio_diseno);
+    const officialPaintPrice = Number(req.body.precio_pintura_oficial);
     const registrationLimit = Number(req.body.limite_inscriptos);
     const preEnrolled = Number(req.body.preinscriptos || 0);
     const setupDetails = String(req.body.setup_detalle || '').trim();
     const carIds = parseIds(req.body.autos_habilitados);
+    const submittedPlans = parsePlans(req.body.planes);
+    const plans = fixedPlanDefinitions.map(definition => {
+      const submitted = submittedPlans.find(plan => planAliases[definition.id].includes(plan.id));
+      return {
+        ...definition,
+        ...(submitted || {}),
+        id: definition.id,
+        tipo: definition.tipo,
+        habilitado: Boolean(submitted?.habilitado),
+        precio_adicional: ['diseno_liga', 'diseno_oficial'].includes(definition.id)
+          ? Number(submitted?.precio_adicional || 0) : 0,
+        autos_habilitados: definition.id === 'diseno_oficial' ? parseIds(submitted?.autos_habilitados) : [],
+      };
+    });
     if (!id || !openAt || !closeAt || new Date(closeAt) <= new Date(openAt)) {
       return res.status(400).json({ error: 'Las fechas de apertura y cierre no son válidas' });
     }
     if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'El precio no es válido' });
     if (!Number.isFinite(designPrice) || designPrice < 0) return res.status(400).json({ error: 'El precio adicional del diseño no es válido' });
+    if (!Number.isFinite(officialPaintPrice) || officialPaintPrice < 0) return res.status(400).json({ error: 'El precio adicional de la pintura oficial no es válido' });
     if (!Number.isInteger(registrationLimit) || registrationLimit < 1 || registrationLimit > 65535) {
       return res.status(400).json({ error: 'El límite de inscriptos debe ser mayor a cero' });
     }
@@ -351,26 +674,43 @@ const saveConfig = async (req, res, next) => {
     }
     if (!carIds.length) return res.status(400).json({ error: 'Habilitá al menos un modelo de auto' });
     if (!setupDetails) return res.status(400).json({ error: 'Ingresá los detalles del setup' });
+    if (!plans.some(plan => plan.habilitado)) return res.status(400).json({ error: 'Habilitá al menos una sección de inscripción' });
+    if (plans.some(plan => !plan.titulo || !plan.descripcion)) {
+      return res.status(400).json({ error: 'Completá el título y la descripción de todos los planes' });
+    }
+    if (plans.some(plan => !Number.isFinite(plan.precio_adicional) || plan.precio_adicional < 0)) {
+      return res.status(400).json({ error: 'El valor adicional de los planes no es válido' });
+    }
+    const normalizedPlans = plans.map(plan => ({
+      ...plan,
+      autos_habilitados: [],
+    }));
     const [[championship]] = await pool.query('SELECT idcategoria FROM campeonatos WHERE id = ?', [id]);
     if (!championship) return res.status(404).json({ error: 'Campeonato no encontrado' });
     if (carIds.length) {
       const [validCars] = await pool.query('SELECT id FROM autos WHERE id IN (?) AND idcategoria = ?', [carIds, championship.idcategoria]);
       if (validCars.length !== carIds.length) return res.status(400).json({ error: 'Hay autos que no pertenecen a la categoría' });
     }
-    const options = [asBoolean(req.body.permite_personalizado), asBoolean(req.body.permite_diseno_liga), asBoolean(req.body.permite_extra)];
-    if (!options.some(Boolean)) return res.status(400).json({ error: 'Habilitá al menos una modalidad de diseño' });
+    const options = [
+      normalizedPlans.some(plan => plan.habilitado && plan.id === 'personalizado'),
+      normalizedPlans.some(plan => plan.habilitado && plan.id === 'diseno_liga'),
+      normalizedPlans.some(plan => plan.habilitado && plan.id === 'diseno_oficial'),
+      normalizedPlans.some(plan => plan.habilitado && plan.id === 'extra'),
+    ];
     await pool.query(
       `INSERT INTO inscripciones_config
-       (idcampeonato, fecha_apertura, fecha_cierre, precio, precio_diseno, setup_detalle, limite_inscriptos,
-        preinscriptos, autos_habilitados, permite_personalizado, permite_diseno_liga, permite_extra)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (idcampeonato, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos,
+        preinscriptos, autos_habilitados, planes, permite_personalizado, permite_diseno_liga, permite_pintura_oficial, permite_extra)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE fecha_apertura=VALUES(fecha_apertura),
        fecha_cierre=VALUES(fecha_cierre), precio=VALUES(precio), precio_diseno=VALUES(precio_diseno),
-       setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados),
+       precio_pintura_oficial=VALUES(precio_pintura_oficial),
+       setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados), planes=VALUES(planes),
        permite_personalizado=VALUES(permite_personalizado), permite_diseno_liga=VALUES(permite_diseno_liga),
+       permite_pintura_oficial=VALUES(permite_pintura_oficial),
        permite_extra=VALUES(permite_extra)`,
-      [id, openAt, closeAt, price, designPrice, setupDetails, registrationLimit, preEnrolled,
-        JSON.stringify(carIds), ...options.map(value => value ? 1 : 0)]
+      [id, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, preEnrolled,
+        JSON.stringify(carIds), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
     );
     res.json({ message: 'Formulario de inscripción guardado', data: await loadForm(id) });
   } catch (error) { next(error); }
@@ -383,26 +723,33 @@ const submit = async (req, res, next) => {
     if (!verifyFormToken(req.body.formToken, id)) return res.status(410).json({ error: 'El formulario venció. Volvé a comenzar la inscripción.' });
     const form = await loadForm(id);
     if (!form || form.phase !== 'open') return res.status(409).json({ error: 'Las inscripciones no están abiertas' });
-    const modality = String(req.body.modalidad_diseno || '');
-    const allowedModalities = {
-      personalizado: form.permite_personalizado,
-      personalizado_liga: form.permite_diseno_liga,
-      extra: form.permite_extra,
-    };
-    if (!allowedModalities[modality]) return res.status(400).json({ error: 'Modalidad de diseño no habilitada' });
-    const carId = Number(req.body.idauto);
+    const planId = String(req.body.plan_id || req.body.modalidad_diseno || '');
+    const selectedPlan = form.planes.find(plan => plan.id === planId && plan.habilitado);
+    if (!selectedPlan) return res.status(400).json({ error: 'El plan de inscripción seleccionado no está habilitado' });
+    const requiresNumber = selectedPlan.tipo !== 'sin_numero';
+    const modality = selectedPlan.id === 'extra' ? 'extra'
+      : selectedPlan.id === 'diseno_oficial' ? 'pintura_oficial'
+        : selectedPlan.id === 'diseno_liga' ? 'personalizado_liga' : 'personalizado';
+    const officialCarId = selectedPlan.id === 'diseno_oficial' ? Number(req.body.idauto_oficial) : null;
+    const selectedOfficialCar = officialCarId
+      ? form.autos_oficiales.find(car => Number(car.id) === officialCarId && !car.ocupado)
+      : null;
+    if (selectedPlan.id === 'diseno_oficial' && !selectedOfficialCar) {
+      return res.status(409).json({ error: 'El auto oficial seleccionado ya no está disponible' });
+    }
+    const carId = selectedOfficialCar ? Number(selectedOfficialCar.idauto) : Number(req.body.idauto);
     if (!form.autos_habilitados.includes(carId)) return res.status(400).json({ error: 'El auto seleccionado no está habilitado' });
     const submittedDriverId = Number(req.body.idpiloto) || null;
-    let number = modality === 'extra' ? 0 : Number(req.body.numero);
-    const ranking = modality === 'extra'
+    let number = selectedOfficialCar ? Number(selectedOfficialCar.numero) : requiresNumber ? Number(req.body.numero) : 0;
+    const ranking = !requiresNumber || selectedOfficialCar
       ? { positions: new Map() }
       : await getPreviousSeasonRanking(id, connection);
     const rankedPosition = submittedDriverId ? ranking.positions.get(submittedDriverId) || null : null;
     if (rankedPosition) number = rankedPosition;
-    if (modality !== 'extra' && (!Number.isInteger(number) || number < 1 || number > 199)) {
+    if (requiresNumber && (!Number.isInteger(number) || number < 1 || number > 199)) {
       return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
     }
-    const reservedDriver = modality === 'extra'
+    const reservedDriver = !requiresNumber
       ? null
       : [...ranking.positions.entries()].find(([, position]) => position === number)?.[0] || null;
     if (reservedDriver && reservedDriver !== submittedDriverId) {
@@ -426,10 +773,20 @@ const submit = async (req, res, next) => {
     if (!lockedConfig || !Number(lockedConfig.inscripcion_abierta)) {
       throw Object.assign(new Error('Las inscripciones ya no están abiertas'), { statusCode: 409 });
     }
+    if (officialCarId) {
+      const [[lockedOfficialCar]] = await connection.query(
+        `SELECT idauto, numero FROM inscripciones_autos_oficiales
+         WHERE id = ? AND idcampeonato = ? FOR UPDATE`,
+        [officialCarId, id],
+      );
+      if (!lockedOfficialCar || Number(lockedOfficialCar.idauto) !== carId || Number(lockedOfficialCar.numero) !== number) {
+        throw Object.assign(new Error('El auto oficial seleccionado ya no está disponible'), { statusCode: 409 });
+      }
+    }
     const [[registrationCount]] = await connection.query(
       'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ? AND pago = 1', [id]
     );
-    if (Number(registrationCount.total) + Number(lockedConfig.preinscriptos || 0) >= Number(lockedConfig.limite_inscriptos)) {
+    if (Number(registrationCount.total) >= Number(lockedConfig.limite_inscriptos)) {
       throw Object.assign(new Error('No quedan cupos disponibles en el campeonato'), { statusCode: 409 });
     }
     const lockedCarIds = parseIds(lockedConfig.autos_habilitados);
@@ -476,23 +833,38 @@ const submit = async (req, res, next) => {
       );
       driverId = created.insertId;
     }
-    const [[duplicateRegistration]] = await connection.query(
-      `SELECT idpiloto, numero FROM inscriptos
-       WHERE idcampeonato=? AND (idpiloto=? OR (? > 0 AND numero=?)) LIMIT 1 FOR UPDATE`,
-      [id, driverId, number, number]
+    const [[driverRegistration]] = await connection.query(
+      'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1 FOR UPDATE',
+      [id, driverId],
     );
-    if (duplicateRegistration) {
-      const message = Number(duplicateRegistration.idpiloto) === driverId
-        ? 'El piloto ya está inscripto en este campeonato' : `El número ${number} ya está ocupado`;
-      throw Object.assign(new Error(message), { statusCode: 409 });
+    if (driverRegistration) {
+      throw Object.assign(new Error('El piloto ya está inscripto en este campeonato'), { statusCode: 409 });
     }
+    if (number > 0) {
+      const [numberRegistrations] = await connection.query(
+        'SELECT idpiloto, idauto_oficial FROM inscriptos WHERE idcampeonato = ? AND numero = ? FOR UPDATE',
+        [id, number],
+      );
+      const rankedOfficialException = !selectedOfficialCar && rankedPosition === number;
+      const blockingRegistration = numberRegistrations.find(registration => (
+        !rankedOfficialException || !registration.idauto_oficial
+      ));
+      if (blockingRegistration) {
+        throw Object.assign(new Error(`El número ${number} ya está ocupado`), { statusCode: 409 });
+      }
+    }
+    const registrationPrice = Number(form.precio || 0) + Number(selectedPlan.precio_adicional || 0);
     await connection.query(
-      'INSERT INTO inscriptos (idcampeonato, idpiloto, idauto, numero, pago) VALUES (?, ?, ?, ?, 0)',
-      [id, driverId, carId, number]
+      `INSERT INTO inscriptos
+       (idcampeonato, idpiloto, idauto, numero, pago, tipo_inscripcion, idauto_oficial, precio_inscripcion)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
+      [id, driverId, carId, number, selectedPlan.id, officialCarId, registrationPrice]
     );
     await connection.query(
-      'INSERT INTO inscripciones_detalle (idcampeonato, idpiloto, modalidad_diseno) VALUES (?, ?, ?)',
-      [id, driverId, modality]
+      `INSERT INTO inscripciones_detalle
+       (idcampeonato, idpiloto, modalidad_diseno, plan_id, plan_titulo, precio_total)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, driverId, modality, selectedPlan.id, selectedPlan.titulo, registrationPrice]
     );
     await connection.commit();
     res.status(201).json({ message: 'Inscripción registrada correctamente' });
@@ -510,4 +882,23 @@ const removeConfig = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { checkNumber, getAdminAll, getAdminImages, getPublicAll, getPublicOne, removeAdminImage, removeConfig, saveConfig, searchDrivers, start, submit, uploadAdminImages };
+module.exports = {
+  checkRegistrationAvailability,
+  checkNumber,
+  createAdminOfficialCar,
+  getAdminAll,
+  getAdminImages,
+  getAdminOfficialCars,
+  getPublicAll,
+  getPublicOne,
+  getPreviousRanking,
+  removeAdminImage,
+  removeAdminOfficialCar,
+  removeConfig,
+  saveConfig,
+  searchDrivers,
+  start,
+  submit,
+  updateAdminOfficialCar,
+  uploadAdminImages,
+};

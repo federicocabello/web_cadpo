@@ -195,17 +195,47 @@ const emptyRegistrationForm = {
   pago: false,
 };
 
+const defaultRegistrationPlans = [
+  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás sin pintura personalizada y sin elegir número.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Presentás tu propio diseño y elegís el número del auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'Nuestro diseñador te asesora y prepara el diseño del auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Competís con uno de los diseños oficiales disponibles.', precio_adicional: '0', tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
+];
+const cloneRegistrationPlans = plans => plans.map(plan => ({ ...plan, autos_habilitados: [...(plan.autos_habilitados || [])] }));
+const planAliases = {
+  extra: ['extra', 'extra-sin-diseno'],
+  personalizado: ['personalizado', 'diseno-propio'],
+  diseno_liga: ['diseno_liga', 'diseno-liga', 'personalizado_liga'],
+  diseno_oficial: ['diseno_oficial', 'pintura_oficial'],
+};
+const normalizeAdminRegistrationPlans = plans => defaultRegistrationPlans.map(defaultPlan => {
+  const existing = (plans || []).find(plan => planAliases[defaultPlan.id].includes(plan.id));
+  return {
+    ...defaultPlan,
+    ...(existing || {}),
+    id: defaultPlan.id,
+    tipo: defaultPlan.tipo,
+    habilitado: existing ? existing.habilitado !== false : defaultPlan.habilitado,
+    precio_adicional: String(existing?.precio_adicional ?? defaultPlan.precio_adicional),
+    autos_habilitados: existing?.autos_habilitados || [],
+  };
+});
+const emptyOfficialCarForm = { id: '', idauto: '', numero: '', descripcion: '', foto: null };
+
 const emptyRegistrationConfig = {
   fecha_apertura: '',
   fecha_cierre: '',
   precio: '0',
   precio_diseno: '0',
+  precio_pintura_oficial: '0',
   setup_detalle: '',
   limite_inscriptos: '30',
   preinscriptos: '0',
   autos_habilitados: [],
+  planes: cloneRegistrationPlans(defaultRegistrationPlans),
   permite_personalizado: true,
   permite_diseno_liga: true,
+  permite_pintura_oficial: false,
   permite_extra: true,
 };
 
@@ -526,6 +556,7 @@ export default function Admin() {
   const championshipRulesInputRef = useRef(null);
   const carImageInputRef = useRef(null);
   const registrationImagesInputRef = useRef(null);
+  const officialCarPhotoInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -540,6 +571,10 @@ export default function Admin() {
   const [registrationImageFiles, setRegistrationImageFiles] = useState([]);
   const [registrationGalleryMessage, setRegistrationGalleryMessage] = useState('');
   const [savingRegistrationImages, setSavingRegistrationImages] = useState(false);
+  const [officialCars, setOfficialCars] = useState([]);
+  const [officialCarForm, setOfficialCarForm] = useState(emptyOfficialCarForm);
+  const [officialCarsMessage, setOfficialCarsMessage] = useState('');
+  const [savingOfficialCar, setSavingOfficialCar] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     const savedSection = window.localStorage.getItem(adminSectionStorageKey);
     return adminSections.some(section => section.id === savedSection)
@@ -1006,13 +1041,23 @@ export default function Admin() {
       .slice(0, 8);
   }, [drivers, registrationDriverSearch]);
 
+  const registrationChampionshipGroups = useMemo(() => championships
+    .map(championship => ({
+      ...championship,
+      registrationsCount: registrations.filter(registration => String(registration.idcampeonato) === String(championship.id)).length,
+    }))
+    .sort((a, b) => Number(b.id) - Number(a.id)), [championships, registrations]);
+
+  const selectedRegistrationChampionship = useMemo(
+    () => registrationChampionshipGroups.find(championship => String(championship.id) === String(registrationChampionshipFilter)) || null,
+    [registrationChampionshipFilter, registrationChampionshipGroups],
+  );
+
   const displayedRegistrations = useMemo(() => {
+    if (!registrationChampionshipFilter) return [];
     const search = registrationSearch.trim().toLocaleLowerCase('es-AR');
     return registrations.filter(registration => {
-      if (
-        registrationChampionshipFilter
-        && String(registration.idcampeonato) !== String(registrationChampionshipFilter)
-      ) return false;
+      if (String(registration.idcampeonato) !== String(registrationChampionshipFilter)) return false;
 
       if (!search) return true;
       return [
@@ -1042,6 +1087,13 @@ export default function Admin() {
   useEffect(() => {
     setRegistrationPage(current => Math.min(current, registrationPageCount));
   }, [registrationPageCount]);
+
+  useEffect(() => {
+    if (registrationChampionshipFilter && !selectedRegistrationChampionship) {
+      setRegistrationChampionshipFilter('');
+      setRegistrationSearch('');
+    }
+  }, [registrationChampionshipFilter, selectedRegistrationChampionship]);
 
   const displayedEvents = useMemo(() => {
     const search = eventSearch.trim().toLocaleLowerCase('es-AR');
@@ -1284,26 +1336,49 @@ export default function Admin() {
     }
   };
 
+  const loadOfficialCars = async id => {
+    if (!id) { setOfficialCars([]); return; }
+    try {
+      const response = await registrationFormsApi.getOfficialCars(id);
+      setOfficialCars(response.data.data || []);
+    } catch (error) {
+      setOfficialCars([]);
+      setOfficialCarsMessage(error.response?.data?.error || 'No se pudieron cargar los autos oficiales.');
+    }
+  };
+
   const selectRegistrationConfigChampionship = id => {
     setRegistrationConfigChampionshipId(id);
     setRegistrationConfigMessage('');
     setRegistrationGalleryMessage('');
+    setOfficialCarsMessage('');
+    setOfficialCarForm(emptyOfficialCarForm);
+    if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
     setRegistrationImageFiles([]);
     if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
     const existing = registrationConfigs.find(item => String(item.idcampeonato) === String(id));
-    if (existing) loadRegistrationGallery(id);
-    else { setRegistrationGallery([]); setRegistrationGalleryPath(''); }
+    if (existing) {
+      loadRegistrationGallery(id);
+      loadOfficialCars(id);
+    } else {
+      setRegistrationGallery([]);
+      setRegistrationGalleryPath('');
+      setOfficialCars([]);
+    }
     setRegistrationConfig(existing ? {
       fecha_apertura: toDateTimeInputValue(existing.fecha_apertura),
       fecha_cierre: toDateTimeInputValue(existing.fecha_cierre),
       precio: String(existing.precio ?? 0),
       precio_diseno: String(existing.precio_diseno ?? 0),
+      precio_pintura_oficial: String(existing.precio_pintura_oficial ?? 0),
       setup_detalle: existing.setup_detalle || '',
       limite_inscriptos: String(existing.limite_inscriptos ?? 30),
       preinscriptos: String(existing.preinscriptos ?? 0),
       autos_habilitados: existing.autos_habilitados || [],
+      planes: normalizeAdminRegistrationPlans(existing.planes),
       permite_personalizado: existing.permite_personalizado,
       permite_diseno_liga: existing.permite_diseno_liga,
+      permite_pintura_oficial: existing.permite_pintura_oficial,
       permite_extra: existing.permite_extra,
     } : emptyRegistrationConfig);
   };
@@ -1314,11 +1389,25 @@ export default function Admin() {
   };
 
   const toggleRegistrationCar = id => {
+    setRegistrationConfig(current => {
+      const numericId = Number(id);
+      const removing = current.autos_habilitados.includes(numericId);
+      return {
+        ...current,
+        autos_habilitados: removing
+          ? current.autos_habilitados.filter(carId => carId !== numericId)
+          : [...current.autos_habilitados, numericId],
+        planes: removing
+          ? current.planes.map(plan => ({ ...plan, autos_habilitados: plan.autos_habilitados.filter(carId => carId !== numericId) }))
+          : current.planes,
+      };
+    });
+  };
+
+  const updateRegistrationPlan = (id, field, value) => {
     setRegistrationConfig(current => ({
       ...current,
-      autos_habilitados: current.autos_habilitados.includes(Number(id))
-        ? current.autos_habilitados.filter(carId => carId !== Number(id))
-        : [...current.autos_habilitados, Number(id)],
+      planes: current.planes.map(plan => plan.id === id ? { ...plan, [field]: value } : plan),
     }));
   };
 
@@ -1338,6 +1427,7 @@ export default function Admin() {
       setRegistrationConfigs(current => [saved, ...current.filter(item => String(item.idcampeonato) !== String(saved.idcampeonato))]);
       setRegistrationConfigMessage(response.data.message);
       await loadRegistrationGallery(registrationConfigChampionshipId);
+      await loadOfficialCars(registrationConfigChampionshipId);
     } catch (error) {
       setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo guardar el formulario.');
     } finally {
@@ -1377,6 +1467,62 @@ export default function Admin() {
     }
   };
 
+  const resetOfficialCarForm = () => {
+    setOfficialCarForm(emptyOfficialCarForm);
+    if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
+  };
+
+  const editOfficialCar = car => {
+    setOfficialCarForm({
+      id: car.id,
+      idauto: String(car.idauto),
+      numero: String(car.numero),
+      descripcion: car.descripcion || '',
+      foto: null,
+    });
+    setOfficialCarsMessage('');
+    if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
+  };
+
+  const saveOfficialCar = async () => {
+    if (!registrationConfigChampionshipId) return;
+    setSavingOfficialCar(true);
+    setOfficialCarsMessage('');
+    try {
+      const data = new FormData();
+      data.append('idauto', officialCarForm.idauto);
+      data.append('numero', officialCarForm.numero);
+      data.append('descripcion', officialCarForm.descripcion);
+      if (officialCarForm.foto) data.append('foto', officialCarForm.foto);
+      const response = officialCarForm.id
+        ? await registrationFormsApi.updateOfficialCar(registrationConfigChampionshipId, officialCarForm.id, data)
+        : await registrationFormsApi.createOfficialCar(registrationConfigChampionshipId, data);
+      setOfficialCars(response.data.data || []);
+      setOfficialCarsMessage(response.data.message);
+      resetOfficialCarForm();
+    } catch (error) {
+      setOfficialCarsMessage(error.response?.data?.error || 'No se pudo guardar el auto oficial.');
+    } finally {
+      setSavingOfficialCar(false);
+    }
+  };
+
+  const deleteOfficialCar = async car => {
+    if (!window.confirm(`¿Eliminar el diseño oficial Nº ${car.numero}?`)) return;
+    setSavingOfficialCar(true);
+    setOfficialCarsMessage('');
+    try {
+      const response = await registrationFormsApi.removeOfficialCar(registrationConfigChampionshipId, car.id);
+      setOfficialCars(response.data.data || []);
+      setOfficialCarsMessage(response.data.message);
+      if (String(officialCarForm.id) === String(car.id)) resetOfficialCarForm();
+    } catch (error) {
+      setOfficialCarsMessage(error.response?.data?.error || 'No se pudo eliminar el auto oficial.');
+    } finally {
+      setSavingOfficialCar(false);
+    }
+  };
+
   const deleteRegistrationConfig = async id => {
     const current = registrationConfigs.find(item => String(item.idcampeonato) === String(id));
     if (!window.confirm(`¿Eliminar el formulario de ${current?.categoria || 'este campeonato'}? Las inscripciones ya realizadas se conservarán.`)) return;
@@ -1391,6 +1537,8 @@ export default function Admin() {
         setRegistrationGallery([]);
         setRegistrationGalleryPath('');
         setRegistrationImageFiles([]);
+        setOfficialCars([]);
+        resetOfficialCarForm();
       }
       setRegistrationConfigMessage(response.data.message);
     } catch (error) {
@@ -1465,14 +1613,26 @@ export default function Admin() {
     setCarBrandForm({ marca: event.target.value });
   };
 
+  const selectRegistrationChampionship = value => {
+    const championshipId = String(value || '');
+    setRegistrationChampionshipFilter(championshipId);
+    setRegistrationSearch('');
+    setRegistrationForm(current => String(current.idcampeonato) === championshipId
+      ? current
+      : { ...current, idcampeonato: championshipId, idmarca: '', idauto: '' });
+  };
+
   const handleRegistrationChange = event => {
     const { name, type, checked, value } = event.target;
+    if (name === 'idcampeonato') {
+      selectRegistrationChampionship(value);
+      return;
+    }
     setRegistrationForm(current => {
       const nextValue = type === 'checkbox' ? checked : value;
       return {
         ...current,
         [name]: nextValue,
-        ...(name === 'idcampeonato' ? { idmarca: '', idauto: '' } : {}),
         ...(name === 'idmarca' ? { idauto: '' } : {}),
         ...(name === 'extra' && checked ? { numero: '' } : {}),
       };
@@ -2491,6 +2651,7 @@ export default function Admin() {
     setRegistrationMessage('');
 
     try {
+      const selectedChampionshipId = String(registrationForm.idcampeonato);
       await registrationsApi.create({
         ...registrationForm,
         idcampeonato: Number(registrationForm.idcampeonato),
@@ -2501,8 +2662,9 @@ export default function Admin() {
       });
       const response = await registrationsApi.getAll();
       setRegistrations(response.data.data ?? []);
-      setRegistrationForm(emptyRegistrationForm);
+      setRegistrationForm({ ...emptyRegistrationForm, idcampeonato: selectedChampionshipId });
       setRegistrationDriverSearch('');
+      setRegistrationChampionshipFilter(selectedChampionshipId);
       setRegistrationMessage('Piloto inscripto correctamente.');
     } catch (err) {
       setRegistrationMessage(err.response?.data?.error || 'No se pudo inscribir al piloto.');
@@ -2742,7 +2904,7 @@ export default function Admin() {
             <label className="mt-6 block"><span className="text-sm font-semibold text-gray-300">Agregar formulario</span><select value={editingRegistrationConfig ? '' : registrationConfigChampionshipId} onChange={event => selectRegistrationConfigChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato sin formulario</option>{championships.filter(item => !registrationConfigs.some(config => String(config.idcampeonato) === String(item.id))).map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
             <div className="mt-6 space-y-2">
               <p className="text-sm font-semibold text-gray-300">Formularios guardados</p>
-              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500">Pre: {item.preinscriptos || 0} · Reales: {item.inscriptos_actuales} · Límite: {item.limite_inscriptos}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
+              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500"><span className="font-semibold text-gray-400">Pilotos:</span> Manuales {Number(item.preinscriptos || 0)} · Reales {Number(item.inscriptos_actuales || 0)} · Límite {Number(item.limite_inscriptos || 0)}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
               {!registrationConfigs.length ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-500">Todavía no hay formularios guardados.</p> : null}
             </div>
           </section>
@@ -2750,7 +2912,14 @@ export default function Admin() {
           <section className="card-glass p-6">
             {!championship ? <div className="py-20 text-center text-gray-500"><ClipboardDocumentListIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná un campeonato para configurar su formulario.</p></div> : <form onSubmit={saveRegistrationConfig} className="space-y-6">
               <div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div>
-              <div className="grid gap-4 md:grid-cols-2"><label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Personalizado y extra sin diseño</small></label><label><span className="text-sm text-gray-300">Adicional por diseño de la liga</span><input name="precio_diseno" type="number" min="0" step="0.01" value={registrationConfig.precio_diseno} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Se suma al precio base</small></label><label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label><label><span className="text-sm text-gray-300">Preinscriptos</span><input name="preinscriptos" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.preinscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Antes de abrir se muestran como preinscriptos; al abrir se suman a los inscriptos reales.</small></label><div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · límite total {registrationConfig.limite_inscriptos || 0}</p></div></div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
+                <label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
+                <label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">A este importe se suma el valor de cada plan.</small></label>
+                <label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
+                <label><span className="text-sm text-gray-300">Inscriptos manuales</span><input name="preinscriptos" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.preinscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Sirve para ajustar el contador público. Antes de abrir se muestra como preinscriptos y, al abrir, se suma visualmente a los reales sin ocupar cupos.</small></label>
+                <div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · límite total {registrationConfig.limite_inscriptos || 0}</p></div>
+              </div>
               <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
               <section className="border border-yellow-400/25 bg-yellow-400/5 p-5">
                 <div className="flex items-center gap-3"><PhotoIcon className="h-6 w-6 text-yellow-300"/><div><h3 className="font-racing text-xl font-bold text-white">Fondos del campeonato</h3><p className="text-xs text-gray-500">Estas fotos se muestran aleatoriamente en el Inicio.</p></div></div>
@@ -2762,7 +2931,33 @@ export default function Admin() {
                 </>}
               </section>
               <div><p className="text-sm font-semibold text-gray-300">Autos habilitados</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}</div>{!categoryCars.length ? <p className="mt-2 text-sm text-yellow-300">La categoría no tiene autos cargados.</p> : null}</div>
-              <div><p className="text-sm font-semibold text-gray-300">Modalidades disponibles</p><div className="mt-3 grid gap-3 md:grid-cols-3"><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_personalizado" type="checkbox" checked={registrationConfig.permite_personalizado} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado<br/><small className="text-gray-500">Precio base</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_diseno_liga" type="checkbox" checked={registrationConfig.permite_diseno_liga} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Personalizado + diseño<br/><small className="text-gray-500">Base + adicional</small></span></label><label className="flex cursor-pointer gap-3 border border-racing-border bg-racing-dark p-4"><input name="permite_extra" type="checkbox" checked={registrationConfig.permite_extra} onChange={handleRegistrationConfigChange} className="mt-1 h-4 w-4 accent-racing-red"/><span>Extra sin diseño<br/><small className="text-gray-500">Precio base</small></span></label></div></div>
+              <section className="border border-racing-border bg-black/20 p-4 sm:p-5">
+                <div><p className="text-sm font-semibold text-gray-200">Secciones de inscripción</p><p className="mt-1 text-xs text-gray-500">Las cuatro secciones son fijas. Activá las que estarán disponibles y personalizá sus datos.</p></div>
+                <div className="mt-5 space-y-4">
+                  {registrationConfig.planes.map((plan, index) => <article key={plan.id} className="border border-racing-border bg-racing-dark p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3"><div><span className="font-racing text-lg font-bold text-white">{index + 1}. {plan.id === 'extra' ? 'Extra sin diseño' : plan.id === 'personalizado' ? 'Personalizado' : plan.id === 'diseno_liga' ? 'Diseño de la liga' : 'Diseño oficial'}</span><p className="mt-1 text-xs text-gray-500">{plan.tipo === 'sin_numero' ? 'Finaliza con número 0' : plan.tipo === 'pintura_oficial' ? 'Solicita número y usa autos seleccionados' : 'Solicita número del auto'}</p></div><label className="flex cursor-pointer items-center gap-2 text-xs font-bold uppercase tracking-wider"><input type="checkbox" checked={plan.habilitado} onChange={event => updateRegistrationPlan(plan.id, 'habilitado', event.target.checked)} className="h-4 w-4 accent-green-500"/><span className={plan.habilitado ? 'text-green-400' : 'text-gray-500'}>{plan.habilitado ? 'Habilitado' : 'Deshabilitado'}</span></label></div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Título</span><input value={plan.titulo} onChange={event => updateRegistrationPlan(plan.id, 'titulo', event.target.value)} className="input-field mt-2" placeholder="Ej.: Pintura oficial 2026" required/></label>
+                      {plan.id === 'diseno_liga' || plan.id === 'diseno_oficial' ? <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Valor adicional</span><input type="number" min="0" step="0.01" value={plan.precio_adicional} onChange={event => updateRegistrationPlan(plan.id, 'precio_adicional', event.target.value)} className="input-field mt-2" required/><small className="mt-1 block text-gray-600">Se suma al precio base del campeonato.</small></label> : <div className="border border-racing-border bg-black/20 p-3"><span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Precio</span><p className="mt-2 text-sm text-gray-300">Usa solamente el precio base, sin adicional.</p></div>}
+                      <label className="md:col-span-2"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Descripción</span><textarea value={plan.descripcion} onChange={event => updateRegistrationPlan(plan.id, 'descripcion', event.target.value)} className="input-field mt-2 min-h-20 resize-y" placeholder="Explicá qué incluye este plan" required/></label>
+                    </div>
+                    {plan.id === 'diseno_oficial' ? <div className="mt-4 border-t border-racing-border pt-4 text-sm text-yellow-200">Los autos, números, fotos y descripciones oficiales se administran en el catálogo que aparece debajo.</div> : null}
+                  </article>)}
+                </div>
+              </section>
+              {editingRegistrationConfig ? <section className="border border-yellow-400/30 bg-yellow-400/5 p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-racing text-xl font-bold text-white">Catálogo de diseños oficiales</p><p className="mt-1 text-xs text-gray-500">Cargá cada auto por modelo con su número, foto y descripción.</p></div><span className="border border-yellow-300/40 px-3 py-1 text-xs font-bold uppercase text-yellow-300">{officialCars.length} cargado{officialCars.length === 1 ? '' : 's'}</span></div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Modelo</span><select value={officialCarForm.idauto} onChange={event => setOfficialCarForm(current => ({ ...current, idauto: event.target.value }))} className="input-field mt-2"><option value="">Seleccionar modelo</option>{categoryCars.filter(car => registrationConfig.autos_habilitados.includes(Number(car.id))).map(car => <option key={car.id} value={car.id}>{car.marca} {car.modelo}</option>)}</select></label>
+                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Número</span><input type="number" min="1" max="199" step="1" value={officialCarForm.numero} onChange={event => setOfficialCarForm(current => ({ ...current, numero: event.target.value }))} className="input-field mt-2" placeholder="Ej.: 24"/></label>
+                  <label className="md:col-span-2"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Descripción</span><textarea value={officialCarForm.descripcion} onChange={event => setOfficialCarForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-20 resize-y" placeholder="Ej.: Chevrolet Cruze rojo con detalles negros"/></label>
+                  <label className="md:col-span-2"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Foto {officialCarForm.id ? <span className="normal-case text-gray-600">(opcional al modificar)</span> : null}</span><input ref={officialCarPhotoInputRef} type="file" accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setOfficialCarForm(current => ({ ...current, foto: event.target.files?.[0] || null }))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/></label>
+                </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">{officialCarForm.id ? <button type="button" onClick={resetOfficialCarForm} className="border border-racing-border px-4 py-3 text-xs font-bold uppercase text-gray-400 hover:text-white">Cancelar edición</button> : null}<button type="button" onClick={saveOfficialCar} disabled={savingOfficialCar || !officialCarForm.idauto || !officialCarForm.numero || !officialCarForm.descripcion || (!officialCarForm.id && !officialCarForm.foto)} className="inline-flex justify-center bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingOfficialCar ? 'Guardando...' : officialCarForm.id ? 'Guardar cambios' : 'Agregar auto oficial'}</button></div>
+                {officialCarsMessage ? <p className="mt-4 text-sm text-yellow-200">{officialCarsMessage}</p> : null}
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{officialCars.map(car => <article key={car.id} className="overflow-hidden border border-racing-border bg-racing-dark"><div className="relative aspect-video bg-black"><img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="h-full w-full object-cover"/><span className="absolute left-2 top-2 bg-yellow-400 px-3 py-1 font-racing text-lg font-bold text-black">Nº {car.numero}</span>{car.ocupado ? <span className="absolute right-2 top-2 bg-racing-red px-2 py-1 text-[10px] font-bold uppercase text-white">Ocupado</span> : null}</div><div className="p-4"><p className="font-bold text-white">{car.marca} {car.modelo}</p><p className="mt-2 text-sm text-gray-400">{car.descripcion}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => editOfficialCar(car)} className="flex-1 border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 hover:border-yellow-300 hover:text-yellow-300">Modificar</button><button type="button" onClick={() => deleteOfficialCar(car)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar diseño oficial número ${car.numero}`}><TrashIcon className="h-4 w-4"/></button></div></div></article>)}</div>
+                {!officialCars.length ? <p className="mt-5 border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no cargaste autos oficiales.</p> : null}
+              </section> : null}
               {registrationConfigMessage ? <div className="border border-racing-red/30 bg-racing-red/10 p-4 text-sm">{registrationConfigMessage}</div> : null}
               <button type="submit" disabled={savingRegistrationConfig} className="btn-primary w-full justify-center disabled:opacity-40">{savingRegistrationConfig ? 'Guardando...' : editingRegistrationConfig ? 'Guardar modificaciones' : 'Crear formulario'}</button>
             </form>}
@@ -4133,12 +4328,13 @@ export default function Admin() {
                 <div>
                   <h2 className="font-racing text-2xl font-bold">Pilotos inscriptos</h2>
                   <p className="mt-1 text-sm text-gray-400">
-                    {displayedRegistrations.length} inscripción{displayedRegistrations.length === 1 ? '' : 'es'}
-                    {registrationChampionshipFilter ? ' en el campeonato seleccionado' : ' en total'}
+                    {selectedRegistrationChampionship
+                      ? `${displayedRegistrations.length} inscripción${displayedRegistrations.length === 1 ? '' : 'es'} en ${selectedRegistrationChampionship.categoria}`
+                      : 'Seleccioná un campeonato para gestionar sus inscriptos'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <ClearFiltersButton active={Boolean(registrationChampionshipFilter || registrationSearch)} onClick={() => { setRegistrationChampionshipFilter(''); setRegistrationSearch(''); }} />
+                  <ClearFiltersButton active={Boolean(registrationSearch)} onClick={() => setRegistrationSearch('')} />
                   <button
                     type="button"
                     onClick={handleSaveRegistrationChanges}
@@ -4151,27 +4347,24 @@ export default function Admin() {
                   </button>
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <select value={registrationChampionshipFilter} onChange={event => setRegistrationChampionshipFilter(event.target.value)} className="input-field">
-                  <option value="">Todos los campeonatos</option>
-                  {championships.map(championship => (
-                    <option key={championship.id} value={championship.id}>{championship.categoria} · T{championship.temporada} · {championship.anio}</option>
-                  ))}
-                </select>
-                <div className="relative">
-                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
-                  <input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} className="input-field pl-10" placeholder="Piloto, número, auto..." />
+              <div className="mt-5 max-h-80 overflow-y-auto border border-racing-border bg-black/20 p-2">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {registrationChampionshipGroups.map(championship => { const selected = String(registrationChampionshipFilter) === String(championship.id); return <button key={championship.id} type="button" onClick={() => selectRegistrationChampionship(championship.id)} className={`group relative flex min-h-24 items-center gap-3 overflow-hidden border px-3 py-3 text-left transition ${selected ? 'border-racing-red bg-racing-red/15 shadow-[0_0_24px_rgba(220,38,38,0.16)]' : 'border-racing-border bg-racing-dark hover:border-racing-red/60 hover:bg-white/[0.04]'}`}>{championship.categoria_logo ? <img src={championship.categoria_logo} alt="" className="h-14 w-16 shrink-0 object-contain transition-transform group-hover:scale-105"/> : <span className="flex h-14 w-16 shrink-0 items-center justify-center border border-white/10 bg-black/40 font-racing text-xl text-gray-600">T{championship.temporada}</span>}<span className="min-w-0 flex-1"><strong className="block truncate font-racing text-base uppercase text-white">{championship.categoria}</strong><span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Temporada {championship.temporada} · {championship.anio}</span><span className={`mt-2 inline-block px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${selected ? 'bg-racing-red text-white' : championship.registrationsCount ? 'bg-yellow-400/15 text-yellow-300' : 'bg-white/5 text-gray-500'}`}>{championship.registrationsCount} inscripto{championship.registrationsCount === 1 ? '' : 's'}</span></span>{selected ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-racing-red shadow-[0_0_10px_rgba(239,68,68,0.9)]"/> : null}</button>; })}
+                  {!registrationChampionshipGroups.length ? <p className="border border-dashed border-racing-border p-5 text-center text-sm text-gray-500 sm:col-span-2 xl:col-span-3">Todavía no hay campeonatos cargados.</p> : null}
                 </div>
               </div>
+              {registrationChampionshipFilter ? <div className="relative mt-4">
+                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
+                  <input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} className="input-field pl-10" placeholder="Piloto, número, auto..." />
+                </div> : null}
               {registrationMessage ? <div className="mt-3 border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead><tr className="border-b border-racing-border bg-racing-dark">
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Nº</th>
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
-                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Campeonato</th>
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Auto</th>
                   <th className="px-4 py-3 text-center text-xs uppercase text-gray-400">Pago</th>
                   <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
@@ -4239,7 +4432,6 @@ export default function Admin() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-lg font-semibold italic text-white">{registration.nombre}</td>
-                      <td className="px-4 py-3 text-gray-300">{registration.categoria} · T{registration.temporada} · {registration.anio}</td>
                       <td className="px-4 py-3">
                         <div className="grid min-w-[300px] grid-cols-2 gap-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -4284,7 +4476,7 @@ export default function Admin() {
                       </td>
                     </tr>;
                   }) : (
-                    <tr><td colSpan="6" className="px-4 py-12 text-center text-gray-500">No hay inscripciones para mostrar.</td></tr>
+                    <tr><td colSpan="5" className="px-4 py-12 text-center text-gray-500">{registrationChampionshipFilter ? 'No hay inscripciones que coincidan con la búsqueda.' : 'Seleccioná un campeonato para ver y gestionar sus pilotos.'}</td></tr>
                   )}
                 </tbody>
               </table>

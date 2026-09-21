@@ -55,8 +55,8 @@ const socialLinks = [
     iconClassName: 'group-hover:rotate-12',
   },
   {
-    href: 'https://wa.me/5492604659499',
-    label: 'WhatsApp',
+    href: 'https://chat.whatsapp.com/ITlGu1bs9B14IDpC4MbHfE',
+    label: 'Unirse al grupo de WhatsApp',
     Icon: WhatsAppIcon,
     iconClassName: 'text-[#25d366] group-hover:scale-110',
   },
