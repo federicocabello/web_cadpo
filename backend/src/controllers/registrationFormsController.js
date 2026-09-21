@@ -23,11 +23,18 @@ const parseIds = value => {
 };
 const planTypes = new Set(['sin_numero', 'con_numero', 'pintura_oficial']);
 const fixedPlanDefinitions = [
-  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás sin pintura personalizada y sin elegir número.', precio_adicional: 0, tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Presentás tu propio diseño y elegís el número del auto.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'El diseñador de la liga te asesora y prepara el auto.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Competís con uno de los diseños oficiales disponibles.', precio_adicional: 0, tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
+  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás con un auto genérico completamente gris, sin diseño personalizado.', precio_adicional: 0, tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Vos mismo diseñás y presentás el diseño de tu auto.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'Nuestro diseñador te asesora y diseña el auto a tu gusto, con tus colores, publicidades y detalles.', precio_adicional: 0, tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Elegís un diseño oficial de la categoría utilizado en la realidad.', precio_adicional: 0, tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
 ];
+const legacyPlanDescriptions = new Set([
+  'Participás sin pintura personalizada y sin elegir número.',
+  'Presentás tu propio diseño y elegís el número del auto.',
+  'Nuestro diseñador te asesora y prepara el diseño del auto.',
+  'El diseñador de la liga te asesora y prepara el auto.',
+  'Competís con uno de los diseños oficiales disponibles.',
+]);
 const planAliases = {
   extra: ['extra', 'extra-sin-diseno'],
   personalizado: ['personalizado', 'diseno-propio'],
@@ -68,6 +75,9 @@ const normalizeFixedPlans = row => {
       ...(existing || {}),
       id: definition.id,
       tipo: definition.tipo,
+      descripcion: !existing?.descripcion || legacyPlanDescriptions.has(existing.descripcion)
+        ? definition.descripcion
+        : existing.descripcion,
       habilitado: existing ? existing.habilitado : legacyEnabled[definition.id],
       precio_adicional: ['diseno_liga', 'diseno_oficial'].includes(definition.id)
         ? Number(existing?.precio_adicional ?? legacyPrice) : 0,
@@ -109,7 +119,7 @@ const listOfficialCars = async championshipId => {
   const [rows] = await pool.query(
     `SELECT official.id, official.idcampeonato, official.idauto, official.numero,
             official.descripcion, official.foto,
-            a.modelo, am.marca, am.logo,
+            a.modelo, am.id AS idmarca, am.marca, am.logo,
             EXISTS(
               SELECT 1 FROM inscriptos i
               WHERE i.idcampeonato = official.idcampeonato AND i.numero = official.numero
@@ -163,7 +173,7 @@ const getPreviousSeasonRanking = async (championshipId, database = pool) => {
   const [officialStandings] = await database.query(
     `SELECT idpiloto, posicion
      FROM tablas
-     WHERE idcampeonato = ? AND posicion BETWEEN 1 AND 199
+     WHERE idcampeonato = ? AND posicion BETWEEN 1 AND 255
      ORDER BY posicion ASC`,
     [previousChampionship.id]
   );
@@ -185,7 +195,7 @@ const getPreviousSeasonRanking = async (championshipId, database = pool) => {
   );
   return {
     championshipId: previousChampionship.id,
-    positions: new Map(calculatedStandings.slice(0, 199).map((row, index) => [Number(row.idpiloto), index + 1])),
+    positions: new Map(calculatedStandings.slice(0, 255).map((row, index) => [Number(row.idpiloto), index + 1])),
   };
 };
 
@@ -345,7 +355,7 @@ const searchDrivers = async (req, res, next) => {
 const checkNumber = async (req, res, next) => {
   try {
     const number = Number(req.params.number);
-    if (!Number.isInteger(number) || number < 1 || number > 199) return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
+    if (!Number.isInteger(number) || number < 1 || number > 255) return res.status(400).json({ error: 'El número debe estar entre 1 y 255' });
     const driverId = Number(req.query.idpiloto) || null;
     const [numberRegistrations] = await pool.query(
       'SELECT idpiloto, idauto_oficial FROM inscriptos WHERE idcampeonato = ? AND numero = ?',
@@ -507,9 +517,9 @@ const getAdminOfficialCars = async (req, res, next) => {
 const parseOfficialCarInput = async (championshipId, body) => {
   const carId = Number(body.idauto);
   const number = Number(body.numero);
-  const description = String(body.descripcion || '').trim().slice(0, 500);
-  if (!Number.isInteger(number) || number < 1 || number > 199) {
-    throw Object.assign(new Error('El número del auto oficial debe estar entre 1 y 199'), { statusCode: 400 });
+  const description = capitalize(String(body.descripcion || '').slice(0, 500));
+  if (!Number.isInteger(number) || number < 1 || number > 255) {
+    throw Object.assign(new Error('El número del auto oficial debe estar entre 1 y 255'), { statusCode: 400 });
   }
   if (!description) throw Object.assign(new Error('Ingresá una descripción para el auto oficial'), { statusCode: 400 });
   const [[config]] = await pool.query(
@@ -746,8 +756,8 @@ const submit = async (req, res, next) => {
       : await getPreviousSeasonRanking(id, connection);
     const rankedPosition = submittedDriverId ? ranking.positions.get(submittedDriverId) || null : null;
     if (rankedPosition) number = rankedPosition;
-    if (requiresNumber && (!Number.isInteger(number) || number < 1 || number > 199)) {
-      return res.status(400).json({ error: 'El número debe estar entre 1 y 199' });
+    if (requiresNumber && (!Number.isInteger(number) || number < 1 || number > 255)) {
+      return res.status(400).json({ error: 'El número debe estar entre 1 y 255' });
     }
     const reservedDriver = !requiresNumber
       ? null

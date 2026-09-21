@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BanknotesIcon, CalendarDaysIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon, TrophyIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { BanknotesIcon, CalendarDaysIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon, TrophyIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { championshipsApi, mediaApi, registrationFormsApi, resultsApi } from '../services/api';
@@ -49,6 +49,7 @@ export default function Registration() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [carId, setCarId] = useState('');
   const [officialCarId, setOfficialCarId] = useState('');
+  const [officialCarCollapsedGroups, setOfficialCarCollapsedGroups] = useState({});
   const [modality, setModality] = useState('');
   const [number, setNumber] = useState('');
   const [numberAvailable, setNumberAvailable] = useState(null);
@@ -67,7 +68,7 @@ export default function Registration() {
   const configPhase = getRegistrationPhase(config, now);
   const openingCountdown = configPhase === 'upcoming' ? getOpeningCountdown(config?.fecha_apertura, now) : null;
   const numericCarNumber = Number(number);
-  const numberInvalid = Boolean(number) && (!Number.isInteger(numericCarNumber) || numericCarNumber < 1 || numericCarNumber > 199);
+  const numberInvalid = Boolean(number) && (!Number.isInteger(numericCarNumber) || numericCarNumber < 1 || numericCarNumber > 255);
   const configuredPlan = config?.planes?.find(plan => plan.id === modality) || null;
   const planRequiresNumber = Boolean(configuredPlan && configuredPlan.tipo !== 'sin_numero');
   const usesOfficialCar = configuredPlan?.tipo === 'pintura_oficial';
@@ -79,6 +80,7 @@ export default function Registration() {
     setGalleryImages([]);
     setActiveGalleryImage(0);
     setOfficialCarId('');
+    setOfficialCarCollapsedGroups({});
     setFormToken('');
     setCompleted(false);
     setConfirmationOpen(false);
@@ -143,7 +145,7 @@ export default function Registration() {
   }, [driver.idpiloto, driver.nombre, formToken, selectedId]);
 
   useEffect(() => {
-    if (!formToken || !planRequiresNumber || !number || !Number.isInteger(Number(number)) || Number(number) < 1 || Number(number) > 199) {
+    if (!formToken || !planRequiresNumber || !number || !Number.isInteger(Number(number)) || Number(number) < 1 || Number(number) > 255) {
       setNumberAvailable(null); return undefined;
     }
     if (usesOfficialCar) {
@@ -172,12 +174,18 @@ export default function Registration() {
   const selectedOfficialCar = config?.autos_oficiales?.find(car => String(car.id) === String(officialCarId)) || null;
   const availableCars = useMemo(() => selectedModality && !usesOfficialCar ? config?.autos || [] : [], [config?.autos, selectedModality, usesOfficialCar]);
   const availableOfficialCars = useMemo(() => selectedModality && usesOfficialCar ? (config?.autos_oficiales || []).filter(car => !car.ocupado) : [], [config?.autos_oficiales, selectedModality, usesOfficialCar]);
-  const officialCarGroups = useMemo(() => [...availableOfficialCars.reduce((groups, car) => {
-    const key = String(car.idauto);
-    if (!groups.has(key)) groups.set(key, { id: key, marca: car.marca, modelo: car.modelo, logo: car.logo, cars: [] });
-    groups.get(key).cars.push(car);
-    return groups;
-  }, new Map()).values()], [availableOfficialCars]);
+  const officialCarGroups = useMemo(() => [...availableOfficialCars.reduce((brands, car) => {
+    const brandKey = String(car.idmarca || car.marca);
+    if (!brands.has(brandKey)) brands.set(brandKey, { id: brandKey, marca: car.marca, logo: car.logo, models: new Map() });
+    const brand = brands.get(brandKey);
+    const modelKey = String(car.idauto);
+    if (!brand.models.has(modelKey)) brand.models.set(modelKey, { id: modelKey, modelo: car.modelo, cars: [] });
+    brand.models.get(modelKey).cars.push(car);
+    return brands;
+  }, new Map()).values()].map(brand => ({
+    ...brand,
+    models: [...brand.models.values()].sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' })),
+  })).sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' })), [availableOfficialCars]);
 
   useEffect(() => {
     if (usesOfficialCar || !carId || !selectedModality || availableCars.some(car => String(car.id) === String(carId))) return;
@@ -271,7 +279,7 @@ export default function Registration() {
             }
             setPreviousRanking({
               campeonato: previousChampionship,
-              pilotos: standings.filter(item => Number(item.posicion) >= 1 && Number(item.posicion) <= 199).map(item => ({
+              pilotos: standings.filter(item => Number(item.posicion) >= 1 && Number(item.posicion) <= 255).map(item => ({
                 idpiloto: item.idpiloto,
                 nombre: item.nombre,
                 posicion: Number(item.posicion),
@@ -403,18 +411,47 @@ export default function Registration() {
               <h3 className="font-racing text-xl font-bold sm:text-2xl">3. Auto habilitado</h3>
               <p className="mt-2 text-sm text-gray-500">Cada modelo admite hasta {config.limite_por_modelo} autos confirmados.</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {officialCarGroups.map(group => <div key={group.id} className="sm:col-span-2 lg:col-span-3"><div className="mb-3 flex items-center gap-3 border-b border-white/10 pb-3">{group.logo ? <img src={group.logo} alt="" className="h-9 w-14 object-contain"/> : null}<div><p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Diseños disponibles</p><p className="font-racing text-xl font-bold uppercase text-white">{group.marca} {group.modelo}</p></div></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{group.cars.map(car => {
-                  const selected = String(officialCarId) === String(car.id);
-                  return <label key={car.id} aria-disabled={car.ocupado} className={`group relative min-h-64 overflow-hidden border-2 transition-all duration-300 ${car.ocupado ? 'cursor-not-allowed border-gray-700 opacity-55 grayscale' : selected ? 'cursor-pointer border-green-400 ring-2 ring-green-400/35 shadow-[0_0_30px_rgba(34,197,94,0.22)] sm:scale-[1.015]' : 'cursor-pointer border-racing-border hover:-translate-y-1 hover:border-yellow-300'}`}>
-                    <input type="radio" name="auto_oficial" value={car.id} disabled={car.ocupado} checked={selected} onChange={() => { setOfficialCarId(String(car.id)); setCarId(String(car.idauto)); setNumber(String(car.numero)); setNumberAvailable(null); }} className="sr-only"/>
-                    <img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"/>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/10"/>
-                    <div className="relative z-10 flex min-h-64 flex-col justify-between p-4">
-                      <div className="flex items-start justify-between gap-3">{car.logo ? <img src={car.logo} alt={`Logo de ${car.marca}`} className="h-14 w-20 object-contain drop-shadow-[0_5px_10px_rgba(0,0,0,0.9)]"/> : <span className="bg-black/70 px-3 py-2 text-xs font-bold uppercase text-white">{car.marca}</span>}<span className="bg-yellow-400 px-3 py-2 font-racing text-xl font-bold text-black">Nº {car.numero}</span></div>
-                      <div>{selected ? <span className="mb-3 inline-flex items-center gap-1.5 bg-green-500 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-black"><CheckCircleIcon className="h-4 w-4"/>Seleccionado</span> : car.ocupado ? <span className="mb-3 inline-block bg-racing-red px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white">No disponible</span> : null}<p className="text-xs font-semibold uppercase tracking-widest text-gray-300">{car.marca}</p><p className="mt-1 font-racing text-2xl font-bold uppercase leading-tight text-white">{car.modelo}</p><p className="mt-2 text-sm leading-relaxed text-gray-200">{car.descripcion}</p></div>
+                {officialCarGroups.map(brand => {
+                  const brandGroupKey = `brand:${brand.id}`;
+                  const brandCollapsed = Boolean(officialCarCollapsedGroups[brandGroupKey]);
+                  const brandCarsCount = brand.models.reduce((total, model) => total + model.cars.length, 0);
+                  return <div key={brand.id} className="overflow-hidden border border-white/10 bg-black/20 sm:col-span-2 lg:col-span-3">
+                    <button type="button" onClick={() => setOfficialCarCollapsedGroups(current => ({ ...current, [brandGroupKey]: !current[brandGroupKey] }))} className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors duration-300 hover:bg-yellow-400/[0.06]" aria-expanded={!brandCollapsed}>
+                      <span className="flex min-w-0 items-center gap-3">{brand.logo ? <img src={brand.logo} alt="" className="h-10 w-16 shrink-0 object-contain"/> : null}<span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-widest text-gray-500">Marca</span><span className="block truncate font-racing text-xl font-bold uppercase text-white">{brand.marca}</span></span><span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{brand.models.length} modelo{brand.models.length === 1 ? '' : 's'} · {brandCarsCount} auto{brandCarsCount === 1 ? '' : 's'}</span></span>
+                      <ChevronDownIcon className={`h-5 w-5 shrink-0 text-yellow-300 transition-transform duration-500 ease-in-out ${brandCollapsed ? '-rotate-90' : 'rotate-0'}`}/>
+                    </button>
+                    <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${brandCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+                      <div className="min-h-0 overflow-hidden">
+                        <div className="space-y-3 border-t border-white/10 p-3 sm:p-4">{brand.models.map(model => {
+                          const modelGroupKey = `model:${brand.id}:${model.id}`;
+                          const modelCollapsed = Boolean(officialCarCollapsedGroups[modelGroupKey]);
+                          return <section key={model.id} className="overflow-hidden border border-white/10 bg-racing-dark/70">
+                            <button type="button" onClick={() => setOfficialCarCollapsedGroups(current => ({ ...current, [modelGroupKey]: !current[modelGroupKey] }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors duration-300 hover:bg-white/[0.04]" aria-expanded={!modelCollapsed}>
+                              <span><span className="block text-[9px] font-bold uppercase tracking-widest text-gray-500">Modelo</span><span className="font-racing text-lg font-bold uppercase text-white">{model.modelo}</span><span className="ml-3 text-xs font-semibold uppercase text-gray-500">{model.cars.length} diseño{model.cars.length === 1 ? '' : 's'}</span></span>
+                              <ChevronDownIcon className={`h-5 w-5 shrink-0 text-gray-400 transition-transform duration-500 ease-in-out ${modelCollapsed ? '-rotate-90' : 'rotate-0'}`}/>
+                            </button>
+                            <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${modelCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+                              <div className="min-h-0 overflow-hidden">
+                                <div className="grid gap-4 border-t border-white/10 p-3 sm:grid-cols-2 sm:p-4 lg:grid-cols-3">{model.cars.map(car => {
+                                  const selected = String(officialCarId) === String(car.id);
+                                  return <label key={car.id} aria-disabled={car.ocupado} className={`group relative min-h-64 overflow-hidden border-2 transition-all duration-300 ${car.ocupado ? 'cursor-not-allowed border-gray-700 opacity-55 grayscale' : selected ? 'cursor-pointer border-green-400 ring-2 ring-green-400/35 shadow-[0_0_30px_rgba(34,197,94,0.22)] sm:scale-[1.015]' : 'cursor-pointer border-racing-border hover:-translate-y-1 hover:border-yellow-300'}`}>
+                                    <input type="radio" name="auto_oficial" value={car.id} disabled={car.ocupado} checked={selected} onChange={() => { setOfficialCarId(String(car.id)); setCarId(String(car.idauto)); setNumber(String(car.numero)); setNumberAvailable(null); }} className="sr-only"/>
+                                    <img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"/>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/10"/>
+                                    <div className="relative z-10 flex min-h-64 flex-col justify-between p-4">
+                                      <div className="flex items-start justify-between gap-3">{car.logo ? <img src={car.logo} alt={`Logo de ${car.marca}`} className="h-14 w-20 object-contain drop-shadow-[0_5px_10px_rgba(0,0,0,0.9)]"/> : <span className="bg-black/70 px-3 py-2 text-xs font-bold uppercase text-white">{car.marca}</span>}<span className="bg-yellow-400 px-3 py-2 font-racing text-xl font-bold text-black">Nº {car.numero}</span></div>
+                                      <div>{selected ? <span className="mb-3 inline-flex items-center gap-1.5 bg-green-500 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-black"><CheckCircleIcon className="h-4 w-4"/>Seleccionado</span> : car.ocupado ? <span className="mb-3 inline-block bg-racing-red px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white">No disponible</span> : null}<p className="text-xs font-semibold uppercase tracking-widest text-gray-300">{car.marca}</p><p className="mt-1 font-racing text-2xl font-bold uppercase leading-tight text-white">{car.modelo}</p><p className="mt-2 text-sm leading-relaxed text-gray-200">{car.descripcion}</p></div>
+                                    </div>
+                                  </label>;
+                                })}</div>
+                              </div>
+                            </div>
+                          </section>;
+                        })}</div>
+                      </div>
                     </div>
-                  </label>;
-                })}</div></div>)}
+                  </div>;
+                })}
                 {availableCars.map(car => {
                   const selected = String(carId) === String(car.id);
                   return <label key={car.id} aria-disabled={!car.disponible} className={`group relative min-h-56 overflow-hidden border-2 transition-all duration-300 sm:min-h-64 ${!car.disponible ? 'cursor-not-allowed border-gray-700 opacity-60 grayscale' : selected ? 'cursor-pointer border-green-400 ring-2 ring-green-400/35 shadow-[0_0_30px_rgba(34,197,94,0.22)] sm:scale-[1.015]' : 'cursor-pointer border-racing-border hover:-translate-y-1 hover:border-racing-red'}`}>
@@ -443,7 +480,7 @@ export default function Registration() {
             </section>
 
             <section className="card-glass order-2 p-4 sm:p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-racing text-xl font-bold sm:text-2xl">2. Plan de inscripción</h3><p className="mt-1 text-xs text-gray-500">Los pilotos rankeados conservan el número de su posición anterior.</p></div><button type="button" onClick={showPreviousRanking} className="inline-flex w-full items-center justify-center gap-2 border border-yellow-400/40 bg-yellow-400/10 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-yellow-300 transition hover:border-yellow-300 hover:bg-yellow-400 hover:text-black sm:w-auto"><TrophyIcon className="h-5 w-5"/>Ver ranking anterior</button></div><div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">{modalities.map(item => <label key={item.id} className={`cursor-pointer border p-4 transition-colors ${modality === item.id ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="radio" name="modalidad" value={item.id} checked={modality === item.id} onChange={() => { setModality(item.id); setOfficialCarId(''); setCarId(''); setNumber(item.tipo === 'con_numero' && driver.rankingPosition ? String(driver.rankingPosition) : ''); setNumberAvailable(null); }} className="sr-only"/><p className="font-bold text-white">{item.label}</p><p className="mt-1 text-sm text-gray-400">{item.description}</p><p className="mt-3 font-racing text-xl font-bold text-yellow-300">{item.displayPrice}</p></label>)}</div>
-              {modality && usesManualNumber ? <div className="mx-auto mt-8 w-full max-w-xs text-center"><label className="text-xs font-bold uppercase tracking-[0.22em] text-gray-300">Número del auto</label><input type="number" min="1" max="199" step="1" value={number} onChange={event => setNumber(event.target.value)} readOnly={Boolean(driver.rankingPosition)} className={`input-field font-anton mt-3 h-24 text-center text-5xl tracking-[0.08em] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none sm:h-28 sm:text-6xl ${driver.rankingPosition ? 'cursor-not-allowed bg-black/40 text-gray-400' : 'bg-black/55 text-yellow-300'} ${numberInvalid || numberAvailable === false ? 'border-red-500' : numberAvailable === true ? 'border-green-500' : 'border-yellow-300/40'}`} required/>{driver.rankingPosition ? <p className="mt-3 border-t-2 border-yellow-400 pt-3 text-sm font-semibold text-yellow-300">Piloto rankeado: te corresponde el número {driver.rankingPosition} por tu posición en la temporada anterior.</p> : <p className="mt-3 text-xs text-gray-500">Ingresá un número entero del 1 al 199.</p>}{numberAvailable === 'checking' ? <p className="mt-2 text-sm font-semibold text-gray-400">Comprobando disponibilidad del número...</p> : null}{numberInvalid ? <p className="mt-2 text-sm font-semibold text-red-400">El número debe ser un entero entre 1 y 199.</p> : null}{!numberInvalid && numberAvailable === false ? <p className="mt-2 text-sm font-semibold text-red-400">{driver.rankingPosition ? `El número ${driver.rankingPosition} asignado por ranking ya está ocupado. No podés continuar con esta inscripción.` : 'Ese número está ocupado o reservado. Elegí otro para continuar.'}</p> : null}{!numberInvalid && numberAvailable === true ? <p className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-green-400"><CheckCircleIcon className="h-5 w-5"/>{driver.rankingPosition ? `Número ${driver.rankingPosition} disponible y confirmado por ranking.` : 'Número disponible.'}</p> : null}</div> : null}
+              {modality && usesManualNumber ? <div className="mx-auto mt-8 w-full max-w-xs text-center"><label className="text-xs font-bold uppercase tracking-[0.22em] text-gray-300">Número del auto</label><input type="number" min="1" max="255" step="1" value={number} onChange={event => setNumber(event.target.value)} readOnly={Boolean(driver.rankingPosition)} className={`input-field font-anton mt-3 h-24 text-center text-5xl tracking-[0.08em] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none sm:h-28 sm:text-6xl ${driver.rankingPosition ? 'cursor-not-allowed bg-black/40 text-gray-400' : 'bg-black/55 text-yellow-300'} ${numberInvalid || numberAvailable === false ? 'border-red-500' : numberAvailable === true ? 'border-green-500' : 'border-yellow-300/40'}`} required/>{driver.rankingPosition ? <p className="mt-3 border-t-2 border-yellow-400 pt-3 text-sm font-semibold text-yellow-300">Piloto rankeado: te corresponde el número {driver.rankingPosition} por tu posición en la temporada anterior.</p> : <p className="mt-3 text-xs text-gray-500">Ingresá un número entero del 1 al 255.</p>}{numberAvailable === 'checking' ? <p className="mt-2 text-sm font-semibold text-gray-400">Comprobando disponibilidad del número...</p> : null}{numberInvalid ? <p className="mt-2 text-sm font-semibold text-red-400">El número debe ser un entero entre 1 y 255.</p> : null}{!numberInvalid && numberAvailable === false ? <p className="mt-2 text-sm font-semibold text-red-400">{driver.rankingPosition ? `El número ${driver.rankingPosition} asignado por ranking ya está ocupado. No podés continuar con esta inscripción.` : 'Ese número está ocupado o reservado. Elegí otro para continuar.'}</p> : null}{!numberInvalid && numberAvailable === true ? <p className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-green-400"><CheckCircleIcon className="h-5 w-5"/>{driver.rankingPosition ? `Número ${driver.rankingPosition} disponible y confirmado por ranking.` : 'Número disponible.'}</p> : null}</div> : null}
             </section>
 
             {modality ? <section className="card-glass order-4 overflow-hidden border-yellow-400/35"><div className="grid lg:grid-cols-[1.25fr_0.75fr]"><div className="p-4 sm:p-6"><div className="flex items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center bg-yellow-400 text-black"><BanknotesIcon className="h-6 w-6"/></span><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-yellow-300">4. Pago de la inscripción</p><h3 className="font-racing text-xl font-bold uppercase text-white sm:text-2xl">Datos para realizar el pago</h3></div></div><p className="mt-5 max-w-2xl text-sm leading-relaxed text-gray-300">Realizá el pago para confirmar tu lugar. Una vez acreditado, te agregaremos a los grupos y recibirás todo lo necesario para descargar el contenido e ingresar al servidor.</p><dl className="mt-5 divide-y divide-white/10 border-y border-white/10 text-sm"><div className="flex flex-wrap items-center justify-between gap-2 py-3"><dt className="text-gray-500">Alias</dt><dd className="select-all font-racing text-lg font-bold text-yellow-300">fede.liga</dd></div><div className="flex flex-wrap items-center justify-between gap-2 py-3"><dt className="text-gray-500">Cuenta</dt><dd className="font-semibold text-white">Personal Pay</dd></div><div className="flex flex-wrap items-center justify-between gap-2 py-3"><dt className="text-gray-500">A nombre de</dt><dd className="font-semibold text-white">Federico Manuel</dd></div></dl></div><div className="flex flex-col justify-center border-t border-yellow-400/20 bg-yellow-400/[0.06] p-4 sm:p-6 lg:border-l lg:border-t-0"><p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Resumen</p><div className="mt-4 space-y-3 text-sm"><div className="flex items-center justify-between gap-3 text-gray-400"><span>Inscripción</span><span className="shrink-0">{formatPrice(config.precio)}</span></div>{Number(selectedModality?.precio_adicional || 0) > 0 ? <div className="flex items-center justify-between gap-3 text-gray-400"><span>{selectedModality.label}</span><span className="shrink-0">+ {formatPrice(selectedModality.precio_adicional)}</span></div> : null}</div><div className="mt-5 border-t border-yellow-400/25 pt-4"><span className="text-xs font-bold uppercase tracking-wider text-gray-400">Subtotal</span><strong className="mt-1 block font-racing text-4xl font-bold text-yellow-300">{formatPrice(selectedModality?.price)}</strong></div></div></div></section> : null}

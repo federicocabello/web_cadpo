@@ -79,8 +79,8 @@ const create = async (req, res, next) => {
       return res.status(400).json({ error: 'idcampeonato, idpiloto, idauto y numero son requeridos' });
     }
     const numericNumber = Number(numero);
-    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 199) {
-      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 199' });
+    if (!Number.isInteger(numericNumber) || numericNumber < 0 || numericNumber > 255) {
+      return res.status(400).json({ error: 'El número debe ser un entero entre 0 y 255' });
     }
 
     const [[championship]] = await pool.query('SELECT idcategoria FROM campeonatos WHERE id = ?', [idcampeonato]);
@@ -166,8 +166,8 @@ const updateBulk = async (req, res, next) => {
         error.statusCode = 400;
         throw error;
       }
-      if (!Number.isInteger(numero) || numero < 0 || numero > 199) {
-        const error = new Error('El número debe ser un entero entre 0 y 199');
+      if (!Number.isInteger(numero) || numero < 0 || numero > 255) {
+        const error = new Error('El número debe ser un entero entre 0 y 255');
         error.statusCode = 400;
         throw error;
       }

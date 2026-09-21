@@ -3,6 +3,7 @@ import {
   CalendarDaysIcon,
   BellAlertIcon,
   ClipboardDocumentListIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FlagIcon,
@@ -196,11 +197,18 @@ const emptyRegistrationForm = {
 };
 
 const defaultRegistrationPlans = [
-  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás sin pintura personalizada y sin elegir número.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Presentás tu propio diseño y elegís el número del auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'Nuestro diseñador te asesora y prepara el diseño del auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
-  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Competís con uno de los diseños oficiales disponibles.', precio_adicional: '0', tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
+  { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás con un auto genérico completamente gris, sin diseño personalizado.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Vos mismo diseñás y presentás el diseño de tu auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_liga', titulo: 'Diseño de la liga', descripcion: 'Nuestro diseñador te asesora y diseña el auto a tu gusto, con tus colores, publicidades y detalles.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
+  { id: 'diseno_oficial', titulo: 'Diseño oficial', descripcion: 'Elegís un diseño oficial de la categoría utilizado en la realidad.', precio_adicional: '0', tipo: 'pintura_oficial', habilitado: false, autos_habilitados: [] },
 ];
+const legacyRegistrationPlanDescriptions = new Set([
+  'Participás sin pintura personalizada y sin elegir número.',
+  'Presentás tu propio diseño y elegís el número del auto.',
+  'Nuestro diseñador te asesora y prepara el diseño del auto.',
+  'El diseñador de la liga te asesora y prepara el auto.',
+  'Competís con uno de los diseños oficiales disponibles.',
+]);
 const cloneRegistrationPlans = plans => plans.map(plan => ({ ...plan, autos_habilitados: [...(plan.autos_habilitados || [])] }));
 const planAliases = {
   extra: ['extra', 'extra-sin-diseno'],
@@ -215,12 +223,15 @@ const normalizeAdminRegistrationPlans = plans => defaultRegistrationPlans.map(de
     ...(existing || {}),
     id: defaultPlan.id,
     tipo: defaultPlan.tipo,
+    descripcion: !existing?.descripcion || legacyRegistrationPlanDescriptions.has(existing.descripcion)
+      ? defaultPlan.descripcion
+      : existing.descripcion,
     habilitado: existing ? existing.habilitado !== false : defaultPlan.habilitado,
     precio_adicional: String(existing?.precio_adicional ?? defaultPlan.precio_adicional),
     autos_habilitados: existing?.autos_habilitados || [],
   };
 });
-const emptyOfficialCarForm = { id: '', idauto: '', numero: '', descripcion: '', foto: null };
+const emptyOfficialCarForm = { id: '', idmarca: '', idauto: '', numero: '', descripcion: '', foto: null };
 
 const emptyRegistrationConfig = {
   fecha_apertura: '',
@@ -573,6 +584,7 @@ export default function Admin() {
   const [savingRegistrationImages, setSavingRegistrationImages] = useState(false);
   const [officialCars, setOfficialCars] = useState([]);
   const [officialCarForm, setOfficialCarForm] = useState(emptyOfficialCarForm);
+  const [officialCarCollapsedBrands, setOfficialCarCollapsedBrands] = useState({});
   const [officialCarsMessage, setOfficialCarsMessage] = useState('');
   const [savingOfficialCar, setSavingOfficialCar] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
@@ -1353,6 +1365,7 @@ export default function Admin() {
     setRegistrationGalleryMessage('');
     setOfficialCarsMessage('');
     setOfficialCarForm(emptyOfficialCarForm);
+    setOfficialCarCollapsedBrands({});
     if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
     setRegistrationImageFiles([]);
     if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
@@ -1475,6 +1488,7 @@ export default function Admin() {
   const editOfficialCar = car => {
     setOfficialCarForm({
       id: car.id,
+      idmarca: String(car.idmarca),
       idauto: String(car.idauto),
       numero: String(car.numero),
       descripcion: car.descripcion || '',
@@ -1492,14 +1506,19 @@ export default function Admin() {
       const data = new FormData();
       data.append('idauto', officialCarForm.idauto);
       data.append('numero', officialCarForm.numero);
-      data.append('descripcion', officialCarForm.descripcion);
+      data.append('descripcion', capitalizeValue(officialCarForm.descripcion));
       if (officialCarForm.foto) data.append('foto', officialCarForm.foto);
       const response = officialCarForm.id
         ? await registrationFormsApi.updateOfficialCar(registrationConfigChampionshipId, officialCarForm.id, data)
         : await registrationFormsApi.createOfficialCar(registrationConfigChampionshipId, data);
       setOfficialCars(response.data.data || []);
       setOfficialCarsMessage(response.data.message);
-      resetOfficialCarForm();
+      if (officialCarForm.id) resetOfficialCarForm();
+      else {
+        const selectedBrand = officialCarForm.idmarca;
+        setOfficialCarForm({ ...emptyOfficialCarForm, idmarca: selectedBrand });
+        if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
+      }
     } catch (error) {
       setOfficialCarsMessage(error.response?.data?.error || 'No se pudo guardar el auto oficial.');
     } finally {
@@ -2895,6 +2914,23 @@ export default function Admin() {
       const championship = championships.find(item => String(item.id) === String(registrationConfigChampionshipId));
       const categoryCars = cars.filter(car => championship && String(car.idcategoria) === String(championship.idcategoria));
       const editingRegistrationConfig = registrationConfigs.find(item => String(item.idcampeonato) === String(registrationConfigChampionshipId));
+      const enabledOfficialCars = categoryCars.filter(car => registrationConfig.autos_habilitados.includes(Number(car.id)));
+      const officialCarBrands = [...new Map(enabledOfficialCars.map(car => [String(car.idmarca), {
+        id: String(car.idmarca),
+        marca: car.marca,
+        logo: car.logo,
+      }])).values()].sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
+      const officialCarModels = enabledOfficialCars
+        .filter(car => String(car.idmarca) === String(officialCarForm.idmarca))
+        .sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' }));
+      const officialCarGroups = [...officialCars.reduce((groups, car) => {
+        const brandId = String(car.idmarca || car.marca || 'sin-marca');
+        if (!groups.has(brandId)) {
+          groups.set(brandId, { id: brandId, marca: car.marca || 'Sin marca', logo: car.logo, cars: [] });
+        }
+        groups.get(brandId).cars.push(car);
+        return groups;
+      }, new Map()).values()].sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
       return (
         <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
           <section className="card-glass p-6">
@@ -2947,15 +2983,25 @@ export default function Admin() {
               </section>
               {editingRegistrationConfig ? <section className="border border-yellow-400/30 bg-yellow-400/5 p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-racing text-xl font-bold text-white">Catálogo de diseños oficiales</p><p className="mt-1 text-xs text-gray-500">Cargá cada auto por modelo con su número, foto y descripción.</p></div><span className="border border-yellow-300/40 px-3 py-1 text-xs font-bold uppercase text-yellow-300">{officialCars.length} cargado{officialCars.length === 1 ? '' : 's'}</span></div>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Modelo</span><select value={officialCarForm.idauto} onChange={event => setOfficialCarForm(current => ({ ...current, idauto: event.target.value }))} className="input-field mt-2"><option value="">Seleccionar modelo</option>{categoryCars.filter(car => registrationConfig.autos_habilitados.includes(Number(car.id))).map(car => <option key={car.id} value={car.id}>{car.marca} {car.modelo}</option>)}</select></label>
-                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Número</span><input type="number" min="1" max="199" step="1" value={officialCarForm.numero} onChange={event => setOfficialCarForm(current => ({ ...current, numero: event.target.value }))} className="input-field mt-2" placeholder="Ej.: 24"/></label>
-                  <label className="md:col-span-2"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Descripción</span><textarea value={officialCarForm.descripcion} onChange={event => setOfficialCarForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-20 resize-y" placeholder="Ej.: Chevrolet Cruze rojo con detalles negros"/></label>
-                  <label className="md:col-span-2"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Foto {officialCarForm.id ? <span className="normal-case text-gray-600">(opcional al modificar)</span> : null}</span><input ref={officialCarPhotoInputRef} type="file" accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setOfficialCarForm(current => ({ ...current, foto: event.target.files?.[0] || null }))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/></label>
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Marca</span><select value={officialCarForm.idmarca} onChange={event => setOfficialCarForm(current => ({ ...current, idmarca: event.target.value, idauto: '' }))} className="input-field mt-2"><option value="">Seleccionar marca</option>{officialCarBrands.map(brand => <option key={brand.id} value={brand.id}>{brand.marca}</option>)}</select></label>
+                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Modelo</span><select value={officialCarForm.idauto} onChange={event => setOfficialCarForm(current => ({ ...current, idauto: event.target.value }))} className="input-field mt-2" disabled={!officialCarForm.idmarca}><option value="">{officialCarForm.idmarca ? 'Seleccionar modelo' : 'Primero seleccioná una marca'}</option>{officialCarModels.map(car => <option key={car.id} value={car.id}>{car.modelo}</option>)}</select></label>
+                  <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Número</span><input type="number" min="1" max="255" step="1" value={officialCarForm.numero} onChange={event => setOfficialCarForm(current => ({ ...current, numero: event.target.value }))} className="input-field mt-2" placeholder="Ej.: 24"/></label>
+                  <label className="md:col-span-3"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Descripción</span><textarea value={officialCarForm.descripcion} onChange={event => setOfficialCarForm(current => ({ ...current, descripcion: event.target.value }))} onBlur={() => setOfficialCarForm(current => ({ ...current, descripcion: capitalizeValue(current.descripcion) }))} className="input-field mt-2 min-h-20 resize-y" placeholder="Ej.: Chevrolet Cruze Rojo Con Detalles Negros"/></label>
+                  <label className="md:col-span-3"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Foto {officialCarForm.id ? <span className="normal-case text-gray-600">(opcional al modificar)</span> : null}</span><input ref={officialCarPhotoInputRef} type="file" accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setOfficialCarForm(current => ({ ...current, foto: event.target.files?.[0] || null }))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/></label>
                 </div>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">{officialCarForm.id ? <button type="button" onClick={resetOfficialCarForm} className="border border-racing-border px-4 py-3 text-xs font-bold uppercase text-gray-400 hover:text-white">Cancelar edición</button> : null}<button type="button" onClick={saveOfficialCar} disabled={savingOfficialCar || !officialCarForm.idauto || !officialCarForm.numero || !officialCarForm.descripcion || (!officialCarForm.id && !officialCarForm.foto)} className="inline-flex justify-center bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingOfficialCar ? 'Guardando...' : officialCarForm.id ? 'Guardar cambios' : 'Agregar auto oficial'}</button></div>
                 {officialCarsMessage ? <p className="mt-4 text-sm text-yellow-200">{officialCarsMessage}</p> : null}
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{officialCars.map(car => <article key={car.id} className="overflow-hidden border border-racing-border bg-racing-dark"><div className="relative aspect-video bg-black"><img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="h-full w-full object-cover"/><span className="absolute left-2 top-2 bg-yellow-400 px-3 py-1 font-racing text-lg font-bold text-black">Nº {car.numero}</span>{car.ocupado ? <span className="absolute right-2 top-2 bg-racing-red px-2 py-1 text-[10px] font-bold uppercase text-white">Ocupado</span> : null}</div><div className="p-4"><p className="font-bold text-white">{car.marca} {car.modelo}</p><p className="mt-2 text-sm text-gray-400">{car.descripcion}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => editOfficialCar(car)} className="flex-1 border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 hover:border-yellow-300 hover:text-yellow-300">Modificar</button><button type="button" onClick={() => deleteOfficialCar(car)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar diseño oficial número ${car.numero}`}><TrashIcon className="h-4 w-4"/></button></div></div></article>)}</div>
+                <div className="mt-5 space-y-3">{officialCarGroups.map(group => {
+                  const collapsed = Boolean(officialCarCollapsedBrands[group.id]);
+                  return <section key={group.id} className="overflow-hidden border border-racing-border bg-black/20">
+                    <button type="button" onClick={() => setOfficialCarCollapsedBrands(current => ({ ...current, [group.id]: !current[group.id] }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-yellow-400/5" aria-expanded={!collapsed}>
+                      <span className="flex min-w-0 items-center gap-3">{group.logo ? <img src={group.logo} alt="" className="h-9 w-12 shrink-0 object-contain"/> : null}<span className="truncate font-racing text-lg font-bold text-white">{group.marca}</span><span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{group.cars.length} auto{group.cars.length === 1 ? '' : 's'}</span></span>
+                      <ChevronDownIcon className={`h-5 w-5 shrink-0 text-yellow-300 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}/>
+                    </button>
+                    {!collapsed ? <div className="grid gap-4 border-t border-racing-border p-4 sm:grid-cols-2 xl:grid-cols-3">{group.cars.map(car => <article key={car.id} className="overflow-hidden border border-racing-border bg-racing-dark"><div className="relative aspect-video bg-black"><img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="h-full w-full object-cover"/><span className="absolute left-2 top-2 bg-yellow-400 px-3 py-1 font-racing text-lg font-bold text-black">Nº {car.numero}</span>{car.ocupado ? <span className="absolute right-2 top-2 bg-racing-red px-2 py-1 text-[10px] font-bold uppercase text-white">Ocupado</span> : null}</div><div className="p-4"><p className="font-bold text-white">{car.modelo}</p><p className="mt-2 text-sm text-gray-400">{car.descripcion}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => editOfficialCar(car)} className="flex-1 border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 hover:border-yellow-300 hover:text-yellow-300">Modificar</button><button type="button" onClick={() => deleteOfficialCar(car)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar diseño oficial número ${car.numero}`}><TrashIcon className="h-4 w-4"/></button></div></div></article>)}</div> : null}
+                  </section>;
+                })}</div>
                 {!officialCars.length ? <p className="mt-5 border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no cargaste autos oficiales.</p> : null}
               </section> : null}
               {registrationConfigMessage ? <div className="border border-racing-red/30 bg-racing-red/10 p-4 text-sm">{registrationConfigMessage}</div> : null}
@@ -4297,7 +4343,7 @@ export default function Admin() {
                   name="numero"
                   type="number"
                   min="1"
-                  max="200"
+                  max="255"
                   value={registrationForm.numero}
                   onChange={handleRegistrationChange}
                   className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"
@@ -4399,7 +4445,7 @@ export default function Admin() {
                             <input
                               type="number"
                               min="0"
-                              max="200"
+                              max="255"
                               value={edit.numero}
                               onChange={event => handleRegistrationEdit(registration, 'numero', event.target.value)}
                               className="input-field font-anton w-16 px-1 py-1.5 text-center text-xl text-yellow-300"
