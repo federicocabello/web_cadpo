@@ -8,6 +8,7 @@ router.get('/:id',                      c.getById);
 router.get('/:id/standings',            c.getStandings);
 router.get('/:id/calendario',           c.getCalendar);
 router.get('/:id/premios',              c.getPrizes);
+router.put('/:id/premios',              c.savePrizes);
 router.get('/:id/inscriptos',           c.getEnrolled);
 router.post('/',                        uploadChampionshipRules.single('reglamento'), c.create);
 router.put('/:id',                      uploadChampionshipRules.single('reglamento'), c.update);

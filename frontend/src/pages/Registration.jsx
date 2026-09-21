@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BanknotesIcon, CalendarDaysIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon, TrophyIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
+import ChampionshipPrizes from '../components/ChampionshipPrizes';
 import { championshipsApi, mediaApi, registrationFormsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { formatPrice } from '../utils/currency';
@@ -40,6 +41,7 @@ export default function Registration() {
   const selectedId = searchParams.get('campeonato') || '';
   const [config, setConfig] = useState(null);
   const [galleryImages, setGalleryImages] = useState([]);
+  const [prizes, setPrizes] = useState([]);
   const [activeGalleryImage, setActiveGalleryImage] = useState(0);
   const [formToken, setFormToken] = useState('');
   const [expiresAt, setExpiresAt] = useState(0);
@@ -78,6 +80,7 @@ export default function Registration() {
     let cancelled = false;
     setConfig(null);
     setGalleryImages([]);
+    setPrizes([]);
     setActiveGalleryImage(0);
     setOfficialCarId('');
     setOfficialCarCollapsedGroups({});
@@ -101,11 +104,13 @@ export default function Registration() {
         const loadedConfig = response.data.data;
         if (cancelled) return;
         setConfig(loadedConfig);
-        try {
-          const imagesResponse = await mediaApi.getRegistrationImages({ categoria: loadedConfig.categoria, temporada: loadedConfig.temporada });
-          if (!cancelled) setGalleryImages(imagesResponse.data.data || []);
-        } catch {
-          if (!cancelled) setGalleryImages([]);
+        const [imagesResult, prizesResult] = await Promise.allSettled([
+          mediaApi.getRegistrationImages({ categoria: loadedConfig.categoria, temporada: loadedConfig.temporada }),
+          championshipsApi.getPrizes(selectedId),
+        ]);
+        if (!cancelled) {
+          setGalleryImages(imagesResult.status === 'fulfilled' ? imagesResult.value.data.data || [] : []);
+          setPrizes(prizesResult.status === 'fulfilled' ? prizesResult.value.data.data || [] : []);
         }
       })
       .catch(error => { if (!cancelled) setMessage(error.response?.data?.error || 'No se pudo cargar el campeonato.'); })
@@ -380,6 +385,8 @@ export default function Registration() {
             </div>
             {galleryImages.length > 1 ? <div className="absolute bottom-3 left-4 right-4 z-20 flex justify-end gap-1.5 overflow-x-auto">{galleryImages.map((image, index) => <button key={image} type="button" onClick={() => setActiveGalleryImage(index)} aria-label={`Mostrar imagen ${index + 1}`} className={`h-1.5 shrink-0 transition-all ${index === activeGalleryImage ? 'w-8 bg-yellow-300' : 'w-3 bg-white/40 hover:bg-white/70'}`}/>)}</div> : null}
           </section>
+
+          <ChampionshipPrizes prizes={prizes} className="mt-4 sm:mt-6" />
 
           <section className="mt-4 border border-racing-border bg-racing-card p-4 sm:mt-6 sm:p-6">
             <div className="mb-4 flex items-center gap-3 sm:mb-5"><CalendarDaysIcon className="h-5 w-5 text-racing-red sm:h-6 sm:w-6"/><h3 className="font-racing text-xl font-bold sm:text-2xl">Calendario</h3></div>

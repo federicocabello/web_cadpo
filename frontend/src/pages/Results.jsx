@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftIcon, TrophyIcon } from '@heroicons/react/24/outline';
 import { Link, useSearchParams } from 'react-router-dom';
 import { championshipsApi, resultsApi } from '../services/api';
+import ChampionshipPrizes from '../components/ChampionshipPrizes';
 import { formatCalendarDate } from '../utils/calendarDate';
 import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 
@@ -17,6 +18,7 @@ export default function Results() {
   const championshipId = searchParams.get('campeonato');
   const [championship, setChampionship] = useState(null);
   const [results, setResults] = useState([]);
+  const [prizes, setPrizes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -32,10 +34,12 @@ export default function Results() {
     Promise.all([
       championshipsApi.getById(championshipId),
       resultsApi.getAll({ idcampeonato: championshipId }),
+      championshipsApi.getPrizes(championshipId),
     ])
-      .then(([championshipResponse, resultsResponse]) => {
+      .then(([championshipResponse, resultsResponse, prizesResponse]) => {
         setChampionship(championshipResponse.data.data);
         setResults(resultsResponse.data.data || []);
+        setPrizes(prizesResponse.data.data || []);
       })
       .catch(requestError => setError(requestError.response?.data?.error || 'No se pudieron cargar los resultados.'))
       .finally(() => setLoading(false));
@@ -89,6 +93,7 @@ export default function Results() {
       </div>
 
       <div className="mx-auto max-w-7xl space-y-8 px-4 py-12 sm:px-6 lg:px-8">
+        {!loading && !error ? <ChampionshipPrizes prizes={prizes} /> : null}
         {loading ? (
           <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
         ) : error ? (

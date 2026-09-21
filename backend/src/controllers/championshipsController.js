@@ -145,6 +145,60 @@ const getPrizes = async (req, res, next) => {
   }
 };
 
+const savePrizes = async (req, res, next) => {
+  const championshipId = Number(req.params.id);
+  const submittedPrizes = Array.isArray(req.body.premios) ? req.body.premios : [];
+  const normalizeBoolean = value => value === true || value === 1 || value === '1';
+  const prizes = submittedPrizes.map(prize => ({
+    posicion: Number(prize.posicion),
+    efectivo: normalizeBoolean(prize.efectivo) ? 1 : 0,
+    inscripcion: normalizeBoolean(prize.inscripcion) ? 1 : 0,
+    trofeo: normalizeBoolean(prize.trofeo) ? 1 : 0,
+  }));
+
+  if (!Number.isInteger(championshipId) || championshipId < 1) {
+    return res.status(400).json({ error: 'Campeonato inválido' });
+  }
+  if (prizes.length > 127) return res.status(400).json({ error: 'No se pueden cargar más de 127 posiciones premiadas' });
+  if (prizes.some(prize => !Number.isInteger(prize.posicion) || prize.posicion < 1 || prize.posicion > 127)) {
+    return res.status(400).json({ error: 'Cada posición premiada debe estar entre 1 y 127' });
+  }
+  if (new Set(prizes.map(prize => prize.posicion)).size !== prizes.length) {
+    return res.status(400).json({ error: 'No puede repetirse una posición en los premios' });
+  }
+  if (prizes.some(prize => !prize.efectivo && !prize.inscripcion && !prize.trofeo)) {
+    return res.status(400).json({ error: 'Seleccioná al menos un premio para cada posición' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[championship]] = await connection.query('SELECT id FROM campeonatos WHERE id = ? FOR UPDATE', [championshipId]);
+    if (!championship) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Campeonato no encontrado' });
+    }
+    await connection.query('DELETE FROM premios WHERE idcampeonato = ?', [championshipId]);
+    if (prizes.length) {
+      await connection.query(
+        'INSERT INTO premios (idcampeonato, posicion, efectivo, inscripcion, trofeo) VALUES ?',
+        [prizes.sort((a, b) => a.posicion - b.posicion).map(prize => [championshipId, prize.posicion, prize.efectivo, prize.inscripcion, prize.trofeo])]
+      );
+    }
+    await connection.commit();
+    const [rows] = await pool.query(
+      'SELECT posicion, efectivo, inscripcion, trofeo FROM premios WHERE idcampeonato = ? ORDER BY posicion ASC',
+      [championshipId]
+    );
+    res.json({ data: rows, message: 'Premios guardados correctamente' });
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally {
+    connection.release();
+  }
+};
+
 const getEnrolled = async (req, res, next) => {
   try {
     const [rows] = await pool.query(
@@ -227,6 +281,7 @@ module.exports = {
   getStandings,
   getCalendar,
   getPrizes,
+  savePrizes,
   getEnrolled,
   create,
   update,

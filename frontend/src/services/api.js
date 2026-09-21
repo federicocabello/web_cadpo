@@ -51,6 +51,7 @@ export const championshipsApi = {
   getStandings: id => api.get(`/championships/${id}/standings`),
   getCalendar: id => api.get(`/championships/${id}/calendario`),
   getPrizes: id => api.get(`/championships/${id}/premios`),
+  savePrizes: (id, premios) => api.put(`/championships/${id}/premios`, { premios }),
   getEnrolled: id => api.get(`/championships/${id}/inscriptos`),
   create: data => api.post('/championships', data),
   update: (id, data) => api.put(`/championships/${id}`, data),

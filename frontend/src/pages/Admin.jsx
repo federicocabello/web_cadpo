@@ -168,6 +168,7 @@ const emptyChampionshipForm = {
   n_server: '',
   servidor: '',
 };
+const createEmptyPrize = position => ({ posicion: String(position || ''), efectivo: false, inscripcion: false, trofeo: false });
 
 const getNextChampionshipSeason = (championships, categoryId) => {
   if (!categoryId) return '';
@@ -645,6 +646,11 @@ export default function Admin() {
   const [categorySearch, setCategorySearch] = useState('');
   const [categorySortDirection, setCategorySortDirection] = useState('asc');
   const [championshipForm, setChampionshipForm] = useState(emptyChampionshipForm);
+  const [championshipPrizes, setChampionshipPrizes] = useState([]);
+  const [championshipPrizesId, setChampionshipPrizesId] = useState('');
+  const [loadingChampionshipPrizes, setLoadingChampionshipPrizes] = useState(false);
+  const [savingChampionshipPrizes, setSavingChampionshipPrizes] = useState(false);
+  const [championshipPrizesMessage, setChampionshipPrizesMessage] = useState('');
   const [championshipRulesFile, setChampionshipRulesFile] = useState(null);
   const [editingChampionshipId, setEditingChampionshipId] = useState(null);
   const [championshipSearch, setChampionshipSearch] = useState('');
@@ -1366,6 +1372,7 @@ export default function Admin() {
     setOfficialCarsMessage('');
     setOfficialCarForm(emptyOfficialCarForm);
     setOfficialCarCollapsedBrands({});
+    loadChampionshipPrizes(id);
     if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
     setRegistrationImageFiles([]);
     if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
@@ -1557,6 +1564,9 @@ export default function Admin() {
         setRegistrationGalleryPath('');
         setRegistrationImageFiles([]);
         setOfficialCars([]);
+        setChampionshipPrizes([]);
+        setChampionshipPrizesId('');
+        setChampionshipPrizesMessage('');
         resetOfficialCarForm();
       }
       setRegistrationConfigMessage(response.data.message);
@@ -2443,6 +2453,69 @@ export default function Admin() {
     }
   };
 
+  const loadChampionshipPrizes = async championshipId => {
+    setChampionshipPrizesId(String(championshipId || ''));
+    if (!championshipId) {
+      setChampionshipPrizes([]);
+      setChampionshipPrizesMessage('');
+      return;
+    }
+    setLoadingChampionshipPrizes(true);
+    setChampionshipPrizesMessage('');
+    try {
+      const response = await championshipsApi.getPrizes(championshipId);
+      setChampionshipPrizes((response.data.data || []).map(prize => ({
+        posicion: String(prize.posicion),
+        efectivo: Boolean(Number(prize.efectivo)),
+        inscripcion: Boolean(Number(prize.inscripcion)),
+        trofeo: Boolean(Number(prize.trofeo)),
+      })));
+    } catch (error) {
+      setChampionshipPrizes([]);
+      setChampionshipPrizesMessage(error.response?.data?.error || 'No se pudieron cargar los premios.');
+    } finally {
+      setLoadingChampionshipPrizes(false);
+    }
+  };
+
+  const addChampionshipPrize = () => {
+    const nextPosition = Math.max(0, ...championshipPrizes.map(prize => Number(prize.posicion) || 0)) + 1;
+    setChampionshipPrizes(current => [...current, createEmptyPrize(nextPosition)]);
+    setChampionshipPrizesMessage('');
+  };
+
+  const updateChampionshipPrize = (index, field, value) => {
+    setChampionshipPrizes(current => current.map((prize, prizeIndex) => (
+      prizeIndex === index ? { ...prize, [field]: value } : prize
+    )));
+    setChampionshipPrizesMessage('');
+  };
+
+  const removeChampionshipPrize = index => {
+    setChampionshipPrizes(current => current.filter((_, prizeIndex) => prizeIndex !== index));
+    setChampionshipPrizesMessage('Recordá guardar los premios para aplicar la eliminación.');
+  };
+
+  const saveChampionshipPrizes = async () => {
+    if (!championshipPrizesId) return;
+    setSavingChampionshipPrizes(true);
+    setChampionshipPrizesMessage('');
+    try {
+      const response = await championshipsApi.savePrizes(championshipPrizesId, championshipPrizes);
+      setChampionshipPrizes((response.data.data || []).map(prize => ({
+        posicion: String(prize.posicion),
+        efectivo: Boolean(Number(prize.efectivo)),
+        inscripcion: Boolean(Number(prize.inscripcion)),
+        trofeo: Boolean(Number(prize.trofeo)),
+      })));
+      setChampionshipPrizesMessage(response.data.message || 'Premios guardados correctamente.');
+    } catch (error) {
+      setChampionshipPrizesMessage(error.response?.data?.error || 'No se pudieron guardar los premios.');
+    } finally {
+      setSavingChampionshipPrizes(false);
+    }
+  };
+
   const handleCarBrandSubmit = async event => {
     event.preventDefault();
     setSavingCarBrand(true);
@@ -2924,13 +2997,11 @@ export default function Admin() {
         .filter(car => String(car.idmarca) === String(officialCarForm.idmarca))
         .sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' }));
       const officialCarGroups = [...officialCars.reduce((groups, car) => {
-        const brandId = String(car.idmarca || car.marca || 'sin-marca');
-        if (!groups.has(brandId)) {
-          groups.set(brandId, { id: brandId, marca: car.marca || 'Sin marca', logo: car.logo, cars: [] });
-        }
-        groups.get(brandId).cars.push(car);
+        const modelId = String(car.idauto || `${car.marca}-${car.modelo}` || 'sin-modelo');
+        if (!groups.has(modelId)) groups.set(modelId, { id: modelId, marca: car.marca || 'Sin marca', modelo: car.modelo || 'Sin modelo', logo: car.logo, cars: [] });
+        groups.get(modelId).cars.push(car);
         return groups;
-      }, new Map()).values()].sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
+      }, new Map()).values()].sort((a, b) => String(`${a.marca} ${a.modelo}`).localeCompare(String(`${b.marca} ${b.modelo}`), 'es-AR', { sensitivity: 'base' }));
       return (
         <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
           <section className="card-glass p-6">
@@ -2966,6 +3037,17 @@ export default function Admin() {
                   <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">{registrationGallery.map(image => <article key={image.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Fondo del campeonato" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteRegistrationGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 opacity-100 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{!registrationGallery.length ? <div className="col-span-full border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no hay fotos cargadas.</div> : null}</div>
                 </>}
               </section>
+              <section className="border border-yellow-400/30 bg-yellow-400/[0.04] p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-yellow-400 text-black"><TrophyIcon className="h-5 w-5"/></span><div><p className="font-racing text-xl font-bold uppercase text-white">Premios del campeonato</p><p className="mt-1 text-xs text-gray-500">Definí las posiciones premiadas de este formulario y marcá todos los premios que correspondan.</p></div></div><button type="button" onClick={addChampionshipPrize} className="border border-yellow-400/50 bg-yellow-400/10 px-4 py-2.5 text-xs font-bold uppercase text-yellow-300 transition hover:bg-yellow-400 hover:text-black">Agregar posición</button></div>
+                {loadingChampionshipPrizes ? <p className="py-10 text-center text-sm text-gray-500">Cargando premios...</p> : <div className="mt-5 space-y-3">{championshipPrizes.map((prize, index) => <article key={index} className="grid gap-4 border border-racing-border bg-black/25 p-4 lg:grid-cols-[110px_1fr_auto] lg:items-center">
+                  <label><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Posición</span><input type="number" min="1" max="127" value={prize.posicion} onChange={event => updateChampionshipPrize(index, 'posicion', event.target.value)} className="input-field mt-1 text-center font-racing text-xl text-yellow-300"/></label>
+                  <div className="grid gap-2 sm:grid-cols-3"><label className={`flex cursor-pointer items-center gap-2 border px-3 py-3 text-xs font-bold uppercase ${prize.efectivo ? 'border-green-400/50 bg-green-500/10 text-green-300' : 'border-racing-border text-gray-500'}`}><input type="checkbox" checked={prize.efectivo} onChange={event => updateChampionshipPrize(index, 'efectivo', event.target.checked)} className="h-4 w-4 accent-green-500"/>Dinero en efectivo</label><label className={`flex cursor-pointer items-center gap-2 border px-3 py-3 text-xs font-bold uppercase ${prize.inscripcion ? 'border-violet-400/50 bg-violet-500/10 text-violet-300' : 'border-racing-border text-gray-500'}`}><input type="checkbox" checked={prize.inscripcion} onChange={event => updateChampionshipPrize(index, 'inscripcion', event.target.checked)} className="h-4 w-4 accent-violet-500"/>Inscripción</label><label className={`flex cursor-pointer items-center gap-2 border px-3 py-3 text-xs font-bold uppercase ${prize.trofeo ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-300' : 'border-racing-border text-gray-500'}`}><input type="checkbox" checked={prize.trofeo} onChange={event => updateChampionshipPrize(index, 'trofeo', event.target.checked)} className="h-4 w-4 accent-yellow-400"/>Trofeo</label></div>
+                  <button type="button" onClick={() => removeChampionshipPrize(index)} className="inline-flex h-11 w-full items-center justify-center border border-racing-border text-gray-500 transition hover:border-racing-red hover:text-racing-red lg:w-11" aria-label={`Eliminar premio de la posición ${prize.posicion}`}><TrashIcon className="h-5 w-5"/></button>
+                </article>)}</div>}
+                {!loadingChampionshipPrizes && !championshipPrizes.length ? <p className="mt-5 border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no cargaste premios para este campeonato.</p> : null}
+                {championshipPrizesMessage ? <p className="mt-4 border border-yellow-400/20 bg-yellow-400/[0.05] p-3 text-sm text-yellow-200">{championshipPrizesMessage}</p> : null}
+                <button type="button" onClick={saveChampionshipPrizes} disabled={loadingChampionshipPrizes || savingChampionshipPrizes} className="mt-5 w-full bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingChampionshipPrizes ? 'Guardando premios...' : 'Guardar premios'}</button>
+              </section>
               <div><p className="text-sm font-semibold text-gray-300">Autos habilitados</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}</div>{!categoryCars.length ? <p className="mt-2 text-sm text-yellow-300">La categoría no tiene autos cargados.</p> : null}</div>
               <section className="border border-racing-border bg-black/20 p-4 sm:p-5">
                 <div><p className="text-sm font-semibold text-gray-200">Secciones de inscripción</p><p className="mt-1 text-xs text-gray-500">Las cuatro secciones son fijas. Activá las que estarán disponibles y personalizá sus datos.</p></div>
@@ -2992,14 +3074,15 @@ export default function Admin() {
                 </div>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">{officialCarForm.id ? <button type="button" onClick={resetOfficialCarForm} className="border border-racing-border px-4 py-3 text-xs font-bold uppercase text-gray-400 hover:text-white">Cancelar edición</button> : null}<button type="button" onClick={saveOfficialCar} disabled={savingOfficialCar || !officialCarForm.idauto || !officialCarForm.numero || !officialCarForm.descripcion || (!officialCarForm.id && !officialCarForm.foto)} className="inline-flex justify-center bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingOfficialCar ? 'Guardando...' : officialCarForm.id ? 'Guardar cambios' : 'Agregar auto oficial'}</button></div>
                 {officialCarsMessage ? <p className="mt-4 text-sm text-yellow-200">{officialCarsMessage}</p> : null}
-                <div className="mt-5 space-y-3">{officialCarGroups.map(group => {
-                  const collapsed = Boolean(officialCarCollapsedBrands[group.id]);
+                <div className="mt-5 space-y-2">{officialCarGroups.map(group => {
+                  const groupKey = `model:${group.id}`;
+                  const collapsed = Boolean(officialCarCollapsedBrands[groupKey]);
                   return <section key={group.id} className="overflow-hidden border border-racing-border bg-black/20">
-                    <button type="button" onClick={() => setOfficialCarCollapsedBrands(current => ({ ...current, [group.id]: !current[group.id] }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-yellow-400/5" aria-expanded={!collapsed}>
-                      <span className="flex min-w-0 items-center gap-3">{group.logo ? <img src={group.logo} alt="" className="h-9 w-12 shrink-0 object-contain"/> : null}<span className="truncate font-racing text-lg font-bold text-white">{group.marca}</span><span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{group.cars.length} auto{group.cars.length === 1 ? '' : 's'}</span></span>
-                      <ChevronDownIcon className={`h-5 w-5 shrink-0 text-yellow-300 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`}/>
+                    <button type="button" onClick={() => setOfficialCarCollapsedBrands(current => ({ ...current, [groupKey]: !current[groupKey] }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-yellow-400/5" aria-expanded={!collapsed}>
+                      <span className="flex min-w-0 items-center gap-3">{group.logo ? <img src={group.logo} alt="" className="h-9 w-12 shrink-0 object-contain"/> : null}<span className="truncate font-racing text-lg font-bold uppercase text-white">{group.marca} {group.modelo}</span><span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{group.cars.length} auto{group.cars.length === 1 ? '' : 's'}</span></span>
+                      <ChevronDownIcon className={`h-5 w-5 shrink-0 text-yellow-300 transition-transform duration-500 ${collapsed ? '-rotate-90' : ''}`}/>
                     </button>
-                    {!collapsed ? <div className="grid gap-4 border-t border-racing-border p-4 sm:grid-cols-2 xl:grid-cols-3">{group.cars.map(car => <article key={car.id} className="overflow-hidden border border-racing-border bg-racing-dark"><div className="relative aspect-video bg-black"><img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="h-full w-full object-cover"/><span className="absolute left-2 top-2 bg-yellow-400 px-3 py-1 font-racing text-lg font-bold text-black">Nº {car.numero}</span>{car.ocupado ? <span className="absolute right-2 top-2 bg-racing-red px-2 py-1 text-[10px] font-bold uppercase text-white">Ocupado</span> : null}</div><div className="p-4"><p className="font-bold text-white">{car.modelo}</p><p className="mt-2 text-sm text-gray-400">{car.descripcion}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => editOfficialCar(car)} className="flex-1 border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 hover:border-yellow-300 hover:text-yellow-300">Modificar</button><button type="button" onClick={() => deleteOfficialCar(car)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar diseño oficial número ${car.numero}`}><TrashIcon className="h-4 w-4"/></button></div></div></article>)}</div> : null}
+                    <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="grid gap-4 border-t border-racing-border p-4 sm:grid-cols-2 xl:grid-cols-3">{group.cars.map(car => <article key={car.id} className="overflow-hidden border border-racing-border bg-racing-dark"><div className="relative aspect-video bg-black"><img src={car.foto} alt={`${car.marca} ${car.modelo} número ${car.numero}`} className="h-full w-full object-cover"/><span className="absolute left-2 top-2 bg-yellow-400 px-3 py-1 font-racing text-lg font-bold text-black">Nº {car.numero}</span>{car.ocupado ? <span className="absolute right-2 top-2 bg-racing-red px-2 py-1 text-[10px] font-bold uppercase text-white">Ocupado</span> : null}</div><div className="p-4"><p className="font-bold text-white">{car.descripcion}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => editOfficialCar(car)} className="flex-1 border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 hover:border-yellow-300 hover:text-yellow-300">Modificar</button><button type="button" onClick={() => deleteOfficialCar(car)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar diseño oficial número ${car.numero}`}><TrashIcon className="h-4 w-4"/></button></div></div></article>)}</div></div></div>
                   </section>;
                 })}</div>
                 {!officialCars.length ? <p className="mt-5 border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no cargaste autos oficiales.</p> : null}
@@ -5524,17 +5607,7 @@ export default function Admin() {
 
   return (
     <div className="min-h-screen bg-racing-dark text-white animate-fade-in">
-      <div className="bg-racing-gray border-b border-racing-border py-8 px-4">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Panel privado</p>
-          <h1 className="section-title text-4xl md:text-5xl mb-2">
-            Administración <span className="gradient-text">CADPO</span>
-          </h1>
-          <p className="text-gray-400 max-w-2xl">Carga y edición de datos principales de la liga.</p>
-        </div>
-      </div>
-
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-10">
+      <div className="w-full px-4 py-5 sm:px-6 lg:px-8">
         {loading ? (
           <div className="flex justify-center py-24">
             <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />
