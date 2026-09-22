@@ -45,16 +45,29 @@ const getAll = async (req, res, next) => {
   try {
     const { idcampeonato } = req.query;
     let query = `
-      SELECT i.numero, i.pago, i.tipo_inscripcion, i.idauto_oficial, i.precio_inscripcion, i.idcampeonato,
-             p.id AS idpiloto, p.nombre, p.localidad, p.telefono, p.ig,
+      SELECT i.numero, i.pago, i.tipo_inscripcion,
+             COALESCE(i.idauto_oficial, inferred_official.id) AS idauto_oficial,
+             i.precio_inscripcion, i.idcampeonato,
+             p.id AS idpiloto, p.nombre, p.localidad, p.provincia, p.telefono, p.nacionalidad, p.steam, p.ig,
              a.id AS idauto, am.id AS idmarca, am.marca, a.modelo, am.logo AS auto_logo,
-             official.descripcion AS auto_oficial_descripcion, official.foto AS auto_oficial_foto,
+             COALESCE(official.descripcion, inferred_official.descripcion) AS auto_oficial_descripcion,
+             COALESCE(official.foto, inferred_official.foto) AS auto_oficial_foto,
+             CASE WHEN official.id IS NOT NULL OR inferred_official.id IS NOT NULL THEN 1 ELSE 0 END AS es_diseno_oficial,
+             detail.modalidad_diseno, detail.plan_id, detail.plan_titulo,
+             COALESCE(detail.precio_total, i.precio_inscripcion) AS total_abonar,
              c.temporada, c.anio, c.idcategoria, cat.categoria
       FROM inscriptos i
       JOIN pilotos p ON i.idpiloto = p.id
       JOIN autos a   ON i.idauto   = a.id
       JOIN autos_marcas am ON a.marca = am.id
       LEFT JOIN inscripciones_autos_oficiales official ON official.id = i.idauto_oficial
+      LEFT JOIN inscripciones_autos_oficiales inferred_official
+        ON i.idauto_oficial IS NULL
+       AND inferred_official.idcampeonato = i.idcampeonato
+       AND inferred_official.idauto = i.idauto
+       AND inferred_official.numero = i.numero
+      LEFT JOIN inscripciones_detalle detail
+        ON detail.idcampeonato = i.idcampeonato AND detail.idpiloto = i.idpiloto
       JOIN campeonatos c ON i.idcampeonato = c.id
       JOIN categorias cat ON c.idcategoria = cat.id
     `;
@@ -103,6 +116,15 @@ const create = async (req, res, next) => {
         ? 'El piloto ya está inscripto en este campeonato'
         : `El número ${numero} ya está utilizado en este campeonato`;
       return res.status(409).json({ error: message });
+    }
+    if (numericNumber > 0) {
+      const [[officialNumber]] = await pool.query(
+        'SELECT id FROM inscripciones_autos_oficiales WHERE idcampeonato = ? AND numero = ? LIMIT 1',
+        [idcampeonato, numericNumber],
+      );
+      if (officialNumber) {
+        return res.status(409).json({ error: `El número ${numericNumber} está reservado para una pintura oficial` });
+      }
     }
 
     await pool.query(
@@ -194,15 +216,22 @@ const updateBulk = async (req, res, next) => {
 
       if (numero !== 0) {
         const [[duplicateNumber]] = await connection.query(
-          `SELECT idpiloto, idauto_oficial FROM inscriptos
+          `SELECT idpiloto FROM inscriptos
            WHERE idcampeonato = ? AND numero = ? AND idpiloto <> ?
            LIMIT 1`,
           [idcampeonato, numero, idpiloto]
         );
-        const officialNumberPair = duplicateNumber
-          && (registration.idauto_oficial || duplicateNumber.idauto_oficial);
-        if (duplicateNumber && !officialNumberPair) {
+        if (duplicateNumber) {
           const error = new Error(`El número ${numero} ya está utilizado en este campeonato`);
+          error.statusCode = 409;
+          throw error;
+        }
+        const [[officialNumber]] = await connection.query(
+          'SELECT id FROM inscripciones_autos_oficiales WHERE idcampeonato = ? AND numero = ? LIMIT 1',
+          [idcampeonato, numero],
+        );
+        if (officialNumber && Number(officialNumber.id) !== Number(registration.idauto_oficial)) {
+          const error = new Error(`El número ${numero} está reservado para una pintura oficial`);
           error.statusCode = 409;
           throw error;
         }
@@ -228,16 +257,29 @@ const updateBulk = async (req, res, next) => {
 
 // ── DELETE /api/inscriptos/:idcampeonato/:idpiloto ────────────────────────────
 const remove = async (req, res, next) => {
+  const connection = await pool.getConnection();
   try {
     const { idcampeonato, idpiloto } = req.params;
-    const [result] = await pool.query(
+    await connection.beginTransaction();
+    const [result] = await connection.query(
       'DELETE FROM inscriptos WHERE idcampeonato=? AND idpiloto=?',
       [idcampeonato, idpiloto]
     );
-    if (!result.affectedRows) return res.status(404).json({ error: 'Inscripción no encontrada' });
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Inscripción no encontrada' });
+    }
+    await connection.query(
+      'DELETE FROM inscripciones_detalle WHERE idcampeonato=? AND idpiloto=?',
+      [idcampeonato, idpiloto]
+    );
+    await connection.commit();
     res.json({ message: 'Inscripción eliminada' });
   } catch (err) {
+    await connection.rollback();
     next(err);
+  } finally {
+    connection.release();
   }
 };
 

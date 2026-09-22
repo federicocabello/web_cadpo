@@ -26,6 +26,7 @@ import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
 import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
+import { formatPrice } from '../utils/currency';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -158,6 +159,7 @@ const championshipYears = Array.from(
   (_, index) => new Date().getFullYear() - index,
 );
 const adminPageSize = 25;
+const registrationPageSize = 12;
 
 const emptyChampionshipForm = {
   idcategoria: '',
@@ -187,16 +189,6 @@ const emptyCarForm = {
 };
 
 const emptyCarBrandForm = { marca: '' };
-const emptyRegistrationForm = {
-  idcampeonato: '',
-  idpiloto: '',
-  idmarca: '',
-  idauto: '',
-  numero: '',
-  extra: false,
-  pago: false,
-};
-
 const defaultRegistrationPlans = [
   { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás con un auto genérico completamente gris, sin diseño personalizado.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
   { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Vos mismo diseñás y presentás el diseño de tu auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
@@ -625,7 +617,6 @@ export default function Admin() {
   const [savingChampionship, setSavingChampionship] = useState(false);
   const [savingCarBrand, setSavingCarBrand] = useState(false);
   const [savingCar, setSavingCar] = useState(false);
-  const [savingRegistration, setSavingRegistration] = useState(false);
   const [circuitForm, setCircuitForm] = useState(emptyCircuitForm);
   const [circuitImageFile, setCircuitImageFile] = useState(null);
   const [circuitLayoutFile, setCircuitLayoutFile] = useState(null);
@@ -669,15 +660,16 @@ export default function Admin() {
   const [carCategoryFilter, setCarCategoryFilter] = useState('');
   const [carBrandFilter, setCarBrandFilter] = useState('');
   const [carPage, setCarPage] = useState(1);
-  const [registrationForm, setRegistrationForm] = useState(emptyRegistrationForm);
-  const [registrationDriverSearch, setRegistrationDriverSearch] = useState('');
-  const [showRegistrationDriverSuggestions, setShowRegistrationDriverSuggestions] = useState(false);
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
   const [registrationPage, setRegistrationPage] = useState(1);
   const [registrationEdits, setRegistrationEdits] = useState({});
   const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
   const [editingRegistrationNumbers, setEditingRegistrationNumbers] = useState({});
+  const [selectedRegistrationDriverId, setSelectedRegistrationDriverId] = useState(null);
+  const [registrationDriverDetails, setRegistrationDriverDetails] = useState(emptyDriverForm);
+  const [savingRegistrationDriver, setSavingRegistrationDriver] = useState(false);
+  const [registrationDriverDetailsMessage, setRegistrationDriverDetailsMessage] = useState('');
   const [eventForm, setEventForm] = useState(emptyEventForm);
   const [eventBatch, setEventBatch] = useState(emptyEventBatch);
   const [eventBatchRows, setEventBatchRows] = useState([]);
@@ -1015,50 +1007,6 @@ export default function Admin() {
       .sort((a, b) => String(a.marca || '').localeCompare(String(b.marca || ''), 'es-AR', { sensitivity: 'base' }));
   }, [carBrandSearch, carBrands]);
 
-  const registrationChampionship = useMemo(
-    () => championships.find(championship => String(championship.id) === String(registrationForm.idcampeonato)),
-    [championships, registrationForm.idcampeonato]
-  );
-
-  const registrationCars = useMemo(
-    () => cars.filter(car => !registrationChampionship
-      || String(car.idcategoria) === String(registrationChampionship.idcategoria)),
-    [cars, registrationChampionship]
-  );
-
-  const registrationBrands = useMemo(() => {
-    const brandsById = new Map();
-    registrationCars.forEach(car => {
-      if (car.idmarca && !brandsById.has(String(car.idmarca))) {
-        brandsById.set(String(car.idmarca), {
-          id: car.idmarca,
-          marca: car.marca,
-          logo: car.logo,
-        });
-      }
-    });
-
-    return [...brandsById.values()]
-      .sort((a, b) => String(a.marca).localeCompare(String(b.marca), 'es-AR', { sensitivity: 'base' }));
-  }, [registrationCars]);
-
-  const registrationModels = useMemo(
-    () => registrationCars
-      .filter(car => String(car.idmarca) === String(registrationForm.idmarca))
-      .sort((a, b) => String(a.modelo).localeCompare(String(b.modelo), 'es-AR', { sensitivity: 'base' })),
-    [registrationCars, registrationForm.idmarca]
-  );
-
-  const registrationDriverSuggestions = useMemo(() => {
-    const search = registrationDriverSearch.trim().toLocaleLowerCase('es-AR');
-    if (!search) return [];
-
-    return [...drivers]
-      .filter(driver => String(driver.nombre || '').toLocaleLowerCase('es-AR').includes(search))
-      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' }))
-      .slice(0, 8);
-  }, [drivers, registrationDriverSearch]);
-
   const registrationChampionshipGroups = useMemo(() => championships
     .map(championship => ({
       ...championship,
@@ -1083,6 +1031,8 @@ export default function Admin() {
         registration.numero,
         registration.marca,
         registration.modelo,
+        registration.plan_titulo,
+        registration.auto_oficial_descripcion,
         registration.categoria,
         registration.temporada,
         registration.anio,
@@ -1092,9 +1042,9 @@ export default function Admin() {
     });
   }, [registrationChampionshipFilter, registrationSearch, registrations]);
 
-  const registrationPageCount = Math.max(1, Math.ceil(displayedRegistrations.length / adminPageSize));
+  const registrationPageCount = Math.max(1, Math.ceil(displayedRegistrations.length / registrationPageSize));
   const paginatedRegistrations = useMemo(
-    () => displayedRegistrations.slice((registrationPage - 1) * adminPageSize, registrationPage * adminPageSize),
+    () => displayedRegistrations.slice((registrationPage - 1) * registrationPageSize, registrationPage * registrationPageSize),
     [displayedRegistrations, registrationPage],
   );
 
@@ -1646,32 +1596,9 @@ export default function Admin() {
     const championshipId = String(value || '');
     setRegistrationChampionshipFilter(championshipId);
     setRegistrationSearch('');
-    setRegistrationForm(current => String(current.idcampeonato) === championshipId
-      ? current
-      : { ...current, idcampeonato: championshipId, idmarca: '', idauto: '' });
-  };
-
-  const handleRegistrationChange = event => {
-    const { name, type, checked, value } = event.target;
-    if (name === 'idcampeonato') {
-      selectRegistrationChampionship(value);
-      return;
-    }
-    setRegistrationForm(current => {
-      const nextValue = type === 'checkbox' ? checked : value;
-      return {
-        ...current,
-        [name]: nextValue,
-        ...(name === 'idmarca' ? { idauto: '' } : {}),
-        ...(name === 'extra' && checked ? { numero: '' } : {}),
-      };
-    });
-  };
-
-  const handleSelectRegistrationDriver = driver => {
-    setRegistrationForm(current => ({ ...current, idpiloto: driver.id }));
-    setRegistrationDriverSearch(driver.nombre);
-    setShowRegistrationDriverSuggestions(false);
+    setSelectedRegistrationDriverId(null);
+    setRegistrationDriverDetails(emptyDriverForm);
+    setRegistrationDriverDetailsMessage('');
   };
 
   const handleEventChange = event => {
@@ -2733,35 +2660,68 @@ export default function Admin() {
     }
   };
 
-  const handleRegistrationSubmit = async event => {
-    event.preventDefault();
-    if (!registrationForm.idpiloto) {
-      setRegistrationMessage('Buscá y seleccioná un piloto de la lista.');
-      return;
-    }
-    setSavingRegistration(true);
-    setRegistrationMessage('');
+  const selectRegistrationDriverDetails = registration => {
+    const driver = drivers.find(item => String(item.id) === String(registration.idpiloto)) || registration;
+    setSelectedRegistrationDriverId(Number(registration.idpiloto));
+    setRegistrationDriverDetails({
+      nombre: driver.nombre || '',
+      localidad: driver.localidad || '',
+      provincia: driver.provincia || '',
+      telefono: driver.telefono || '',
+      nacionalidad: normalizeCountryCode(driver.nacionalidad),
+      steam: driver.steam || '',
+      ig: formatInstagramHandle(driver.ig),
+    });
+    setRegistrationDriverDetailsMessage('');
+  };
 
+  const handleRegistrationDriverDetailsChange = event => {
+    const { name, value } = event.target;
+    const nextValue = name === 'telefono'
+      ? value.replace(/\D/g, '')
+      : name === 'ig'
+        ? formatInstagramHandle(value)
+        : ['nombre', 'localidad', 'provincia'].includes(name)
+          ? capitalizeInputValue(value)
+          : value;
+    setRegistrationDriverDetails(current => ({ ...current, [name]: nextValue }));
+    setRegistrationDriverDetailsMessage('');
+  };
+
+  const saveRegistrationDriverDetails = async event => {
+    event.preventDefault();
+    if (!selectedRegistrationDriverId) return;
+    setSavingRegistrationDriver(true);
+    setRegistrationDriverDetailsMessage('');
+    const payload = {
+      nombre: capitalizeValue(registrationDriverDetails.nombre),
+      localidad: capitalizeValue(registrationDriverDetails.localidad),
+      provincia: capitalizeValue(registrationDriverDetails.provincia),
+      telefono: String(registrationDriverDetails.telefono || '').replace(/\D/g, ''),
+      nacionalidad: normalizeCountryCode(registrationDriverDetails.nacionalidad),
+      steam: String(registrationDriverDetails.steam || '').trim(),
+      ig: formatInstagramHandle(registrationDriverDetails.ig),
+    };
     try {
-      const selectedChampionshipId = String(registrationForm.idcampeonato);
-      await registrationsApi.create({
-        ...registrationForm,
-        idcampeonato: Number(registrationForm.idcampeonato),
-        idpiloto: Number(registrationForm.idpiloto),
-        idauto: Number(registrationForm.idauto),
-        numero: registrationForm.extra ? 0 : Number(registrationForm.numero),
-        pago: registrationForm.pago,
-      });
-      const response = await registrationsApi.getAll();
-      setRegistrations(response.data.data ?? []);
-      setRegistrationForm({ ...emptyRegistrationForm, idcampeonato: selectedChampionshipId });
-      setRegistrationDriverSearch('');
-      setRegistrationChampionshipFilter(selectedChampionshipId);
-      setRegistrationMessage('Piloto inscripto correctamente.');
-    } catch (err) {
-      setRegistrationMessage(err.response?.data?.error || 'No se pudo inscribir al piloto.');
+      const response = await driversApi.update(selectedRegistrationDriverId, payload);
+      const updatedDriver = response.data.data;
+      setDrivers(current => current.map(driver => String(driver.id) === String(selectedRegistrationDriverId) ? { ...driver, ...updatedDriver } : driver));
+      setRegistrations(current => current.map(registration => String(registration.idpiloto) === String(selectedRegistrationDriverId) ? {
+        ...registration,
+        nombre: updatedDriver.nombre,
+        localidad: updatedDriver.localidad,
+        provincia: updatedDriver.provincia,
+        telefono: updatedDriver.telefono,
+        nacionalidad: updatedDriver.nacionalidad,
+        steam: updatedDriver.steam,
+        ig: updatedDriver.ig,
+      } : registration));
+      setRegistrationDriverDetails(current => ({ ...current, ...updatedDriver }));
+      setRegistrationDriverDetailsMessage('Datos del piloto actualizados correctamente.');
+    } catch (error) {
+      setRegistrationDriverDetailsMessage(error.response?.data?.error || 'No se pudieron actualizar los datos del piloto.');
     } finally {
-      setSavingRegistration(false);
+      setSavingRegistrationDriver(false);
     }
   };
 
@@ -2925,6 +2885,11 @@ export default function Admin() {
         String(item.idcampeonato) === String(registration.idcampeonato)
         && String(item.idpiloto) === String(registration.idpiloto)
       )));
+      if (String(selectedRegistrationDriverId) === String(registration.idpiloto)) {
+        setSelectedRegistrationDriverId(null);
+        setRegistrationDriverDetails(emptyDriverForm);
+        setRegistrationDriverDetailsMessage('');
+      }
       setRegistrationMessage('Inscripción eliminada.');
     } catch (err) {
       setRegistrationMessage(err.response?.data?.error || 'No se pudo eliminar la inscripción.');
@@ -4344,111 +4309,25 @@ export default function Admin() {
 
     if (activeSection === 'inscriptos') {
       return (
-        <div className="grid grid-cols-1 gap-8 2xl:grid-cols-[440px_1fr]">
-          <section className="card-glass p-6">
-            <h2 className="mb-5 font-racing text-2xl font-bold">Inscribir piloto</h2>
-            <form onSubmit={handleRegistrationSubmit} className="space-y-4">
-              <label className="block">
-                <span className="text-sm text-gray-300">Campeonato</span>
-                <select name="idcampeonato" value={registrationForm.idcampeonato} onChange={handleRegistrationChange} className="input-field mt-2" required>
-                  <option value="">Seleccionar campeonato</option>
-                  {championships.map(championship => (
-                    <option key={championship.id} value={championship.id}>
-                      {championship.categoria} · T{championship.temporada} · {championship.anio}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="relative">
-                <span className="text-sm text-gray-300">Piloto</span>
-                <div className="relative mt-2">
-                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
-                  <input
-                    value={registrationDriverSearch}
-                    onChange={event => {
-                      setRegistrationDriverSearch(event.target.value);
-                      setRegistrationForm(current => ({ ...current, idpiloto: '' }));
-                      setShowRegistrationDriverSuggestions(true);
-                    }}
-                    onFocus={() => setShowRegistrationDriverSuggestions(true)}
-                    className="input-field pl-10"
-                    placeholder="Buscar piloto por nombre"
-                    autoComplete="off"
-                    required
-                  />
-                </div>
-                {showRegistrationDriverSuggestions && registrationDriverSuggestions.length ? (
-                  <div className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto border border-racing-border bg-racing-dark shadow-xl">
-                    {registrationDriverSuggestions.map(driver => (
-                      <button
-                        key={driver.id}
-                        type="button"
-                        onClick={() => handleSelectRegistrationDriver(driver)}
-                        className="block w-full border-b border-racing-border px-4 py-3 text-left text-sm text-gray-200 transition hover:bg-racing-red/15 hover:text-white"
-                      >
-                        {driver.nombre}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <section className="card-glass self-start p-5 xl:sticky xl:top-24 sm:p-6">
+            {selectedRegistrationDriverId ? <form onSubmit={saveRegistrationDriverDetails} className="space-y-4">
+              <div className="flex items-start justify-between gap-3 border-b border-racing-border pb-4">
+                <div className="flex min-w-0 items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center bg-racing-red/15 text-racing-red"><UsersIcon className="h-6 w-6"/></span><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-racing-red">Piloto seleccionado</p><h2 className="truncate font-racing text-xl font-bold text-white">{registrationDriverDetails.nombre}</h2></div></div>
+                <button type="button" onClick={() => { setSelectedRegistrationDriverId(null); setRegistrationDriverDetails(emptyDriverForm); setRegistrationDriverDetailsMessage(''); }} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 transition hover:border-racing-red hover:text-white" aria-label="Cerrar datos del piloto"><XMarkIcon className="h-5 w-5"/></button>
               </div>
-
-              <label className="block">
-                <span className="text-sm text-gray-300">Marca</span>
-                <select name="idmarca" value={registrationForm.idmarca} onChange={handleRegistrationChange} className="input-field mt-2" disabled={!registrationForm.idcampeonato} required>
-                  <option value="">{registrationForm.idcampeonato ? 'Seleccionar marca' : 'Primero seleccioná un campeonato'}</option>
-                  {registrationBrands.map(brand => (
-                    <option key={brand.id} value={brand.id}>{brand.marca}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-sm text-gray-300">Modelo</span>
-                <select name="idauto" value={registrationForm.idauto} onChange={handleRegistrationChange} className="input-field mt-2" disabled={!registrationForm.idmarca} required>
-                  <option value="">{registrationForm.idmarca ? 'Seleccionar modelo' : 'Primero seleccioná una marca'}</option>
-                  {registrationModels.map(car => (
-                    <option key={car.id} value={car.id}>{car.modelo}</option>
-                  ))}
-                </select>
-              </label>
-
-              <div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm text-gray-300">Número</span>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-yellow-300">
-                    <input name="extra" type="checkbox" checked={registrationForm.extra} onChange={handleRegistrationChange} className="h-5 w-5 accent-yellow-400" />
-                    EXTRA
-                  </label>
-                </div>
-                <input
-                  name="numero"
-                  type="number"
-                  min="1"
-                  max="255"
-                  value={registrationForm.numero}
-                  onChange={handleRegistrationChange}
-                  className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"
-                  placeholder={registrationForm.extra ? 'Se guardará con número 0' : 'Ej. 27'}
-                  disabled={registrationForm.extra}
-                  required={!registrationForm.extra}
-                />
+              <label className="block"><span className="text-sm text-gray-300">Nombre y apellido</span><input name="nombre" value={registrationDriverDetails.nombre} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2" required/></label>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                <label className="block"><span className="text-sm text-gray-300">Teléfono</span><input name="telefono" value={registrationDriverDetails.telefono} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2" inputMode="tel"/></label>
+                <label className="block"><span className="text-sm text-gray-300">Localidad</span><input name="localidad" value={registrationDriverDetails.localidad} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2"/></label>
+                <label className="block"><span className="text-sm text-gray-300">Provincia</span><input name="provincia" value={registrationDriverDetails.provincia} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2"/></label>
+                <label className="block"><span className="text-sm text-gray-300">Nacionalidad</span><CountrySelect value={registrationDriverDetails.nacionalidad} onChange={value => setRegistrationDriverDetails(current => ({ ...current, nacionalidad: value }))} allowEmpty className="mt-2"/></label>
+                <label className="block"><span className="text-sm text-gray-300">ID Steam</span><input name="steam" value={registrationDriverDetails.steam} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2"/></label>
+                <label className="block"><span className="text-sm text-gray-300">Instagram</span><input name="ig" value={registrationDriverDetails.ig} onChange={handleRegistrationDriverDetailsChange} className="input-field mt-2" placeholder="@usuario"/></label>
               </div>
-
-              <label className="flex cursor-pointer items-center justify-between border border-racing-border bg-racing-dark px-4 py-3">
-                <span>
-                  <span className="block text-sm font-semibold text-white">Pago confirmado</span>
-                  <span className="block text-xs text-gray-500">Sin confirmar quedará pendiente</span>
-                </span>
-                <input name="pago" type="checkbox" checked={registrationForm.pago} onChange={handleRegistrationChange} className="h-5 w-5 accent-racing-red" />
-              </label>
-
-              {registrationMessage ? <div className="border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
-              <button type="submit" className="btn-primary w-full justify-center" disabled={savingRegistration}>
-                {savingRegistration ? 'Inscribiendo...' : 'Agregar inscripción'}
-              </button>
-            </form>
+              {registrationDriverDetailsMessage ? <div className={`border px-4 py-3 text-sm ${registrationDriverDetailsMessage.includes('correctamente') ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-racing-red/30 bg-racing-red/10 text-gray-200'}`}>{registrationDriverDetailsMessage}</div> : null}
+              <button type="submit" className="btn-primary w-full justify-center" disabled={savingRegistrationDriver}>{savingRegistrationDriver ? 'Guardando...' : 'Guardar datos del piloto'}</button>
+            </form> : <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-racing-border p-6 text-center"><UsersIcon className="h-12 w-12 text-gray-700"/><h2 className="mt-4 font-racing text-xl font-bold text-white">Datos del piloto</h2><p className="mt-2 text-sm leading-relaxed text-gray-500">Hacé clic sobre el nombre de un piloto inscripto para consultar y modificar sus datos.</p></div>}
           </section>
 
           <section className="card-glass overflow-hidden">
@@ -4490,11 +4369,13 @@ export default function Admin() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[1120px] text-sm">
                 <thead><tr className="border-b border-racing-border bg-racing-dark">
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Nº</th>
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
                   <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Auto</th>
+                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Diseño elegido</th>
+                  <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Total a abonar</th>
                   <th className="px-4 py-3 text-center text-xs uppercase text-gray-400">Pago</th>
                   <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
                 </tr></thead>
@@ -4520,8 +4401,19 @@ export default function Admin() {
                     const selectedBrand = availableBrands.find(brand => String(brand.id) === String(edit.idmarca));
                     const isDirty = Boolean(registrationEdits[registrationKey]);
                     const isEditingNumber = Boolean(editingRegistrationNumbers[registrationKey]);
+                    const planId = String(registration.plan_id || registration.tipo_inscripcion || registration.modalidad_diseno || '').toLocaleLowerCase('es-AR');
+                    const isExtraPlan = Number(registration.numero) === 0 || ['extra', 'sin_numero'].includes(planId);
+                    const isOfficialPlan = Boolean(registration.es_diseno_oficial) || Boolean(registration.idauto_oficial) || ['diseno_oficial', 'pintura_oficial'].includes(planId);
+                    const designLabel = isOfficialPlan
+                      ? (['diseno_oficial', 'pintura_oficial'].includes(planId) && registration.plan_titulo ? registration.plan_titulo : 'Diseño oficial')
+                      : registration.plan_titulo
+                        || (['diseno_liga', 'personalizado_liga'].includes(planId) ? 'Diseño de la liga'
+                          : planId === 'personalizado' ? 'Personalizado' : '');
+                    const amountDue = registration.total_abonar ?? registration.precio_inscripcion;
 
-                    return <tr key={registrationKey} className={`${isDirty ? 'bg-yellow-400/5' : ''} hover:bg-racing-card/60`}>
+                    const isSelectedDriver = String(selectedRegistrationDriverId) === String(registration.idpiloto);
+
+                    return <tr key={registrationKey} className={`${isSelectedDriver ? 'bg-racing-red/10 shadow-[inset_3px_0_0_#e63946]' : isDirty ? 'bg-yellow-400/5' : ''} hover:bg-racing-card/60`}>
                       <td className="px-4 py-3">
                         {isEditingNumber ? (
                           <div className="flex items-center gap-1.5">
@@ -4560,7 +4452,7 @@ export default function Admin() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-lg font-semibold italic text-white">{registration.nombre}</td>
+                      <td className="px-4 py-3"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-lg font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
                       <td className="px-4 py-3">
                         <div className="grid min-w-[300px] grid-cols-2 gap-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -4587,6 +4479,17 @@ export default function Admin() {
                           </select>
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        {!isExtraPlan ? (
+                          isOfficialPlan ? <div className="min-w-[190px] max-w-64">
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-yellow-300">{designLabel}</span>
+                            <span className="mt-1 block break-words text-sm leading-relaxed text-gray-300">{registration.auto_oficial_descripcion || 'Sin descripción'}</span>
+                          </div> : <span className={`inline-flex border px-3 py-2 text-xs font-bold uppercase tracking-wider ${['diseno_liga', 'personalizado_liga'].includes(planId) ? 'border-violet-400/30 bg-violet-400/10 text-violet-300' : 'border-cyan-400/30 bg-cyan-400/10 text-cyan-300'}`}>{designLabel || 'Personalizado'}</span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {amountDue !== null && amountDue !== undefined ? <strong className="whitespace-nowrap font-racing text-xl font-bold text-green-400">{formatPrice(amountDue)}</strong> : <span className="text-xs text-gray-600">Sin definir</span>}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <label className={`inline-flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase ${edit.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
                           <input
@@ -4605,7 +4508,7 @@ export default function Admin() {
                       </td>
                     </tr>;
                   }) : (
-                    <tr><td colSpan="5" className="px-4 py-12 text-center text-gray-500">{registrationChampionshipFilter ? 'No hay inscripciones que coincidan con la búsqueda.' : 'Seleccioná un campeonato para ver y gestionar sus pilotos.'}</td></tr>
+                    <tr><td colSpan="7" className="px-4 py-12 text-center text-gray-500">{registrationChampionshipFilter ? 'No hay inscripciones que coincidan con la búsqueda.' : 'Seleccioná un campeonato para ver y gestionar sus pilotos.'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -4613,7 +4516,7 @@ export default function Admin() {
             {displayedRegistrations.length > 0 ? (
               <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-gray-400">
-                  Mostrando {(registrationPage - 1) * adminPageSize + 1}-{Math.min(registrationPage * adminPageSize, displayedRegistrations.length)} de {displayedRegistrations.length}
+                  Mostrando {(registrationPage - 1) * registrationPageSize + 1}-{Math.min(registrationPage * registrationPageSize, displayedRegistrations.length)} de {displayedRegistrations.length}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
