@@ -54,7 +54,7 @@ function SectorMiniTable({ sectors, fastestSectors, leaderSectors }) {
   if (!sectors?.length) return null;
 
   return (
-    <div className="grid shrink-0 gap-x-3 font-racing tabular-nums" style={{ gridTemplateColumns: `repeat(${sectors.length}, minmax(0, 1fr))` }}>
+    <div className="grid shrink-0 gap-x-2 font-racing tabular-nums" style={{ gridTemplateColumns: `repeat(${sectors.length}, minmax(0, 1fr))` }}>
       {sectors.map(sector => (
         <span key={`label-${sector.index}`} className="flex items-baseline gap-1 text-left text-[11px] font-bold uppercase text-white">
           S{sector.index + 1}
@@ -399,7 +399,7 @@ export default function LiveTiming() {
         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/85 to-black/35" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/25" />
 
-        <div className="relative z-10 mx-auto grid max-w-[1600px] items-center gap-5 lg:grid-cols-[1fr_420px]">
+        <div className="relative z-10 mx-auto grid max-w-[1900px] items-center gap-5 lg:grid-cols-[1fr_420px]">
           <div className="max-w-4xl">
             {weeklyEvents.length > 1 && (
               <div className="mb-3 flex max-w-full gap-2 overflow-x-auto pb-1 scrollbar-hidden">
@@ -467,7 +467,7 @@ export default function LiveTiming() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1900px] px-2 py-3 sm:px-4 lg:px-6">
         {serviceUnavailable && (
           <section className="flex min-h-[500px] items-center justify-center border border-racing-border bg-black px-6 py-16 text-center">
             <div>
@@ -551,26 +551,26 @@ export default function LiveTiming() {
                 return (
                   <article
                     key={`mobile-${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}
-                    className={`timing-driver-row relative p-3 ${animationClass} ${isQualifyingSession(timing?.session) ? '' : driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
-                    style={{ '--row-shift': `${positionChange * 88}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
+                    className={`timing-driver-row relative p-3.5 ${animationClass} ${isQualifyingSession(timing?.session) ? '' : driver.laps >= REQUIRED_LAPS ? 'timing-driver-row-enabled' : 'timing-driver-row-pending'}`}
+                    style={{ '--row-shift': `${positionChange * 150}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="flex h-9 min-w-9 shrink-0 items-center justify-center gap-0.5 bg-black px-1 font-racing text-xl font-bold text-white">
+                      <span className="flex h-10 min-w-10 shrink-0 items-center justify-center gap-0.5 bg-black px-1 font-racing text-xl font-bold text-white">
                         {index + 1}
                         {positionChange > 0 ? <ArrowUpIcon className="timing-position-arrow h-3.5 w-3.5 text-green-400" /> : null}
                         {positionChange < 0 ? <ArrowDownIcon className="timing-position-arrow h-3.5 w-3.5 text-red-400" /> : null}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-lg" />
-                          <h3 className="truncate font-semibold text-white">{driver.name}</h3>
-                          {driver.ballast > 0 ? (
-                            <span className="shrink-0 font-racing text-sm font-bold text-yellow-300">
-                              {formatBallast(driver.ballast)}
-                            </span>
-                          ) : null}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex min-w-0 items-start gap-2">
+                            <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="mt-0.5 shrink-0 text-lg" />
+                            <div className="min-w-0">
+                              <h3 className="break-words font-semibold leading-tight text-white">{driver.name}</h3>
+                              {(driver.team || driver.raceNumber || driver.ballast > 0) ? <p className="mt-1 text-[10px] uppercase text-gray-500">{driver.team || (driver.raceNumber ? `#${driver.raceNumber}` : '')}{driver.ballast > 0 ? <span className="ml-2 font-racing font-bold text-yellow-300">{formatBallast(driver.ballast)}</span> : null}</p> : null}
+                            </div>
+                          </div>
                           {driver.connected && (
-                            <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-green-400">
+                            <span className="inline-flex shrink-0 items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-green-400">
                               <span className="relative flex h-2 w-2">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
@@ -579,28 +579,26 @@ export default function LiveTiming() {
                             </span>
                           )}
                         </div>
-                        <div className="relative mt-1 flex min-h-12 items-center justify-end overflow-hidden">
+                        <div className="mt-3 flex min-h-14 items-center gap-3 border-t border-white/5 pt-3">
                           {driver.carBrandLogo ? (
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="pointer-events-none absolute left-1/2 top-1/2 h-[175%] w-44 -translate-x-1/2 -translate-y-1/2 object-contain object-center opacity-60"
+                              className="h-10 w-16 shrink-0 object-contain"
                             />
                           ) : null}
-                          <p className="relative z-10 w-full truncate py-2 pl-20 pr-2 text-right text-sm font-bold uppercase text-white [text-shadow:0_2px_5px_#000,0_0_10px_#000]">
-                            {driver.displayCarModel}
-                          </p>
+                          <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Auto</p><p className="break-words text-sm font-bold uppercase leading-tight text-white">{driver.displayCarModel}</p></div>
                         </div>
                       </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/5 pt-3">
-                      <div className="col-span-2">
+                      <div className="col-span-2 overflow-x-auto pb-1">
                         <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
                       </div>
                       <div>
                         <p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Mejor vuelta</p>
-                        <p className={`font-racing text-2xl font-bold tabular-nums ${driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
+                        <p className={`font-racing text-xl font-bold tabular-nums min-[380px]:text-2xl ${driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold uppercase tracking-wider text-gray-600">Diferencia</p>
@@ -629,17 +627,17 @@ export default function LiveTiming() {
             </div>
 
             <div className="scrollbar-hidden hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1240px] table-fixed border-collapse text-left text-base">
+              <table className={`w-full table-fixed border-collapse text-left text-base ${isQualifyingSession(timing?.session) ? 'min-w-[1500px]' : 'min-w-[1690px]'}`}>
                 <thead className="bg-black text-[10px] font-bold uppercase tracking-widest text-gray-500">
                   <tr>
                     <th className="w-16 px-4 py-3 text-center">Pos.</th>
-                    <th className="w-[280px] px-4 py-3">Piloto</th>
-                    <th className="w-[230px] px-4 py-3">Auto</th>
-                    <th className="w-[280px] px-4 py-3">Sectores</th>
-                    <th className="w-[150px] px-4 py-3 text-right">Mejor vuelta</th>
-                    <th className="w-[110px] px-4 py-3 text-right">Diferencia</th>
-                    <th className="w-[80px] px-4 py-3 text-center">Vueltas</th>
-                    <th className="w-[120px] px-4 py-3 text-right">Vel. máx.</th>
+                    <th className="w-[340px] px-4 py-3">Piloto</th>
+                    <th className="w-[340px] px-4 py-3">Auto</th>
+                    <th className="w-[260px] px-4 py-3">Sectores</th>
+                    <th className="w-[160px] px-4 py-3 text-right">Mejor vuelta</th>
+                    <th className="w-[120px] px-4 py-3 text-right">Diferencia</th>
+                    <th className="w-[90px] px-4 py-3 text-center">Vueltas</th>
+                    <th className="w-[130px] px-4 py-3 text-right">Vel. máx.</th>
                     {!isQualifyingSession(timing?.session) && <th className="w-[190px] px-4 py-3 text-center">Habilitación</th>}
                   </tr>
                 </thead>
@@ -666,7 +664,7 @@ export default function LiveTiming() {
                             {positionChange < 0 ? <ArrowDownIcon className="timing-position-arrow h-4 w-4 text-red-400" /> : null}
                           </span>
                         </td>
-                        <td className="w-[280px] px-4 py-3">
+                        <td className="w-[340px] px-4 py-3">
                           <div className="min-w-0">
                             <div className="min-w-0">
                               <div className="flex min-w-0 items-center gap-2">
@@ -691,17 +689,19 @@ export default function LiveTiming() {
                             </div>
                           </div>
                         </td>
-                        <td className="relative h-[70px] max-w-[280px] overflow-hidden px-4 py-3">
+                        <td className="h-[70px] w-[340px] px-4 py-3">
+                          <div className="flex min-w-0 items-center gap-4">
                           {driver.carBrandLogo ? (
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="pointer-events-none absolute left-1/3 top-1/2 h-[75%] w-60 -translate-x-1/2 -translate-y-1/2 object-contain object-center opacity-60"
+                              className="h-12 w-24 shrink-0 object-contain"
                             />
                           ) : null}
-                          <span className="relative z-10 block truncate py-3 pl-28 pr-2 text-right text-base font-bold uppercase text-white [text-shadow:0_2px_6px_#000,0_0_12px_#000]">
+                          <span className="min-w-0 break-words text-base font-bold uppercase leading-tight text-white">
                             {driver.displayCarModel}
                           </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />

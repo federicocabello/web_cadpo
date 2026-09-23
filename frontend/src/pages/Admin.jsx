@@ -159,7 +159,6 @@ const championshipYears = Array.from(
   (_, index) => new Date().getFullYear() - index,
 );
 const adminPageSize = 25;
-const registrationPageSize = 12;
 
 const emptyChampionshipForm = {
   idcategoria: '',
@@ -662,7 +661,6 @@ export default function Admin() {
   const [carPage, setCarPage] = useState(1);
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
-  const [registrationPage, setRegistrationPage] = useState(1);
   const [registrationEdits, setRegistrationEdits] = useState({});
   const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
   const [editingRegistrationNumbers, setEditingRegistrationNumbers] = useState({});
@@ -1041,20 +1039,6 @@ export default function Admin() {
         .some(value => String(value).toLocaleLowerCase('es-AR').includes(search));
     });
   }, [registrationChampionshipFilter, registrationSearch, registrations]);
-
-  const registrationPageCount = Math.max(1, Math.ceil(displayedRegistrations.length / registrationPageSize));
-  const paginatedRegistrations = useMemo(
-    () => displayedRegistrations.slice((registrationPage - 1) * registrationPageSize, registrationPage * registrationPageSize),
-    [displayedRegistrations, registrationPage],
-  );
-
-  useEffect(() => {
-    setRegistrationPage(1);
-  }, [registrationChampionshipFilter, registrationSearch]);
-
-  useEffect(() => {
-    setRegistrationPage(current => Math.min(current, registrationPageCount));
-  }, [registrationPageCount]);
 
   useEffect(() => {
     if (registrationChampionshipFilter && !selectedRegistrationChampionship) {
@@ -4380,7 +4364,7 @@ export default function Admin() {
                   <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
                 </tr></thead>
                 <tbody className="divide-y divide-racing-border">
-                  {paginatedRegistrations.length ? paginatedRegistrations.map(registration => {
+                  {displayedRegistrations.length ? displayedRegistrations.map(registration => {
                     const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
                     const registeredCar = cars.find(car => String(car.id) === String(registration.idauto));
                     const edit = registrationEdits[registrationKey] || {
@@ -4513,36 +4497,6 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
-            {displayedRegistrations.length > 0 ? (
-              <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-gray-400">
-                  Mostrando {(registrationPage - 1) * registrationPageSize + 1}-{Math.min(registrationPage * registrationPageSize, displayedRegistrations.length)} de {displayedRegistrations.length}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRegistrationPage(current => Math.max(1, current - 1))}
-                    disabled={registrationPage === 1}
-                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                    aria-label="Página anterior"
-                  >
-                    <ChevronLeftIcon className="h-5 w-5" />
-                  </button>
-                  <span className="min-w-24 text-center font-racing text-sm font-bold text-white">
-                    Página {registrationPage} de {registrationPageCount}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setRegistrationPage(current => Math.min(registrationPageCount, current + 1))}
-                    disabled={registrationPage === registrationPageCount}
-                    className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                    aria-label="Página siguiente"
-                  >
-                    <ChevronRightIcon className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </section>
         </div>
       );

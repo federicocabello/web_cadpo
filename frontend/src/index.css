@@ -8,6 +8,7 @@
   }
 
   html {
+    --cadpo-header-height: 4rem;
     scroll-behavior: smooth;
   }
 
@@ -29,6 +30,14 @@
 @layer components {
   .font-anton {
     font-family: 'Anton', sans-serif;
+  }
+
+  .home-race-height {
+    min-height: calc(100svh - var(--cadpo-header-height));
+  }
+
+  .home-race-anchor {
+    scroll-margin-top: var(--cadpo-header-height);
   }
 
   .btn-primary {
@@ -345,6 +354,35 @@
   50% { transform: perspective(60px) rotateY(16deg) skewY(3deg) translateX(2px); }
 }
 
+@keyframes social-carousel-loop-two {
+  0%, 42% { transform: translateY(0); }
+  50%, 92% { transform: translateY(-2.5rem); }
+  100% { transform: translateY(-5rem); }
+}
+
+.social-carousel-track-two {
+  animation: social-carousel-loop-two 9s ease-in-out infinite;
+}
+
+.social-carousel:hover .social-carousel-track-two,
+.social-carousel:focus-within .social-carousel-track-two {
+  animation-play-state: paused;
+}
+
+@keyframes championship-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.championship-ticker-track {
+  animation: championship-ticker-scroll 48s linear infinite;
+  will-change: transform;
+}
+
+.championship-ticker:hover .championship-ticker-track {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .race-hero-background,
   .registration-background-transition,
@@ -362,7 +400,9 @@
   }
 
   .cta-attention,
-  .registration-info-flag {
+  .registration-info-flag,
+  .social-carousel-track-two,
+  .championship-ticker-track {
     animation: none;
   }
 }

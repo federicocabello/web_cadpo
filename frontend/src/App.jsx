@@ -74,7 +74,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/eventos" element={<Events />} />
-          <Route path="/proximas-fechas" element={<Events initialStatus="upcoming" />} />
+          <Route path="/proximas-fechas" element={<Events />} />
           <Route path="/campeonatos" element={<Championships />} />
           <Route path="/proximos-campeonatos" element={<Championships initialStatus="upcoming" />} />
           <Route path="/tiempos-en-vivo" element={<LiveTiming />} />

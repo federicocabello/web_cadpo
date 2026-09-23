@@ -4,6 +4,7 @@ const c = require('../controllers/championshipsController');
 const uploadChampionshipRules = require('../middleware/uploadChampionshipRules');
 
 router.get('/',                         c.getAll);
+router.get('/latest-active-standings',  c.getLatestActiveStandings);
 router.get('/:id',                      c.getById);
 router.get('/:id/standings',            c.getStandings);
 router.get('/:id/calendario',           c.getCalendar);

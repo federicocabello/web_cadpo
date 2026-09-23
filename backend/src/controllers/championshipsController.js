@@ -145,6 +145,61 @@ const getPrizes = async (req, res, next) => {
   }
 };
 
+const getLatestActiveStandings = async (req, res, next) => {
+  try {
+    const [[championship]] = await pool.query(
+      `SELECT c.id, c.temporada, c.anio,
+              cat.categoria, cat.logo AS categoria_logo,
+              COUNT(DISTINCT r.ronda) AS fechas_cumplidas,
+              MAX(r.fecha) AS ultima_fecha_resultado
+       FROM campeonatos c
+       JOIN categorias cat ON cat.id = c.idcategoria
+       JOIN resultados r ON r.idcampeonato = c.id
+       GROUP BY c.id, c.temporada, c.anio, cat.id
+       ORDER BY MAX(r.fecha) DESC, c.id DESC
+       LIMIT 1`
+    );
+
+    if (!championship) return res.json({ data: null });
+
+    const [standings] = await pool.query(
+      `SELECT p.id AS idpiloto, p.nombre,
+              am.marca, am.logo AS auto_logo,
+              SUM(
+                COALESCE(r.presentismo, 0) +
+                COALESCE(r.pts_qualy_sprint, 0) +
+                COALESCE(r.pts_sprint, 0) +
+                COALESCE(r.pts_qualy_final, 0) +
+                COALESCE(r.pts_final, 0)
+              ) AS puntos
+       FROM resultados r
+       JOIN pilotos p ON p.id = r.idpiloto
+       LEFT JOIN inscriptos i
+         ON i.idcampeonato = r.idcampeonato AND i.idpiloto = r.idpiloto
+       LEFT JOIN autos a ON a.id = i.idauto
+       LEFT JOIN autos_marcas am ON am.id = a.marca
+       WHERE r.idcampeonato = ?
+       GROUP BY p.id, p.nombre, am.id, am.marca, am.logo
+       ORDER BY puntos DESC, p.nombre ASC
+       LIMIT 10`,
+      [championship.id]
+    );
+
+    res.json({
+      data: {
+        ...championship,
+        standings: standings.map((standing, index) => ({
+          ...standing,
+          posicion: index + 1,
+          puntos: Number(standing.puntos || 0),
+        })),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const savePrizes = async (req, res, next) => {
   const championshipId = Number(req.params.id);
   const submittedPrizes = Array.isArray(req.body.premios) ? req.body.premios : [];
@@ -279,6 +334,7 @@ module.exports = {
   getAll,
   getById,
   getStandings,
+  getLatestActiveStandings,
   getCalendar,
   getPrizes,
   savePrizes,

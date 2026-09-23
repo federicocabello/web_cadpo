@@ -28,3 +28,7 @@ dist-ssr
 /public/media/**
 !/public/media/**/
 !/public/media/**/.gitkeep
+
+# Descargas pesadas: se copian manualmente a public antes del build o al servidor.
+/public/content-manager.zip
+/public/instructivo-instalacion.mp4

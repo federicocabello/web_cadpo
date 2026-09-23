@@ -47,6 +47,7 @@ export const eventsApi = {
 
 export const championshipsApi = {
   getAll: params => api.get('/championships', { params }),
+  getLatestActiveStandings: () => api.get('/championships/latest-active-standings'),
   getById: id => api.get(`/championships/${id}`),
   getStandings: id => api.get(`/championships/${id}/standings`),
   getCalendar: id => api.get(`/championships/${id}/calendario`),
