@@ -1,13 +1,11 @@
 import { Link } from 'react-router-dom';
 import {
   ArrowRightIcon,
-  CalendarIcon,
   DocumentTextIcon,
   FlagIcon,
   TrophyIcon,
   UserIcon,
 } from '@heroicons/react/24/outline';
-import { getDatabaseDateParts } from '../utils/calendarDate';
 
 const statusConfig = {
   registration: { label: 'Inscripciones abiertas', className: 'inline-flex shrink-0 items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300' },
@@ -16,19 +14,9 @@ const statusConfig = {
   completed: { label: 'Finalizado', className: 'badge-completed shrink-0' },
 };
 
-const formatYear = value => {
-  if (!value) return null;
-  const str = String(value).trim();
-  if (/^\d{4}$/.test(str)) return Number(str);
-
-  return getDatabaseDateParts(str)?.year || null;
-};
-
 export default function ChampionshipCard({ championship, wide = false }) {
   const displayStatus = championship.displayStatus || championship.status;
   const cfg = statusConfig[displayStatus] || statusConfig.completed;
-  const years = [formatYear(championship.primera_fecha), formatYear(championship.ultima_fecha)]
-    .filter(Boolean);
 
   return (
     <article className={`card-glass group relative flex animate-slide-up flex-col gap-5 overflow-hidden p-5 sm:p-6 ${wide ? 'lg:flex-row lg:items-center lg:gap-8 lg:p-8' : ''}`}>
@@ -62,12 +50,6 @@ export default function ChampionshipCard({ championship, wide = false }) {
           <FlagIcon className="w-4 h-4 text-racing-red" />
           <span>{championship.rondas || 0} fechas</span>
         </div>
-        {years.length > 0 && (
-          <div className="flex items-center gap-2 text-gray-300">
-            <CalendarIcon className="w-4 h-4 text-racing-red" />
-            <span>{years.length === 2 ? `${years[0]} - ${years[1]}` : years[0]}</span>
-          </div>
-        )}
       </div>
 
       {championship.campeon_nombre && (

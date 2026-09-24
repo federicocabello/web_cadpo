@@ -6,7 +6,6 @@ const multer = require('multer');
 const publicDir = require('../utils/publicDir');
 const replayDir = path.join(publicDir, 'media', 'replays');
 const allowedExtensions = new Set(['.vcr', '.rpl', '.replay', '.acreplay', '.zip', '.rar', '.7z']);
-const maximumSizeMb = Math.max(1, Number(process.env.REPLAY_MAX_FILE_MB) || 500);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -21,7 +20,6 @@ const storage = multer.diskStorage({
 
 module.exports = multer({
   storage,
-  limits: { fileSize: maximumSizeMb * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
     if (!allowedExtensions.has(extension)) {

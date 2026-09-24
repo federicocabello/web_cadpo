@@ -94,6 +94,9 @@ export const carBrandsApi = {
 export const categoriesApi = {
   getAll: () => api.get('/categories'),
   getById: id => api.get(`/categories/${id}`),
+  getGallery: id => api.get(`/categories/${id}/gallery`),
+  uploadGalleryImages: (id, championshipId, data) => api.post(`/categories/${id}/gallery/${championshipId}`, data, { timeout: 60000 }),
+  removeGalleryImage: (id, championshipId, filename, source) => api.delete(`/categories/${id}/gallery/${championshipId}/${encodeURIComponent(filename)}`, { params: { source } }),
   create: data => api.post('/categories', data),
   update: (id, data) => api.put(`/categories/${id}`, data),
   remove: id => api.delete(`/categories/${id}`),
@@ -122,7 +125,7 @@ export const resultsApi = {
 
 export const replaysApi = {
   getAll: params => api.get('/replays', { params }),
-  upload: data => api.post('/replays', data, { timeout: 600000 }),
+  upload: (data, onUploadProgress) => api.post('/replays', data, { timeout: 0, onUploadProgress }),
   remove: id => api.delete(`/replays/${id}`),
 };
 

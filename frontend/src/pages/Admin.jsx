@@ -91,6 +91,12 @@ const resultAchievementFields = [
   { key: 'ganador_final', label: 'Ganó Final' },
   { key: 'campeon', label: 'Campeón' },
 ];
+const resultSanctionFields = [
+  { key: 'desc_sancion_qualy_sprint', label: 'Clasificación Sprint' },
+  { key: 'desc_sancion_sprint', label: 'Sprint' },
+  { key: 'desc_sancion_qualy_final', label: 'Clasificación Final' },
+  { key: 'desc_sancion_final', label: 'Final' },
+];
 const resultGridColumns = [
   { key: 'piloto', label: 'Piloto', type: 'pilot' },
   ...resultSpreadsheetColumns,
@@ -578,6 +584,7 @@ export default function Admin() {
   const imageInputRef = useRef(null);
   const layoutInputRef = useRef(null);
   const categoryLogoInputRef = useRef(null);
+  const categoryGalleryInputRef = useRef(null);
   const carBrandLogoInputRef = useRef(null);
   const championshipRulesInputRef = useRef(null);
   const carImageInputRef = useRef(null);
@@ -624,6 +631,7 @@ export default function Admin() {
   const [replayFile, setReplayFile] = useState(null);
   const [replayMessage, setReplayMessage] = useState('');
   const [savingReplay, setSavingReplay] = useState(false);
+  const [replayUploadProgress, setReplayUploadProgress] = useState(0);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
@@ -664,6 +672,12 @@ export default function Admin() {
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [categorySearch, setCategorySearch] = useState('');
   const [categorySortDirection, setCategorySortDirection] = useState('asc');
+  const [categoryGalleryCategoryId, setCategoryGalleryCategoryId] = useState('');
+  const [categoryGalleryChampionshipId, setCategoryGalleryChampionshipId] = useState('');
+  const [categoryGallerySeasons, setCategoryGallerySeasons] = useState([]);
+  const [categoryGalleryFiles, setCategoryGalleryFiles] = useState([]);
+  const [categoryGalleryMessage, setCategoryGalleryMessage] = useState('');
+  const [savingCategoryGallery, setSavingCategoryGallery] = useState(false);
   const [championshipForm, setChampionshipForm] = useState(emptyChampionshipForm);
   const [championshipPrizes, setChampionshipPrizes] = useState([]);
   const [championshipPrizesId, setChampionshipPrizesId] = useState('');
@@ -2164,7 +2178,7 @@ export default function Admin() {
       return dirtyResults[resultKey];
     });
     const isEmptyNewRow = result => result._isNew
-      && ['piloto', 'piloto_sprint', 'piloto_final', ...resultSpreadsheetColumns.filter(column => column.type !== 'pilot').map(column => column.key)]
+      && ['piloto', 'piloto_sprint', 'piloto_final', ...resultSpreadsheetColumns.filter(column => column.type !== 'pilot').map(column => column.key), ...resultSanctionFields.map(field => field.key)]
         .every(field => !String(result[field] ?? '').trim());
     const emptyNewRows = dirtyRows.filter(isEmptyNewRow);
     const pendingResults = dirtyRows.filter(result => !isEmptyNewRow(result));
@@ -2266,7 +2280,7 @@ export default function Admin() {
     setResultMessage('');
 
     try {
-      const editableFields = ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_sprint', 'pts_sprint', 'pos_qualy_final', 'pts_qualy_final', 'pos_final', 'pts_final', ...resultAchievementFields.map(field => field.key)];
+      const editableFields = ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_sprint', 'pts_sprint', 'pos_qualy_final', 'pts_qualy_final', 'pos_final', 'pts_final', ...resultSanctionFields.map(field => field.key), ...resultAchievementFields.map(field => field.key)];
       const assignments = new Map();
 
       dirtyRounds.forEach(roundKey => {
@@ -2301,6 +2315,15 @@ export default function Admin() {
             });
           });
         });
+
+        roundRows.forEach(result => {
+          if (!result.idpiloto) return;
+          const assignment = assignments.get(`${roundKey}:${result.idpiloto}`);
+          if (!assignment) return;
+          resultSanctionFields.forEach(field => {
+            assignment.data[field.key] = result[field.key] ?? '';
+          });
+        });
       });
 
       const changes = [
@@ -2318,6 +2341,10 @@ export default function Admin() {
             pts_qualy_final: Number(data.pts_qualy_final || 0),
             pos_final: String(data.pos_final || '').trim(),
             pts_final: parseResultPoints(data.pts_final),
+            desc_sancion_qualy_sprint: String(data.desc_sancion_qualy_sprint || '').trim(),
+            desc_sancion_sprint: String(data.desc_sancion_sprint || '').trim(),
+            desc_sancion_qualy_final: String(data.desc_sancion_qualy_final || '').trim(),
+            desc_sancion_final: String(data.desc_sancion_final || '').trim(),
             pole_sprint: Number(Boolean(Number(data.pole_sprint))),
             ganador_sprint: Number(Boolean(Number(data.ganador_sprint))),
             pole_final: Number(Boolean(Number(data.pole_final))),
@@ -2409,6 +2436,66 @@ export default function Admin() {
       setCategoryMessage(err.response?.data?.error || 'No se pudo guardar la categoría.');
     } finally {
       setSavingCategory(false);
+    }
+  };
+
+  const loadCategoryGallery = async (categoryId, preferredChampionshipId = '') => {
+    setCategoryGalleryCategoryId(String(categoryId || ''));
+    setCategoryGalleryMessage('');
+    setCategoryGalleryFiles([]);
+    if (categoryGalleryInputRef.current) categoryGalleryInputRef.current.value = '';
+    if (!categoryId) {
+      setCategoryGalleryChampionshipId('');
+      setCategoryGallerySeasons([]);
+      return;
+    }
+    try {
+      const response = await categoriesApi.getGallery(categoryId);
+      const seasons = response.data.data?.seasons || [];
+      const selectedId = seasons.some(item => String(item.id) === String(preferredChampionshipId))
+        ? String(preferredChampionshipId)
+        : String(seasons[0]?.id || '');
+      setCategoryGallerySeasons(seasons);
+      setCategoryGalleryChampionshipId(selectedId);
+    } catch (error) {
+      setCategoryGallerySeasons([]);
+      setCategoryGalleryChampionshipId('');
+      setCategoryGalleryMessage(error.response?.data?.error || 'No se pudo cargar la galería de la categoría.');
+    }
+  };
+
+  const uploadCategoryGallery = async () => {
+    if (!categoryGalleryCategoryId || !categoryGalleryChampionshipId || !categoryGalleryFiles.length) return;
+    setSavingCategoryGallery(true);
+    setCategoryGalleryMessage('');
+    try {
+      const data = new FormData();
+      categoryGalleryFiles.forEach(file => data.append('images', file));
+      const response = await categoriesApi.uploadGalleryImages(categoryGalleryCategoryId, categoryGalleryChampionshipId, data);
+      setCategoryGallerySeasons(current => current.map(season => String(season.id) === String(categoryGalleryChampionshipId)
+        ? { ...season, images: response.data.data || [] }
+        : season));
+      setCategoryGalleryFiles([]);
+      if (categoryGalleryInputRef.current) categoryGalleryInputRef.current.value = '';
+      setCategoryGalleryMessage(response.data.message || 'Fotos cargadas correctamente.');
+    } catch (error) {
+      setCategoryGalleryMessage(error.response?.data?.error || 'No se pudieron cargar las fotos.');
+    } finally {
+      setSavingCategoryGallery(false);
+    }
+  };
+
+  const deleteCategoryGalleryImage = async image => {
+    if (!window.confirm('¿Eliminar esta foto de la galería de la temporada?')) return;
+    setCategoryGalleryMessage('');
+    try {
+      const response = await categoriesApi.removeGalleryImage(categoryGalleryCategoryId, categoryGalleryChampionshipId, image.filename, image.source);
+      setCategoryGallerySeasons(current => current.map(season => String(season.id) === String(categoryGalleryChampionshipId)
+        ? { ...season, images: response.data.data || [] }
+        : season));
+      setCategoryGalleryMessage(response.data.message || 'Foto eliminada.');
+    } catch (error) {
+      setCategoryGalleryMessage(error.response?.data?.error || 'No se pudo eliminar la foto.');
     }
   };
 
@@ -3094,6 +3181,7 @@ export default function Admin() {
     event.preventDefault();
     if (!replayFile || !replayForm.idcampeonato || !replayForm.ronda || !replayForm.tanda.trim()) return;
     setSavingReplay(true);
+    setReplayUploadProgress(0);
     setReplayMessage('');
     try {
       const data = new FormData();
@@ -3101,7 +3189,11 @@ export default function Admin() {
       data.append('ronda', replayForm.ronda);
       data.append('tanda', replayForm.tanda.trim());
       data.append('replay', replayFile);
-      const response = await replaysApi.upload(data);
+      const response = await replaysApi.upload(data, progressEvent => {
+        const ratio = progressEvent.progress
+          ?? (progressEvent.total ? progressEvent.loaded / progressEvent.total : 0);
+        setReplayUploadProgress(Math.min(100, Math.max(0, Math.round(ratio * 100))));
+      });
       const refreshed = await replaysApi.getAll();
       setReplays(refreshed.data.data || []);
       setReplayFile(null);
@@ -3137,12 +3229,20 @@ export default function Admin() {
             <form onSubmit={uploadReplay} className="mt-6 space-y-4">
               <label className="block"><span className="text-sm text-gray-300">Campeonato</span><select value={replayForm.idcampeonato} onChange={handleReplayChampionshipChange} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
               <label className="block"><span className="text-sm text-gray-300">Fecha</span><select value={replayForm.ronda} onChange={event => setReplayForm(current => ({ ...current, ronda: event.target.value }))} className="input-field mt-2" required disabled={!replayForm.idcampeonato}><option value="">Seleccionar fecha</option>{replayEvents.map(item => <option key={item.id} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label>
-              <label className="block"><span className="text-sm text-gray-300">Tanda</span><input list="replay-session-options" value={replayForm.tanda} onChange={event => setReplayForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" placeholder="Ej.: Final" maxLength="80" required/><datalist id="replay-session-options">{replaySessionOptions.map(option => <option key={option} value={option}/>)}</datalist></label>
+              <label className="block"><span className="text-sm text-gray-300">Tanda</span><select value={replayForm.tanda} onChange={event => setReplayForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar tanda</option>{replaySessionOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
               <label className="block"><span className="text-sm text-gray-300">Archivo del replay</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center hover:border-racing-red"><ArrowUpTrayIcon className="h-7 w-7 text-racing-red"/><span className="mt-2 break-all text-sm text-gray-300">{replayFile?.name || 'Seleccionar replay'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z</span></span><input ref={replayInputRef} type="file" accept=".vcr,.rpl,.replay,.acreplay,.zip,.rar,.7z" onChange={event => setReplayFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
               <button type="submit" disabled={savingReplay || !replayFile} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50">{savingReplay ? 'Subiendo replay...' : 'Publicar replay'}</button>
               {replayMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{replayMessage}</p> : null}
             </form>
           </section>
+
+          {savingReplay ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 px-5 backdrop-blur-md" role="status" aria-live="polite" aria-label="Subiendo replay">
+            <div className="w-full max-w-xl border border-racing-red/50 bg-racing-dark p-7 shadow-[0_0_60px_rgba(220,38,38,0.22)] sm:p-10">
+              <div className="flex items-center gap-4"><div className="relative h-14 w-14 shrink-0"><div className="absolute inset-0 animate-spin rounded-full border-2 border-racing-red/20 border-t-racing-red"/><ArrowUpTrayIcon className="absolute inset-0 m-auto h-6 w-6 text-racing-red"/></div><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-racing-red">No cierres esta pantalla</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">{replayUploadProgress >= 100 ? 'Procesando replay…' : 'Subiendo replay…'}</h2></div></div>
+              <div className="mt-7 h-3 overflow-hidden bg-white/10"><div className="h-full bg-racing-red transition-[width] duration-300" style={{ width: `${replayUploadProgress}%` }}/></div>
+              <div className="mt-3 flex items-center justify-between gap-4"><p className="truncate text-xs text-gray-500">{replayFile?.name}</p><strong className="font-racing text-2xl text-white">{replayUploadProgress}%</strong></div>
+            </div>
+          </div> : null}
 
           <section className="card-glass overflow-hidden">
             <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Replays publicados</h2></header>
@@ -3491,6 +3591,11 @@ export default function Admin() {
           {resultRound && resultAchievementRows.length ? <section className="border-t-4 border-black bg-black/20 px-4 py-5 lg:px-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Marcas oficiales</p><h3 className="mt-1 font-racing text-xl font-bold text-white">Pole, victorias y campeón</h3></div><p className="text-xs text-gray-500">Marcá los reconocimientos y presioná Guardar.</p></div>
             <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] border-collapse text-sm"><thead><tr className="bg-racing-dark text-[10px] uppercase tracking-wider text-gray-500"><th className="border border-racing-border px-3 py-3 text-left">Piloto</th>{resultAchievementFields.map(field => <th key={field.key} className="border border-racing-border px-3 py-3 text-center">{field.label}</th>)}</tr></thead><tbody>{resultAchievementRows.map(result => <tr key={result.id || result._key} className="bg-racing-gray"><td className="border border-racing-border px-3 py-2 font-semibold text-white">{result.piloto}</td>{resultAchievementFields.map(field => <td key={field.key} className="border border-racing-border px-3 py-2 text-center"><label className="inline-flex cursor-pointer items-center justify-center"><input type="checkbox" checked={Boolean(Number(result[field.key]))} onChange={() => handleResultAchievementChange(result, field.key)} className="h-5 w-5 accent-red-600"/><span className="sr-only">{field.label}: {result.piloto}</span></label></td>)}</tr>)}</tbody></table></div>
+          </section> : null}
+
+          {resultRound && resultAchievementRows.length ? <section className="border-t-4 border-black bg-red-950/[0.08] px-4 py-5 lg:px-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-red-400">Comisariato deportivo</p><h3 className="mt-1 font-racing text-xl font-bold text-white">Sanciones por tanda</h3></div><p className="text-xs text-gray-500">Escribí solamente el motivo. La posición se corrige manualmente en la planilla superior.</p></div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1250px] border-collapse text-sm"><thead><tr className="bg-racing-dark text-[10px] uppercase tracking-wider text-gray-500"><th className="sticky left-0 z-10 min-w-56 border border-racing-border bg-racing-dark px-3 py-3 text-left">Piloto</th>{resultSanctionFields.map(field => <th key={field.key} className="min-w-64 border border-racing-border px-3 py-3 text-left">{field.label}</th>)}</tr></thead><tbody>{resultAchievementRows.map(result => <tr key={result.id || result._key} className="bg-racing-gray"><td className="sticky left-0 z-10 border border-racing-border bg-racing-gray px-3 py-3 font-semibold text-white">{result.piloto}</td>{resultSanctionFields.map(field => { const value = String(result[field.key] || ''); return <td key={field.key} className={`border p-1 ${value ? 'border-red-500/50 bg-red-500/[0.08]' : 'border-racing-border'}`}><textarea value={value} onChange={event => handleResultFieldChange({ idpiloto: result.idpiloto, piloto: result.piloto }, resultRound, result, field.key, event.target.value)} maxLength={500} rows={2} placeholder="Sin sanción" className={`min-h-16 w-full resize-y bg-transparent px-2 py-2 text-xs outline-none placeholder:text-gray-700 ${value ? 'text-red-200' : 'text-gray-300'} focus:bg-black/20`}/></td>; })}</tr>)}</tbody></table></div>
           </section> : null}
 
           {resultChampionshipId ? (
@@ -4089,6 +4194,7 @@ export default function Admin() {
     }
 
     if (activeSection === 'categorias') {
+      const selectedGallerySeason = categoryGallerySeasons.find(season => String(season.id) === String(categoryGalleryChampionshipId));
       return (
         <div className="grid grid-cols-1 2xl:grid-cols-[420px_1fr] gap-8">
           <section className="card-glass p-6">
@@ -4240,6 +4346,22 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="card-glass p-6 2xl:col-span-2">
+            <div className="flex flex-col gap-5 border-b border-racing-border pb-5 xl:flex-row xl:items-end xl:justify-between">
+              <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-racing-red">Galería histórica</p><h2 className="mt-1 font-racing text-2xl font-bold text-white">Fotos por categoría y temporada</h2><p className="mt-1 text-sm text-gray-500">Acá se centralizan las fotos del formulario y las imágenes exclusivas que agregues a la categoría.</p></div>
+              <div className="grid w-full gap-3 sm:grid-cols-2 xl:max-w-3xl">
+                <label><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Categoría</span><select value={categoryGalleryCategoryId} onChange={event => loadCategoryGallery(event.target.value)} className="input-field mt-2"><option value="">Seleccionar categoría</option>{categories.map(category => <option key={category.id} value={category.id}>{category.categoria}</option>)}</select></label>
+                <label><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Temporada</span><select value={categoryGalleryChampionshipId} onChange={event => { setCategoryGalleryChampionshipId(event.target.value); setCategoryGalleryFiles([]); setCategoryGalleryMessage(''); if (categoryGalleryInputRef.current) categoryGalleryInputRef.current.value = ''; }} className="input-field mt-2" disabled={!categoryGallerySeasons.length}><option value="">Seleccionar temporada</option>{categoryGallerySeasons.map(season => <option key={season.id} value={season.id}>Temporada {season.temporada} · {season.anio}</option>)}</select></label>
+              </div>
+            </div>
+
+            {!categoryGalleryCategoryId ? <div className="py-14 text-center text-gray-500"><PhotoIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná una categoría para administrar sus fotos.</p></div> : !categoryGallerySeasons.length ? <div className="py-14 text-center text-gray-500">La categoría todavía no tiene temporadas cargadas.</div> : <>
+              <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end"><label><span className="text-sm text-gray-300">Agregar fotos a {selectedGallerySeason ? `Temporada ${selectedGallerySeason.temporada} · ${selectedGallerySeason.anio}` : 'la temporada'}</span><input ref={categoryGalleryInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setCategoryGalleryFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-racing-red file:px-4 file:py-2 file:font-semibold file:text-white"/><small className="mt-1 block text-gray-500">Hasta 10 imágenes por carga, de 8 MB cada una.</small></label><button type="button" onClick={uploadCategoryGallery} disabled={!categoryGalleryFiles.length || savingCategoryGallery || !categoryGalleryChampionshipId} className="btn-primary min-h-12 justify-center disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingCategoryGallery ? 'Subiendo...' : `Subir ${categoryGalleryFiles.length || ''} foto${categoryGalleryFiles.length === 1 ? '' : 's'}`}</button></div>
+              {categoryGalleryMessage ? <p className="mt-4 border border-racing-border bg-black/20 p-3 text-sm text-gray-300">{categoryGalleryMessage}</p> : null}
+              <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{(selectedGallerySeason?.images || []).map(image => <article key={`${image.source}-${image.filename}`} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Galería de la categoría" className="h-full w-full object-cover"/><span className={`absolute bottom-2 left-2 bg-black/80 px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${image.source === 'formulario' ? 'text-yellow-300' : 'text-racing-red'}`}>{image.source === 'formulario' ? 'Formulario' : 'Categoría'}</span><button type="button" onClick={() => deleteCategoryGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{selectedGallerySeason && !selectedGallerySeason.images?.length ? <div className="col-span-full border border-dashed border-racing-border py-10 text-center text-sm text-gray-500">Esta temporada todavía no tiene fotos.</div> : null}</div>
+            </>}
           </section>
         </div>
       );

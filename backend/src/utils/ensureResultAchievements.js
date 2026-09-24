@@ -6,6 +6,10 @@ const columns = {
   pole_final: 'TINYINT(1) NOT NULL DEFAULT 0',
   ganador_final: 'TINYINT(1) NOT NULL DEFAULT 0',
   campeon: 'TINYINT(1) NOT NULL DEFAULT 0',
+  desc_sancion_qualy_sprint: "VARCHAR(500) NOT NULL DEFAULT ''",
+  desc_sancion_sprint: "VARCHAR(500) NOT NULL DEFAULT ''",
+  desc_sancion_qualy_final: "VARCHAR(500) NOT NULL DEFAULT ''",
+  desc_sancion_final: "VARCHAR(500) NOT NULL DEFAULT ''",
 };
 
 let schemaPromise;

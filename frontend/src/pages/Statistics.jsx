@@ -88,7 +88,7 @@ export default function Statistics() {
 
   return (
     <div className="animate-fade-in">
-      <div className="mx-auto max-w-7xl space-y-10 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="w-full max-w-none space-y-10 px-4 py-8 sm:px-6 lg:px-10 2xl:px-12">
         {loading ? (
           <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
         ) : error && !overview ? (

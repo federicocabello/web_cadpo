@@ -15,6 +15,7 @@ const RESULT_FIELDS = [
   'presentismo',
   'pos_qualy_sprint',
   'pts_qualy_sprint',
+  'desc_sancion_qualy_sprint',
   'pos_sprint',
   'pts_sprint',
   'rec_tiempo_sprint',
@@ -25,6 +26,7 @@ const RESULT_FIELDS = [
   'desc_sancion_sprint',
   'pos_qualy_final',
   'pts_qualy_final',
+  'desc_sancion_qualy_final',
   'pos_final',
   'pts_final',
   'rec_tiempo_final',
@@ -37,9 +39,11 @@ const RESULT_FIELDS = [
 
 const TEXT_FIELDS = new Set([
   'pos_qualy_sprint',
+  'desc_sancion_qualy_sprint',
   'pos_sprint',
   'desc_sancion_sprint',
   'pos_qualy_final',
+  'desc_sancion_qualy_final',
   'pos_final',
   'desc_sancion_final',
 ]);
