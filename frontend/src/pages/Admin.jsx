@@ -208,6 +208,17 @@ const planAliases = {
   diseno_liga: ['diseno_liga', 'diseno-liga', 'personalizado_liga'],
   diseno_oficial: ['diseno_oficial', 'pintura_oficial'],
 };
+const normalizeRegistrationPlanId = value => {
+  const normalized = String(value || '').trim().toLocaleLowerCase('es-AR');
+  return Object.entries(planAliases).find(([, aliases]) => aliases.includes(normalized))?.[0] || '';
+};
+const getRegistrationPlanId = registration => (
+  registration?.es_diseno_oficial || registration?.idauto_oficial
+    ? 'diseno_oficial'
+    : normalizeRegistrationPlanId(
+      registration?.plan_id || registration?.tipo_inscripcion || registration?.modalidad_diseno,
+    ) || (Number(registration?.numero) === 0 ? 'extra' : 'personalizado')
+);
 const normalizeAdminRegistrationPlans = plans => defaultRegistrationPlans.map(defaultPlan => {
   const existing = (plans || []).find(plan => planAliases[defaultPlan.id].includes(plan.id));
   return {
@@ -233,6 +244,7 @@ const emptyRegistrationConfig = {
   precio_pintura_oficial: '0',
   setup_detalle: '',
   limite_inscriptos: '30',
+  limite_por_modelo: '10',
   preinscriptos: '0',
   autos_habilitados: [],
   planes: cloneRegistrationPlans(defaultRegistrationPlans),
@@ -662,6 +674,7 @@ export default function Admin() {
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
   const [registrationEdits, setRegistrationEdits] = useState({});
+  const [registrationOfficialCars, setRegistrationOfficialCars] = useState([]);
   const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
   const [editingRegistrationNumbers, setEditingRegistrationNumbers] = useState({});
   const [selectedRegistrationDriverId, setSelectedRegistrationDriverId] = useState(null);
@@ -1327,6 +1340,7 @@ export default function Admin() {
       precio_pintura_oficial: String(existing.precio_pintura_oficial ?? 0),
       setup_detalle: existing.setup_detalle || '',
       limite_inscriptos: String(existing.limite_inscriptos ?? 30),
+      limite_por_modelo: String(existing.limite_por_modelo ?? 10),
       preinscriptos: String(existing.preinscriptos ?? 0),
       autos_habilitados: existing.autos_habilitados || [],
       planes: normalizeAdminRegistrationPlans(existing.planes),
@@ -1580,6 +1594,15 @@ export default function Admin() {
     const championshipId = String(value || '');
     setRegistrationChampionshipFilter(championshipId);
     setRegistrationSearch('');
+    setRegistrationMessage('');
+    setRegistrationEdits({});
+    setEditingRegistrationNumbers({});
+    setRegistrationOfficialCars([]);
+    if (championshipId) {
+      registrationFormsApi.getOfficialCars(championshipId)
+        .then(response => setRegistrationOfficialCars(response.data.data || []))
+        .catch(error => setRegistrationMessage(error.response?.data?.error || 'No se pudieron cargar las pinturas oficiales.'));
+    }
     setSelectedRegistrationDriverId(null);
     setRegistrationDriverDetails(emptyDriverForm);
     setRegistrationDriverDetailsMessage('');
@@ -2720,6 +2743,8 @@ export default function Admin() {
         idauto: String(registration.idauto || ''),
         numero: String(registration.numero ?? ''),
         pago: Boolean(registration.pago),
+        plan_id: getRegistrationPlanId(registration),
+        idauto_oficial: String(registration.idauto_oficial || ''),
       };
       return {
         ...current,
@@ -2733,11 +2758,72 @@ export default function Admin() {
     setRegistrationMessage('');
   };
 
+  const handleRegistrationPlanChange = (registration, planId) => {
+    const key = `${registration.idcampeonato}-${registration.idpiloto}`;
+    const currentCar = cars.find(car => String(car.id) === String(registration.idauto));
+    setRegistrationEdits(current => {
+      const edit = current[key] || {
+        idcampeonato: registration.idcampeonato,
+        idpiloto: registration.idpiloto,
+        idmarca: String(registration.idmarca || currentCar?.idmarca || ''),
+        idauto: String(registration.idauto || ''),
+        numero: String(registration.numero ?? ''),
+        pago: Boolean(registration.pago),
+        plan_id: getRegistrationPlanId(registration),
+        idauto_oficial: String(registration.idauto_oficial || ''),
+      };
+      const wasOfficial = edit.plan_id === 'diseno_oficial';
+      return {
+        ...current,
+        [key]: {
+          ...edit,
+          plan_id: planId,
+          idauto_oficial: '',
+          ...(planId === 'extra' ? { numero: '0' } : {}),
+          ...(planId !== 'extra' && (edit.numero === '0' || wasOfficial) ? { numero: '' } : {}),
+          ...(planId === 'diseno_oficial' ? { idmarca: '', idauto: '', numero: '' } : {}),
+        },
+      };
+    });
+    setEditingRegistrationNumbers(current => ({ ...current, [key]: false }));
+    setRegistrationMessage('');
+  };
+
+  const handleRegistrationOfficialCarChange = (registration, officialCarId) => {
+    const officialCar = registrationOfficialCars.find(car => String(car.id) === String(officialCarId));
+    const key = `${registration.idcampeonato}-${registration.idpiloto}`;
+    const currentCar = cars.find(car => String(car.id) === String(registration.idauto));
+    setRegistrationEdits(current => {
+      const edit = current[key] || {
+        idcampeonato: registration.idcampeonato,
+        idpiloto: registration.idpiloto,
+        idmarca: String(registration.idmarca || currentCar?.idmarca || ''),
+        idauto: String(registration.idauto || ''),
+        numero: String(registration.numero ?? ''),
+        pago: Boolean(registration.pago),
+        plan_id: getRegistrationPlanId(registration),
+        idauto_oficial: String(registration.idauto_oficial || ''),
+      };
+      return {
+        ...current,
+        [key]: {
+          ...edit,
+          plan_id: 'diseno_oficial',
+          idauto_oficial: String(officialCarId || ''),
+          idmarca: String(officialCar?.idmarca || ''),
+          idauto: String(officialCar?.idauto || ''),
+          numero: officialCar ? String(officialCar.numero) : '',
+        },
+      };
+    });
+    setRegistrationMessage('');
+  };
+
   const handleSaveRegistrationChanges = async () => {
     const changes = Object.values(registrationEdits);
     if (!changes.length) return;
-    if (changes.some(change => !change.idauto || change.numero === '')) {
-      setRegistrationMessage('Seleccioná el modelo e ingresá el número para todas las inscripciones modificadas.');
+    if (changes.some(change => !change.plan_id || !change.idauto || (change.plan_id !== 'extra' && change.numero === '') || (change.plan_id === 'diseno_oficial' && !change.idauto_oficial))) {
+      setRegistrationMessage('Completá el plan, el auto, el número o la pintura oficial en todas las inscripciones modificadas.');
       return;
     }
 
@@ -2750,11 +2836,17 @@ export default function Admin() {
         idauto: Number(change.idauto),
         numero: Number(change.numero),
         pago: Boolean(change.pago),
+        plan_id: change.plan_id,
+        idauto_oficial: change.idauto_oficial ? Number(change.idauto_oficial) : null,
       })));
       const response = await registrationsApi.getAll();
       setRegistrations(response.data.data ?? []);
       setRegistrationEdits({});
       setEditingRegistrationNumbers({});
+      if (registrationChampionshipFilter) {
+        const officialCarsResponse = await registrationFormsApi.getOfficialCars(registrationChampionshipFilter);
+        setRegistrationOfficialCars(officialCarsResponse.data.data || []);
+      }
       setRegistrationMessage(`${changes.length} inscripción${changes.length === 1 ? '' : 'es'} actualizada${changes.length === 1 ? '' : 's'}.`);
     } catch (err) {
       setRegistrationMessage(err.response?.data?.error || 'No se pudieron guardar los cambios.');
@@ -2973,8 +3065,9 @@ export default function Admin() {
                 <label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">A este importe se suma el valor de cada plan.</small></label>
                 <label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
+                <div><span className="text-sm text-gray-300">Límite automático por modelo</span><div className="input-field mt-2 flex items-center font-racing text-2xl font-bold text-white">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0}</div><small className="mt-1 block text-gray-500">Se recalcula con el límite total y los modelos habilitados. Las pinturas oficiales no consumen este cupo.</small></div>
                 <label><span className="text-sm text-gray-300">Inscriptos manuales</span><input name="preinscriptos" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.preinscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Sirve para ajustar el contador público. Antes de abrir se muestra como preinscriptos y, al abrir, se suma visualmente a los reales sin ocupar cupos.</small></label>
-                <div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · límite total {registrationConfig.limite_inscriptos || 0}</p></div>
+                <div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · pinturas oficiales excluidas · el límite general de {registrationConfig.limite_inscriptos || 0} siempre tiene prioridad</p></div>
               </div>
               <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
               <section className="border border-yellow-400/25 bg-yellow-400/5 p-5">
@@ -4292,6 +4385,16 @@ export default function Admin() {
     }
 
     if (activeSection === 'inscriptos') {
+      const selectedRegistrationConfig = registrationConfigs.find(config =>
+        String(config.idcampeonato) === String(registrationChampionshipFilter));
+      const enabledRegistrationCarIds = new Set(
+        (selectedRegistrationConfig?.autos_habilitados || []).map(id => String(id)),
+      );
+      const enabledRegistrationPlans = selectedRegistrationConfig
+        ? normalizeAdminRegistrationPlans(selectedRegistrationConfig.planes).filter(plan => plan.habilitado)
+        : [];
+      const enabledRegistrationOfficialCars = registrationOfficialCars.filter(officialCar =>
+        enabledRegistrationCarIds.has(String(officialCar.idauto)));
       return (
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_minmax(0,1fr)]">
           <section className="card-glass self-start p-5 xl:sticky xl:top-24 sm:p-6">
@@ -4368,12 +4471,18 @@ export default function Admin() {
                     const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
                     const registeredCar = cars.find(car => String(car.id) === String(registration.idauto));
                     const edit = registrationEdits[registrationKey] || {
+                      idcampeonato: registration.idcampeonato,
+                      idpiloto: registration.idpiloto,
                       idmarca: String(registration.idmarca || registeredCar?.idmarca || ''),
                       idauto: String(registration.idauto || ''),
                       numero: String(registration.numero ?? ''),
                       pago: Boolean(registration.pago),
+                      plan_id: getRegistrationPlanId(registration),
+                      idauto_oficial: String(registration.idauto_oficial || ''),
                     };
-                    const availableCars = cars.filter(car => String(car.idcategoria) === String(registration.idcategoria));
+                    const availableCars = cars.filter(car =>
+                      String(car.idcategoria) === String(registration.idcategoria)
+                      && enabledRegistrationCarIds.has(String(car.id)));
                     const availableBrands = [...new Map(availableCars.map(car => [String(car.idmarca), {
                       id: car.idmarca,
                       marca: car.marca,
@@ -4385,21 +4494,23 @@ export default function Admin() {
                     const selectedBrand = availableBrands.find(brand => String(brand.id) === String(edit.idmarca));
                     const isDirty = Boolean(registrationEdits[registrationKey]);
                     const isEditingNumber = Boolean(editingRegistrationNumbers[registrationKey]);
-                    const planId = String(registration.plan_id || registration.tipo_inscripcion || registration.modalidad_diseno || '').toLocaleLowerCase('es-AR');
-                    const isExtraPlan = Number(registration.numero) === 0 || ['extra', 'sin_numero'].includes(planId);
-                    const isOfficialPlan = Boolean(registration.es_diseno_oficial) || Boolean(registration.idauto_oficial) || ['diseno_oficial', 'pintura_oficial'].includes(planId);
-                    const designLabel = isOfficialPlan
-                      ? (['diseno_oficial', 'pintura_oficial'].includes(planId) && registration.plan_titulo ? registration.plan_titulo : 'Diseño oficial')
-                      : registration.plan_titulo
-                        || (['diseno_liga', 'personalizado_liga'].includes(planId) ? 'Diseño de la liga'
-                          : planId === 'personalizado' ? 'Personalizado' : '');
-                    const amountDue = registration.total_abonar ?? registration.precio_inscripcion;
+                    const selectedPlan = enabledRegistrationPlans.find(plan => plan.id === edit.plan_id);
+                    const isExtraPlan = edit.plan_id === 'extra';
+                    const isOfficialPlan = edit.plan_id === 'diseno_oficial';
+                    const selectedOfficialCar = enabledRegistrationOfficialCars.find(car => String(car.id) === String(edit.idauto_oficial));
+                    const amountDue = selectedPlan
+                      ? Number(selectedRegistrationConfig?.precio || 0) + Number(selectedPlan.precio_adicional || 0)
+                      : registration.total_abonar ?? registration.precio_inscripcion;
 
                     const isSelectedDriver = String(selectedRegistrationDriverId) === String(registration.idpiloto);
 
                     return <tr key={registrationKey} className={`${isSelectedDriver ? 'bg-racing-red/10 shadow-[inset_3px_0_0_#e63946]' : isDirty ? 'bg-yellow-400/5' : ''} hover:bg-racing-card/60`}>
                       <td className="px-4 py-3">
-                        {isEditingNumber ? (
+                        {isExtraPlan || isOfficialPlan ? (
+                          <span className="font-anton block min-w-16 text-center text-4xl leading-normal text-yellow-300">
+                            {isExtraPlan ? 'EXTRA' : (edit.numero || '—')}
+                          </span>
+                        ) : isEditingNumber ? (
                           <div className="flex items-center gap-1.5">
                             <input
                               type="number"
@@ -4423,7 +4534,7 @@ export default function Admin() {
                         ) : (
                           <div className="flex items-center gap-2">
                             <span className="font-anton min-w-16 text-center text-4xl leading-normal text-yellow-300">
-                              {Number(edit.numero) === 0 ? 'EXTRA' : edit.numero}
+                              {edit.numero || '—'}
                             </span>
                             <button
                               type="button"
@@ -4438,7 +4549,12 @@ export default function Admin() {
                       </td>
                       <td className="px-4 py-3"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-lg font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
                       <td className="px-4 py-3">
-                        <div className="grid min-w-[300px] grid-cols-2 gap-2">
+                        {isOfficialPlan ? <div className="min-w-[260px] border border-yellow-400/20 bg-yellow-400/5 px-3 py-2">
+                          <span className="block text-[10px] font-bold uppercase tracking-wider text-yellow-300">Modelo de la pintura</span>
+                          <span className="mt-1 block font-semibold text-white">
+                            {selectedOfficialCar ? `${selectedOfficialCar.marca} ${selectedOfficialCar.modelo}` : 'Seleccioná una pintura oficial'}
+                          </span>
+                        </div> : <div className="grid min-w-[300px] grid-cols-2 gap-2">
                           <div className="flex min-w-0 items-center gap-2">
                             {selectedBrand?.logo ? <img src={selectedBrand.logo} alt="" className="h-10 w-12 shrink-0 object-contain" /> : null}
                             <select
@@ -4461,15 +4577,34 @@ export default function Admin() {
                             <option value="">Seleccionar modelo</option>
                             {availableModels.map(car => <option key={car.id} value={car.id}>{car.modelo}</option>)}
                           </select>
-                        </div>
+                        </div>}
                       </td>
                       <td className="px-4 py-3">
-                        {!isExtraPlan ? (
-                          isOfficialPlan ? <div className="min-w-[190px] max-w-64">
-                            <span className="block text-[10px] font-bold uppercase tracking-wider text-yellow-300">{designLabel}</span>
-                            <span className="mt-1 block break-words text-sm leading-relaxed text-gray-300">{registration.auto_oficial_descripcion || 'Sin descripción'}</span>
-                          </div> : <span className={`inline-flex border px-3 py-2 text-xs font-bold uppercase tracking-wider ${['diseno_liga', 'personalizado_liga'].includes(planId) ? 'border-violet-400/30 bg-violet-400/10 text-violet-300' : 'border-cyan-400/30 bg-cyan-400/10 text-cyan-300'}`}>{designLabel || 'Personalizado'}</span>
-                        ) : null}
+                        <div className="min-w-[260px] space-y-2">
+                          <select
+                            value={edit.plan_id}
+                            onChange={event => handleRegistrationPlanChange(registration, event.target.value)}
+                            className="input-field py-2 text-sm"
+                            aria-label={`Tipo de diseño de ${registration.nombre}`}
+                          >
+                            <option value="">Seleccionar plan</option>
+                            {enabledRegistrationPlans.map(plan => <option key={plan.id} value={plan.id}>{plan.titulo}</option>)}
+                          </select>
+                          {isOfficialPlan ? <select
+                            value={edit.idauto_oficial}
+                            onChange={event => handleRegistrationOfficialCarChange(registration, event.target.value)}
+                            className="input-field py-2 text-sm"
+                            aria-label={`Pintura oficial de ${registration.nombre}`}
+                          >
+                            <option value="">Seleccionar pintura oficial</option>
+                            {enabledRegistrationOfficialCars.map(officialCar => {
+                              const isCurrent = String(officialCar.id) === String(edit.idauto_oficial);
+                              return <option key={officialCar.id} value={officialCar.id} disabled={officialCar.ocupado && !isCurrent}>
+                                {officialCar.marca} {officialCar.modelo} #{officialCar.numero} · {officialCar.descripcion}{officialCar.ocupado && !isCurrent ? ' (ocupado)' : ''}
+                              </option>;
+                            })}
+                          </select> : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         {amountDue !== null && amountDue !== undefined ? <strong className="whitespace-nowrap font-racing text-xl font-bold text-green-400">{formatPrice(amountDue)}</strong> : <span className="text-xs text-gray-600">Sin definir</span>}

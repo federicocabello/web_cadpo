@@ -217,7 +217,7 @@ const verifyFormToken = (token, championshipId) => {
 
 const configSelect = `
   SELECT cfg.idcampeonato, cfg.fecha_apertura, cfg.fecha_cierre,
-         cfg.precio, cfg.precio_diseno, cfg.precio_pintura_oficial, cfg.setup_detalle, cfg.limite_inscriptos, cfg.preinscriptos, cfg.autos_habilitados, cfg.planes,
+         cfg.precio, cfg.precio_diseno, cfg.precio_pintura_oficial, cfg.setup_detalle, cfg.limite_inscriptos, cfg.limite_por_modelo, cfg.preinscriptos, cfg.autos_habilitados, cfg.planes,
          cfg.permite_personalizado, cfg.permite_diseno_liga, cfg.permite_pintura_oficial, cfg.permite_extra,
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
          cat.categoria, cat.logo AS categoria_logo,
@@ -242,6 +242,7 @@ const normalizeConfig = row => {
   }
   const enabledCarIds = parseIds(enabledCars);
   const totalLimit = Number(row.limite_inscriptos);
+  const modelLimit = enabledCarIds.length ? Math.ceil(totalLimit / enabledCarIds.length) : 0;
   const registered = Number(row.inscriptos_actuales);
   const preEnrolled = Number(row.preinscriptos || 0);
   const occupied = registered + preEnrolled;
@@ -253,7 +254,7 @@ const normalizeConfig = row => {
     permite_extra: Boolean(row.permite_extra),
     autos_habilitados: enabledCarIds,
     planes: normalizeFixedPlans(row),
-    limite_por_modelo: enabledCarIds.length ? Math.ceil(totalLimit / enabledCarIds.length) : 0,
+    limite_por_modelo: modelLimit,
     preinscriptos: preEnrolled,
     cupos_ocupados: Math.min(totalLimit, occupied),
     lugares_disponibles: Math.max(0, totalLimit - occupied),
@@ -276,8 +277,22 @@ const loadForm = async id => {
   if (carIds.length) {
     const [rows] = await pool.query(
       `SELECT a.id, a.idcategoria, a.modelo, a.imagen, am.marca, am.logo,
-              SUM(CASE WHEN i.pago = 1 THEN 1 ELSE 0 END) AS ocupados_modelo,
-              SUM(CASE WHEN i.pago = 0 THEN 1 ELSE 0 END) AS lista_espera_modelo
+              SUM(CASE WHEN i.pago = 1
+                AND i.idauto_oficial IS NULL
+                AND COALESCE(i.tipo_inscripcion, '') <> 'diseno_oficial'
+                AND NOT EXISTS (
+                  SELECT 1 FROM inscripciones_autos_oficiales official
+                  WHERE official.idcampeonato = i.idcampeonato
+                    AND official.idauto = i.idauto AND official.numero = i.numero
+                ) THEN 1 ELSE 0 END) AS ocupados_modelo,
+              SUM(CASE WHEN i.pago = 0
+                AND i.idauto_oficial IS NULL
+                AND COALESCE(i.tipo_inscripcion, '') <> 'diseno_oficial'
+                AND NOT EXISTS (
+                  SELECT 1 FROM inscripciones_autos_oficiales official
+                  WHERE official.idcampeonato = i.idcampeonato
+                    AND official.idauto = i.idauto AND official.numero = i.numero
+                ) THEN 1 ELSE 0 END) AS lista_espera_modelo
        FROM autos a JOIN autos_marcas am ON am.id = a.marca
        LEFT JOIN inscriptos i ON i.idcampeonato = ? AND i.idauto = a.id
        WHERE a.id IN (?) AND a.idcategoria = ?
@@ -716,6 +731,7 @@ const saveConfig = async (req, res, next) => {
       return res.status(400).json({ error: 'Los preinscriptos deben estar entre cero y el límite total' });
     }
     if (!carIds.length) return res.status(400).json({ error: 'Habilitá al menos un modelo de auto' });
+    const modelLimit = Math.ceil(registrationLimit / carIds.length);
     if (!setupDetails) return res.status(400).json({ error: 'Ingresá los detalles del setup' });
     if (!plans.some(plan => plan.habilitado)) return res.status(400).json({ error: 'Habilitá al menos una sección de inscripción' });
     if (plans.some(plan => !plan.titulo || !plan.descripcion)) {
@@ -742,17 +758,17 @@ const saveConfig = async (req, res, next) => {
     ];
     await pool.query(
       `INSERT INTO inscripciones_config
-       (idcampeonato, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos,
+       (idcampeonato, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos, limite_por_modelo,
         preinscriptos, autos_habilitados, planes, permite_personalizado, permite_diseno_liga, permite_pintura_oficial, permite_extra)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE fecha_apertura=VALUES(fecha_apertura),
        fecha_cierre=VALUES(fecha_cierre), precio=VALUES(precio), precio_diseno=VALUES(precio_diseno),
        precio_pintura_oficial=VALUES(precio_pintura_oficial),
-       setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados), planes=VALUES(planes),
+       setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), limite_por_modelo=VALUES(limite_por_modelo), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados), planes=VALUES(planes),
        permite_personalizado=VALUES(permite_personalizado), permite_diseno_liga=VALUES(permite_diseno_liga),
        permite_pintura_oficial=VALUES(permite_pintura_oficial),
        permite_extra=VALUES(permite_extra)`,
-      [id, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, preEnrolled,
+      [id, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
         JSON.stringify(carIds), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
     );
     res.json({ message: 'Formulario de inscripción guardado', data: await loadForm(id) });
@@ -816,7 +832,7 @@ const submit = async (req, res, next) => {
 
     await connection.beginTransaction();
     const [[lockedConfig]] = await connection.query(
-      `SELECT limite_inscriptos, preinscriptos, autos_habilitados, fecha_apertura, fecha_cierre,
+      `SELECT limite_inscriptos, limite_por_modelo, preinscriptos, autos_habilitados, fecha_apertura, fecha_cierre,
               CASE WHEN NOW() >= fecha_apertura AND NOW() < fecha_cierre THEN 1 ELSE 0 END AS inscripcion_abierta
        FROM inscripciones_config
        WHERE idcampeonato = ? FOR UPDATE`, [id]
@@ -850,12 +866,28 @@ const submit = async (req, res, next) => {
       throw Object.assign(new Error('No quedan cupos disponibles en el campeonato'), { statusCode: 409 });
     }
     const lockedCarIds = parseIds(lockedConfig.autos_habilitados);
-    const modelLimit = lockedCarIds.length ? Math.ceil(Number(lockedConfig.limite_inscriptos) / lockedCarIds.length) : 0;
-    const [[modelCount]] = await connection.query(
-      'SELECT COUNT(*) AS total FROM inscriptos WHERE idcampeonato = ? AND idauto = ? AND pago = 1', [id, carId]
-    );
-    if (!lockedCarIds.includes(carId) || Number(modelCount.total) >= modelLimit) {
-      throw Object.assign(new Error('El modelo seleccionado ya no tiene lugares disponibles'), { statusCode: 409 });
+    if (!lockedCarIds.includes(carId)) {
+      throw Object.assign(new Error('El modelo seleccionado ya no está habilitado'), { statusCode: 409 });
+    }
+    if (selectedPlan.id !== 'diseno_oficial') {
+      const modelLimit = lockedCarIds.length
+        ? Math.ceil(Number(lockedConfig.limite_inscriptos) / lockedCarIds.length)
+        : 0;
+      const [[modelCount]] = await connection.query(
+        `SELECT COUNT(*) AS total FROM inscriptos i
+         WHERE i.idcampeonato = ? AND i.idauto = ? AND i.pago = 1
+           AND i.idauto_oficial IS NULL
+           AND COALESCE(i.tipo_inscripcion, '') <> 'diseno_oficial'
+           AND NOT EXISTS (
+             SELECT 1 FROM inscripciones_autos_oficiales official
+             WHERE official.idcampeonato = i.idcampeonato
+               AND official.idauto = i.idauto AND official.numero = i.numero
+           )`,
+        [id, carId]
+      );
+      if (Number(modelCount.total) >= modelLimit) {
+        throw Object.assign(new Error('El modelo seleccionado ya no tiene lugares disponibles'), { statusCode: 409 });
+      }
     }
     let driverId = Number(req.body.idpiloto);
     if (driverId) {

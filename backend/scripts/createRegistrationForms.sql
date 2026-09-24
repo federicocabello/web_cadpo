@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS inscripciones_config (
   precio_pintura_oficial DECIMAL(10,2) NOT NULL DEFAULT 0,
   setup_detalle TEXT NOT NULL,
   limite_inscriptos SMALLINT UNSIGNED NOT NULL,
+  limite_por_modelo SMALLINT UNSIGNED NOT NULL DEFAULT 10,
   preinscriptos SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   autos_habilitados JSON NOT NULL,
   planes JSON NULL,
