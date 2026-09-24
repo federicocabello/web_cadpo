@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const ensureResultAchievements = require('../utils/ensureResultAchievements');
 
 const toPublicRulesPath = file => {
   if (!file) return '';
@@ -147,11 +148,19 @@ const getPrizes = async (req, res, next) => {
 
 const getLatestActiveStandings = async (req, res, next) => {
   try {
+    await ensureResultAchievements();
     const [[championship]] = await pool.query(
       `SELECT c.id, c.temporada, c.anio,
               cat.categoria, cat.logo AS categoria_logo,
               COUNT(DISTINCT r.ronda) AS fechas_cumplidas,
-              MAX(r.fecha) AS ultima_fecha_resultado
+              MAX(r.fecha) AS ultima_fecha_resultado,
+              (SELECT MAX(cal.fecha) FROM calendario cal WHERE cal.idcampeonato = c.id) AS ultima_fecha_calendario,
+              CASE
+                WHEN (SELECT MAX(cal.fecha) FROM calendario cal WHERE cal.idcampeonato = c.id) IS NOT NULL
+                  AND NOW() > (SELECT MAX(cal.fecha) FROM calendario cal WHERE cal.idcampeonato = c.id)
+                THEN 1
+                ELSE 0
+              END AS finalizado
        FROM campeonatos c
        JOIN categorias cat ON cat.id = c.idcategoria
        JOIN resultados r ON r.idcampeonato = c.id
@@ -161,6 +170,21 @@ const getLatestActiveStandings = async (req, res, next) => {
     );
 
     if (!championship) return res.json({ data: null });
+
+    const [[champion]] = await pool.query(
+      `SELECT p.id AS idpiloto, p.nombre,
+              am.marca, am.logo AS auto_logo
+       FROM resultados r
+       JOIN pilotos p ON p.id = r.idpiloto
+       LEFT JOIN inscriptos i
+         ON i.idcampeonato = r.idcampeonato AND i.idpiloto = r.idpiloto
+       LEFT JOIN autos a ON a.id = i.idauto
+       LEFT JOIN autos_marcas am ON am.id = a.marca
+       WHERE r.idcampeonato = ? AND r.campeon = 1
+       ORDER BY r.id DESC
+       LIMIT 1`,
+      [championship.id]
+    );
 
     const [standings] = await pool.query(
       `SELECT p.id AS idpiloto, p.nombre,
@@ -188,6 +212,7 @@ const getLatestActiveStandings = async (req, res, next) => {
     res.json({
       data: {
         ...championship,
+        campeon: champion || null,
         standings: standings.map((standing, index) => ({
           ...standing,
           posicion: index + 1,

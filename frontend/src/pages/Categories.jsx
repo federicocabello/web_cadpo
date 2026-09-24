@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { PhotoIcon, TagIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, PhotoIcon, TagIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { categoriesApi } from '../services/api';
 
 export default function Categories() {
@@ -7,6 +7,7 @@ export default function Categories() {
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [gallery, setGallery] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [collapsedSeasons, setCollapsedSeasons] = useState({});
   const [loading, setLoading] = useState(true);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [error, setError] = useState('');
@@ -62,13 +63,51 @@ export default function Categories() {
     setGalleryLoading(true);
     setError('');
     categoriesApi.getGallery(selectedCategoryId)
-      .then(response => setGallery(response.data.data || null))
+      .then(response => {
+        const nextGallery = response.data.data || null;
+        setGallery(nextGallery);
+        setCollapsedSeasons(Object.fromEntries(
+          (nextGallery?.seasons || []).map(season => [season.id, true])
+        ));
+      })
       .catch(requestError => {
         setGallery(null);
         setError(requestError.response?.data?.error || 'No se pudo cargar la galería de la categoría.');
       })
       .finally(() => setGalleryLoading(false));
   }, [selectedCategoryId]);
+
+  useEffect(() => {
+    if (!selectedImage) return undefined;
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        setSelectedImage(null);
+        return;
+      }
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      setSelectedImage(current => {
+        if (!current) return null;
+        const images = current.season.images || [];
+        if (!images.length) return current;
+        const direction = event.key === 'ArrowRight' ? 1 : -1;
+        const nextIndex = (current.index + direction + images.length) % images.length;
+        return { ...images[nextIndex], season: current.season, index: nextIndex };
+      });
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImage]);
+
+  const moveSelectedImage = direction => {
+    setSelectedImage(current => {
+      if (!current) return null;
+      const images = current.season.images || [];
+      if (!images.length) return current;
+      const nextIndex = (current.index + direction + images.length) % images.length;
+      return { ...images[nextIndex], season: current.season, index: nextIndex };
+    });
+  };
 
   return (
     <main className="w-full max-w-none animate-fade-in px-4 py-8 sm:px-6 lg:px-10 2xl:px-12">
@@ -97,16 +136,16 @@ export default function Categories() {
           </header>
 
           <div className="space-y-8">
-            {gallery.seasons.map(season => <section key={season.id} className="border border-racing-border bg-racing-card/55">
-              <header className="flex flex-wrap items-end justify-between gap-3 border-b border-racing-border bg-black/20 px-5 py-4 sm:px-7"><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-racing-red">Temporada</p><h2 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">Temporada {season.temporada}</h2></div><span className="font-racing text-2xl font-bold text-gray-500">{season.anio}</span></header>
-              {season.images.length ? <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 sm:gap-3 sm:p-3 lg:grid-cols-4 2xl:grid-cols-5">{season.images.map(image => <button key={`${image.source}-${image.filename}`} type="button" onClick={() => setSelectedImage({ ...image, season })} className="group relative aspect-video overflow-hidden bg-black text-left"><img src={image.url} alt={`${gallery.category.categoria} · Temporada ${season.temporada}`} className="h-full w-full object-cover transition duration-500 group-hover:scale-105 group-hover:opacity-80"/><span className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-8 text-[10px] font-bold uppercase tracking-wider text-white transition-transform group-hover:translate-y-0">Ver foto</span></button>)}</div> : <div className="flex min-h-32 items-center justify-center gap-3 text-sm text-gray-600"><PhotoIcon className="h-6 w-6"/>Todavía no hay fotos en esta temporada.</div>}
-            </section>)}
+            {gallery.seasons.map(season => { const collapsed = Boolean(collapsedSeasons[season.id]); return <section key={season.id} className="border border-racing-border bg-racing-card/55">
+              <button type="button" onClick={() => setCollapsedSeasons(current => ({ ...current, [season.id]: !current[season.id] }))} className="flex w-full flex-wrap items-center justify-between gap-3 border-b border-racing-border bg-black/20 px-5 py-4 text-left transition-colors hover:bg-white/[0.04] sm:px-7" aria-expanded={!collapsed}><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-racing-red">Temporada</p><h2 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">Temporada {season.temporada}</h2></div><span className="flex items-center gap-4"><span className="font-racing text-2xl font-bold text-gray-500">{season.anio}</span><ChevronDownIcon className={`h-6 w-6 text-gray-400 transition-transform duration-500 ${collapsed ? '-rotate-90' : 'rotate-0'}`}/></span></button>
+              <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${collapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden">{season.images.length ? <div className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 sm:gap-3 sm:p-3 lg:grid-cols-4 2xl:grid-cols-5">{season.images.map((image, imageIndex) => <button key={`${image.source}-${image.filename}`} type="button" onClick={() => setSelectedImage({ ...image, season, index: imageIndex })} className="group relative aspect-video overflow-hidden bg-black text-left"><img src={image.url} alt={`${gallery.category.categoria} · Temporada ${season.temporada}`} className="h-full w-full object-cover transition duration-500 group-hover:scale-105 group-hover:opacity-80"/><span className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/90 to-transparent px-3 pb-2 pt-8 text-[10px] font-bold uppercase tracking-wider text-white transition-transform group-hover:translate-y-0">Ver foto</span></button>)}</div> : <div className="flex min-h-32 items-center justify-center gap-3 text-sm text-gray-600"><PhotoIcon className="h-6 w-6"/>Todavía no hay fotos en esta temporada.</div>}</div></div>
+            </section>; })}
             {!gallery.seasons.length ? <div className="border border-dashed border-racing-border py-16 text-center text-gray-500">Esta categoría todavía no tiene temporadas cargadas.</div> : null}
           </div>
         </> : null}
       </>}
 
-      {selectedImage ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-3 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Foto ampliada" onClick={() => setSelectedImage(null)}><button type="button" onClick={() => setSelectedImage(null)} className="absolute right-4 top-4 z-10 inline-flex h-11 w-11 items-center justify-center border border-white/20 bg-black/70 text-white hover:border-racing-red hover:text-racing-red" aria-label="Cerrar foto"><XMarkIcon className="h-6 w-6"/></button><div className="max-h-full max-w-full" onClick={event => event.stopPropagation()}><img src={selectedImage.url} alt="Foto ampliada de la categoría" className="max-h-[85vh] max-w-full object-contain"/><p className="mt-3 text-center font-racing text-sm font-bold uppercase text-gray-300">Temporada {selectedImage.season.temporada} · {selectedImage.season.anio}</p></div></div> : null}
+      {selectedImage ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-3 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Foto ampliada" onClick={() => setSelectedImage(null)}><button type="button" onClick={() => setSelectedImage(null)} className="absolute right-4 top-4 z-20 inline-flex h-11 w-11 items-center justify-center border border-white/20 bg-black/70 text-white hover:border-racing-red hover:text-racing-red" aria-label="Cerrar foto"><XMarkIcon className="h-6 w-6"/></button>{selectedImage.season.images.length > 1 ? <><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(-1); }} className="absolute left-3 top-1/2 z-20 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:left-7 sm:h-14 sm:w-14" aria-label="Foto anterior"><ChevronLeftIcon className="h-7 w-7"/></button><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(1); }} className="absolute right-3 top-1/2 z-20 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:right-7 sm:h-14 sm:w-14" aria-label="Foto siguiente"><ChevronRightIcon className="h-7 w-7"/></button></> : null}<div className="flex max-h-full max-w-full flex-col items-center px-10 sm:px-16" onClick={event => event.stopPropagation()}><img src={selectedImage.url} alt="Foto ampliada de la categoría" className="max-h-[82vh] max-w-full object-contain shadow-2xl"/><div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center"><p className="font-racing text-sm font-bold uppercase text-gray-300">Temporada {selectedImage.season.temporada} · {selectedImage.season.anio}</p><span className="text-xs text-gray-600">{selectedImage.index + 1} / {selectedImage.season.images.length}</span></div></div></div> : null}
     </main>
   );
 }

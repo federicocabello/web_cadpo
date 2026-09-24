@@ -178,9 +178,20 @@ function ChampionshipTicker() {
       </span>
       <span className="text-racing-red">•</span>
       <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-gray-300 sm:text-xs">
-        {championship.fechas_cumplidas} {Number(championship.fechas_cumplidas) === 1 ? 'fecha cumplida' : 'fechas cumplidas'}
+        {Number(championship.finalizado) === 1
+          ? 'Campeonato finalizado'
+          : `${championship.fechas_cumplidas} ${Number(championship.fechas_cumplidas) === 1 ? 'fecha cumplida' : 'fechas cumplidas'}`}
       </span>
       <span className="text-racing-red">•</span>
+      {championship.campeon ? <>
+        <span className="flex shrink-0 items-center gap-2 whitespace-nowrap border border-yellow-300/30 bg-yellow-400/10 px-3 py-1 text-xs sm:text-sm">
+          <TrophyIcon className="h-4 w-4 text-yellow-300" />
+          <strong className="font-racing text-[10px] uppercase tracking-wider text-yellow-300 sm:text-xs">Campeón</strong>
+          {championship.campeon.auto_logo ? <img src={championship.campeon.auto_logo} alt={`Logo de ${championship.campeon.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}
+          <span className="font-semibold text-white">{championship.campeon.nombre}</span>
+        </span>
+        <span className="text-racing-red">•</span>
+      </> : null}
       {championship.standings.map((standing, index) => (
         <span key={`${copy}-${standing.idpiloto}`} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-gray-200 sm:text-sm">
           {standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}

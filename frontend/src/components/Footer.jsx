@@ -1,62 +1,20 @@
-import { Link } from 'react-router-dom';
+import { ArrowTopRightOnSquareIcon, CodeBracketIcon } from '@heroicons/react/24/outline';
 
 export default function Footer() {
-  const year = new Date().getFullYear();
-
   return (
-    <footer className="bg-racing-gray border-t border-racing-border mt-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-black border border-racing-red/35 rounded-lg flex items-center justify-center overflow-hidden">
-                <img
-                  src="/logo.png"
-                  alt="Logo CADPO"
-                  className="h-full w-full object-contain p-1"
-                  onError={event => { event.currentTarget.style.display = 'none'; }}
-                />
-              </div>
-              <span className="font-racing text-lg font-bold">LIGA <span className="gradient-text">CADPO</span></span>
-            </div>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              Liga de simracing con historial de campeonatos, calendario de fechas y pilotos de la comunidad.
-            </p>
-          </div>
-
-          <div>
-            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Navegación</h3>
-            <ul className="space-y-2">
-              {[
-                { to: '/', label: 'Inicio' },
-                { to: '/eventos', label: 'Próximas fechas' },
-                { to: '/campeonatos', label: 'Campeonatos' },
-                { to: '/estadisticas', label: 'Estadísticas' },
-                { to: '/replays', label: 'Replays' },
-              ].map(({ to, label }) => (
-                <li key={to}>
-                  <Link to={to} className="text-gray-400 hover:text-racing-red text-sm transition-colors duration-200">
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="font-racing text-white font-semibold mb-3 uppercase tracking-wider text-sm">Participá</h3>
-            <p className="text-gray-400 text-sm mb-4">Inscribite a un campeonato activo o próximo de la liga.</p>
-            <Link to="/inscripcion" className="btn-primary !text-xs">
-              Inscribirme ahora
-            </Link>
-          </div>
-        </div>
-
-        <div className="border-t border-racing-border pt-6 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p className="text-gray-500 text-xs">© {year} Liga CADPO. Todos los derechos reservados.</p>
-          <p className="text-gray-600 text-xs">Simracing - Competencia y pasión</p>
-        </div>
-      </div>
+    <footer className="mt-auto border-t border-white/[0.07] bg-black/30 px-4 py-5">
+      <a
+        href="https://www.proyectoprisma.com.ar"
+        target="_blank"
+        rel="noreferrer"
+        className="group mx-auto flex w-fit flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-center text-xs uppercase tracking-[0.14em] text-gray-500 transition-colors duration-300 hover:text-gray-200 sm:text-[13px] sm:tracking-[0.18em]"
+        aria-label="Visitar Proyecto Prisma"
+      >
+        <CodeBracketIcon className="h-5 w-5 text-[#00ffcd]/65 transition-all duration-500 group-hover:rotate-6 group-hover:scale-110 group-hover:text-[#00ffcd] group-hover:drop-shadow-[0_0_7px_rgba(0,255,205,0.65)]"/>
+        <span>Desarrollado y diseñado por <strong className="font-semibold text-gray-300 transition-colors duration-300 group-hover:text-[#00ffcd]">Proyecto Prisma</strong></span>
+        <span className="normal-case tracking-normal text-gray-600 transition-colors duration-300 group-hover:text-[#00ffcd]/80">www.proyectoprisma.com.ar</span>
+        <ArrowTopRightOnSquareIcon className="h-4 w-4 opacity-50 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#00ffcd] group-hover:opacity-100"/>
+      </a>
     </footer>
   );
 }

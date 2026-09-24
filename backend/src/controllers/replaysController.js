@@ -27,6 +27,53 @@ const removeUploadedFile = async file => {
   });
 };
 
+const sanitizeFilenamePart = value => String(value || '')
+  .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const download = async (req, res, next) => {
+  try {
+    await ensureReplayTable();
+    const [[replay]] = await pool.query(
+      `SELECT rp.archivo, rp.nombre_original, rp.ronda, rp.tanda,
+              cat.categoria, ci.nombre AS circuito, ci.variante
+       FROM replays rp
+       JOIN campeonatos c ON c.id = rp.idcampeonato
+       JOIN categorias cat ON cat.id = c.idcategoria
+       LEFT JOIN calendario cal ON cal.idcampeonato = rp.idcampeonato AND cal.ronda = rp.ronda
+       LEFT JOIN circuitos ci ON ci.id = cal.idcircuito
+       WHERE rp.id = ?
+       LIMIT 1`,
+      [req.params.id]
+    );
+    if (!replay) return res.status(404).json({ error: 'Replay no encontrado' });
+
+    const relativePath = String(replay.archivo || '').replace(/^[/\\]+/, '');
+    const resolvedPath = path.resolve(publicDir, relativePath);
+    const replayRoot = path.resolve(publicDir, 'media', 'replays');
+    if (!resolvedPath.startsWith(`${replayRoot}${path.sep}`)) {
+      return res.status(400).json({ error: 'Ruta de replay inválida' });
+    }
+
+    const extension = path.extname(replay.nombre_original || replay.archivo || '');
+    const circuit = [replay.circuito, replay.variante].filter(Boolean).join(' ');
+    const filenameParts = [
+      replay.categoria,
+      `Fecha ${replay.ronda}`,
+      replay.tanda,
+      circuit || 'Circuito',
+    ].map(sanitizeFilenamePart).filter(Boolean);
+    const downloadName = `${filenameParts.join(' - ')}${extension}`;
+
+    return res.download(resolvedPath, downloadName, error => {
+      if (error && !res.headersSent) next(error);
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getAll = async (req, res, next) => {
   try {
     await ensureReplayTable();
@@ -118,4 +165,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, create, remove };
+module.exports = { getAll, download, create, remove };

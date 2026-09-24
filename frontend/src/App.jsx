@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
+import Footer from './components/Footer'
 import Home from './pages/Home'
 import Events from './pages/Events'
 import Championships from './pages/Championships'
@@ -39,7 +40,9 @@ function MaintenanceScreen() {
 }
 
 function App() {
+  const location = useLocation()
   const [status, setStatus] = useState('checking')
+  const isAdminView = location.pathname.startsWith('/admin')
 
   useEffect(() => {
     const checkAvailability = async () => {
@@ -93,6 +96,7 @@ function App() {
           />
         </Routes>
       </main>
+      {!isAdminView ? <Footer /> : null}
     </div>
   )
 }
