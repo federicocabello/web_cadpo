@@ -120,6 +120,12 @@ export const resultsApi = {
   remove: id => api.delete(`/results/${id}`),
 };
 
+export const replaysApi = {
+  getAll: params => api.get('/replays', { params }),
+  upload: data => api.post('/replays', data, { timeout: 600000 }),
+  remove: id => api.delete(`/replays/${id}`),
+};
+
 export const statisticsApi = {
   getOverview: () => api.get('/statistics'),
   searchDrivers: search => api.get('/statistics/drivers', { params: { search } }),

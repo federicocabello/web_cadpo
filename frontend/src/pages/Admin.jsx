@@ -1,6 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDaysIcon,
+  ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
   BellAlertIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
@@ -21,7 +23,7 @@ import {
   WrenchScrewdriverIcon,
   WrenchIcon,
 } from '@heroicons/react/24/outline';
-import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, resultsApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
@@ -49,6 +51,7 @@ const formatEventDateTime = value => {
 
 const adminSections = [
   { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
+  { id: 'replays', label: 'REPLAYS', icon: ArrowDownTrayIcon },
   { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
   { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
   { id: 'marcas', label: 'MARCAS', icon: TagIcon },
@@ -80,6 +83,13 @@ const resultSpreadsheetColumns = [
   { key: 'pos_final', label: 'Pos. Final', type: 'position' },
   { key: 'piloto_final', label: 'Piloto', type: 'pilot' },
   { key: 'pts_final', label: 'Pts. Final', type: 'decimal' },
+];
+const resultAchievementFields = [
+  { key: 'pole_sprint', label: 'Pole Sprint' },
+  { key: 'ganador_sprint', label: 'Ganó Sprint' },
+  { key: 'pole_final', label: 'Pole Final' },
+  { key: 'ganador_final', label: 'Ganó Final' },
+  { key: 'campeon', label: 'Campeón' },
 ];
 const resultGridColumns = [
   { key: 'piloto', label: 'Piloto', type: 'pilot' },
@@ -159,6 +169,7 @@ const championshipYears = Array.from(
   (_, index) => new Date().getFullYear() - index,
 );
 const adminPageSize = 25;
+const replaySessionOptions = ['Entrenamiento', 'Clasificación Sprint', 'Sprint', 'Clasificación Final', 'Final'];
 
 const emptyChampionshipForm = {
   idcategoria: '',
@@ -572,6 +583,7 @@ export default function Admin() {
   const carImageInputRef = useRef(null);
   const registrationImagesInputRef = useRef(null);
   const officialCarPhotoInputRef = useRef(null);
+  const replayInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -607,6 +619,11 @@ export default function Admin() {
   const [registrations, setRegistrations] = useState([]);
   const [results, setResults] = useState([]);
   const [savedResults, setSavedResults] = useState([]);
+  const [replays, setReplays] = useState([]);
+  const [replayForm, setReplayForm] = useState({ idcampeonato: '', ronda: '', tanda: '' });
+  const [replayFile, setReplayFile] = useState(null);
+  const [replayMessage, setReplayMessage] = useState('');
+  const [savingReplay, setSavingReplay] = useState(false);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
@@ -747,6 +764,11 @@ export default function Admin() {
     [resultRound, results]
   );
 
+  const resultAchievementRows = useMemo(() => [...new Map(resultRoundResults
+    .filter(result => result.idpiloto && result.piloto)
+    .map(result => [String(result.idpiloto), result])).values()]
+    .sort((a, b) => String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' })), [resultRoundResults]);
+
   const savedResultRoundResults = useMemo(
     () => savedResults.filter(result => resultRound && Number(result.ronda) === Number(resultRound.ronda)),
     [resultRound, savedResults]
@@ -797,6 +819,7 @@ export default function Admin() {
       autoLogo: driver.autoLogo,
       rounds: new Map(),
       total: 0,
+      campeon: false,
     }]));
 
     savedResults.filter(result => !result._delete).forEach(result => {
@@ -807,6 +830,7 @@ export default function Admin() {
           piloto: result.piloto,
           rounds: new Map(),
           total: 0,
+          campeon: false,
         });
       }
       const standing = byDriver.get(driverKey);
@@ -828,6 +852,7 @@ export default function Admin() {
       roundDetail.position = result.pos_final || roundDetail.position;
       standing.rounds.set(roundKey, roundDetail);
       standing.total += points;
+      standing.campeon = standing.campeon || Boolean(Number(result.campeon));
     });
 
     return [...byDriver.values()]
@@ -1194,7 +1219,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -1205,6 +1230,7 @@ export default function Admin() {
           registrationsApi.getAll(),
           monitorApi.getStatus(),
           registrationFormsApi.getAdminAll(),
+          replaysApi.getAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -1219,6 +1245,7 @@ export default function Admin() {
         setRegistrations(registrationsRes.data.data ?? []);
         setMonitorStatus(monitorRes.data.data ?? null);
         setRegistrationConfigs(registrationConfigsRes.data.data ?? []);
+        setReplays(replaysRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -1834,6 +1861,27 @@ export default function Admin() {
     setResultMessage('');
   };
 
+  const handleResultAchievementChange = (result, field) => {
+    if (!result) return;
+    const resultKey = result._key || `id-${result.id}`;
+    const nextValue = Number(result[field]) === 0;
+    const dirty = { [resultKey]: true };
+    setResults(current => current.map(item => {
+      const itemKey = item._key || `id-${item.id}`;
+      const isTarget = itemKey === resultKey;
+      const sameScope = field === 'campeon'
+        ? String(item.idcampeonato) === String(result.idcampeonato)
+        : String(item.ronda) === String(result.ronda);
+      if (nextValue && sameScope && Number(item[field]) !== 0) {
+        dirty[itemKey] = true;
+        return { ...item, [field]: 0 };
+      }
+      return isTarget ? { ...item, [field]: nextValue ? 1 : 0 } : item;
+    }));
+    setDirtyResults(current => ({ ...current, ...dirty }));
+    setResultMessage('');
+  };
+
   const handleResultPilotChange = (row, currentResult, value, pilotField = 'piloto') => {
     const requestedName = String(value || '').trim();
     const matchedDriver = resultRegisteredDrivers.find(driver =>
@@ -2144,7 +2192,7 @@ export default function Admin() {
       {
         pilotField: 'piloto',
         label: 'clasificación',
-        fields: ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_qualy_final', 'pts_qualy_final'],
+        fields: ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_qualy_final', 'pts_qualy_final', ...resultAchievementFields.map(field => field.key)],
       },
       { pilotField: 'piloto_sprint', label: 'Sprint', fields: ['pos_sprint', 'pts_sprint'] },
       { pilotField: 'piloto_final', label: 'Final', fields: ['pos_final', 'pts_final'] },
@@ -2218,7 +2266,7 @@ export default function Admin() {
     setResultMessage('');
 
     try {
-      const editableFields = ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_sprint', 'pts_sprint', 'pos_qualy_final', 'pts_qualy_final', 'pos_final', 'pts_final'];
+      const editableFields = ['presentismo', 'pos_qualy_sprint', 'pts_qualy_sprint', 'pos_sprint', 'pts_sprint', 'pos_qualy_final', 'pts_qualy_final', 'pos_final', 'pts_final', ...resultAchievementFields.map(field => field.key)];
       const assignments = new Map();
 
       dirtyRounds.forEach(roundKey => {
@@ -2259,6 +2307,7 @@ export default function Admin() {
         ...pendingResults.filter(result => result._delete).map(result => ({ id: result.id, delete: true })),
         ...[...assignments.values()].map(({ savedResult, data, metadata }) => {
           const editableData = {
+            idcampeonato: Number(resultChampionshipId),
             idpiloto: metadata.idpiloto,
             presentismo: Number(data.presentismo || 0),
             pos_qualy_sprint: String(data.pos_qualy_sprint || '').trim(),
@@ -2269,6 +2318,11 @@ export default function Admin() {
             pts_qualy_final: Number(data.pts_qualy_final || 0),
             pos_final: String(data.pos_final || '').trim(),
             pts_final: parseResultPoints(data.pts_final),
+            pole_sprint: Number(Boolean(Number(data.pole_sprint))),
+            ganador_sprint: Number(Boolean(Number(data.ganador_sprint))),
+            pole_final: Number(Boolean(Number(data.pole_final))),
+            ganador_final: Number(Boolean(Number(data.ganador_final))),
+            campeon: Number(Boolean(Number(data.campeon))),
           };
           return {
             id: savedResult?.id || null,
@@ -3023,7 +3077,81 @@ export default function Admin() {
     setDriverMessage(`Editando ${driver.nombre}.`);
   };
 
+  const replayEvents = events
+    .filter(event => String(event.idcampeonato) === String(replayForm.idcampeonato))
+    .sort((a, b) => Number(a.ronda) - Number(b.ronda));
+
+  const handleReplayChampionshipChange = event => {
+    const idcampeonato = event.target.value;
+    const firstRound = events
+      .filter(item => String(item.idcampeonato) === String(idcampeonato))
+      .sort((a, b) => Number(a.ronda) - Number(b.ronda))[0]?.ronda;
+    setReplayForm(current => ({ ...current, idcampeonato, ronda: firstRound ? String(firstRound) : '' }));
+    setReplayMessage('');
+  };
+
+  const uploadReplay = async event => {
+    event.preventDefault();
+    if (!replayFile || !replayForm.idcampeonato || !replayForm.ronda || !replayForm.tanda.trim()) return;
+    setSavingReplay(true);
+    setReplayMessage('');
+    try {
+      const data = new FormData();
+      data.append('idcampeonato', replayForm.idcampeonato);
+      data.append('ronda', replayForm.ronda);
+      data.append('tanda', replayForm.tanda.trim());
+      data.append('replay', replayFile);
+      const response = await replaysApi.upload(data);
+      const refreshed = await replaysApi.getAll();
+      setReplays(refreshed.data.data || []);
+      setReplayFile(null);
+      if (replayInputRef.current) replayInputRef.current.value = '';
+      setReplayMessage(response.data.message || 'Replay publicado correctamente.');
+    } catch (error) {
+      setReplayMessage(error.response?.data?.error || 'No se pudo publicar el replay.');
+    } finally {
+      setSavingReplay(false);
+    }
+  };
+
+  const deleteReplay = async replay => {
+    if (!window.confirm(`¿Eliminar el replay de Fecha ${replay.ronda} · ${replay.tanda}?`)) return;
+    setReplayMessage('');
+    try {
+      const response = await replaysApi.remove(replay.id);
+      setReplays(current => current.filter(item => item.id !== replay.id));
+      setReplayMessage(response.data.message || 'Replay eliminado correctamente.');
+    } catch (error) {
+      setReplayMessage(error.response?.data?.error || 'No se pudo eliminar el replay.');
+    }
+  };
+
   const renderSection = () => {
+    if (activeSection === 'replays') {
+      return (
+        <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
+          <section className="card-glass self-start p-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Archivos descargables</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar replay</h2>
+            <p className="mt-2 text-sm text-gray-400">Relacioná el archivo con un campeonato, una fecha y la tanda correspondiente.</p>
+            <form onSubmit={uploadReplay} className="mt-6 space-y-4">
+              <label className="block"><span className="text-sm text-gray-300">Campeonato</span><select value={replayForm.idcampeonato} onChange={handleReplayChampionshipChange} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
+              <label className="block"><span className="text-sm text-gray-300">Fecha</span><select value={replayForm.ronda} onChange={event => setReplayForm(current => ({ ...current, ronda: event.target.value }))} className="input-field mt-2" required disabled={!replayForm.idcampeonato}><option value="">Seleccionar fecha</option>{replayEvents.map(item => <option key={item.id} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label>
+              <label className="block"><span className="text-sm text-gray-300">Tanda</span><input list="replay-session-options" value={replayForm.tanda} onChange={event => setReplayForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" placeholder="Ej.: Final" maxLength="80" required/><datalist id="replay-session-options">{replaySessionOptions.map(option => <option key={option} value={option}/>)}</datalist></label>
+              <label className="block"><span className="text-sm text-gray-300">Archivo del replay</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center hover:border-racing-red"><ArrowUpTrayIcon className="h-7 w-7 text-racing-red"/><span className="mt-2 break-all text-sm text-gray-300">{replayFile?.name || 'Seleccionar replay'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z</span></span><input ref={replayInputRef} type="file" accept=".vcr,.rpl,.replay,.acreplay,.zip,.rar,.7z" onChange={event => setReplayFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
+              <button type="submit" disabled={savingReplay || !replayFile} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50">{savingReplay ? 'Subiendo replay...' : 'Publicar replay'}</button>
+              {replayMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{replayMessage}</p> : null}
+            </form>
+          </section>
+
+          <section className="card-glass overflow-hidden">
+            <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Replays publicados</h2></header>
+            <div className="divide-y divide-racing-border">{replays.map(replay => <article key={replay.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{replay.categoria_logo ? <img src={replay.categoria_logo} alt="" className="h-10 w-12 shrink-0 object-contain"/> : <TrophyIcon className="h-8 w-8 shrink-0 text-racing-red"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-racing-red">{replay.categoria} · T{replay.temporada}</p><h3 className="truncate font-racing text-lg font-bold text-white">Fecha {replay.ronda} · {replay.tanda}</h3><p className="truncate text-xs text-gray-500">{replay.circuito || 'Circuito'} · {replay.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={replay.archivo} download={replay.nombre_original || undefined} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-green-400 hover:text-green-400" aria-label="Descargar replay"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteReplay(replay)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar replay"><TrashIcon className="h-5 w-5"/></button></div></article>)}{!replays.length ? <div className="py-20 text-center text-gray-500"><ArrowDownTrayIcon className="mx-auto h-12 w-12"/><p className="mt-3">Todavía no hay replays publicados.</p></div> : null}</div>
+          </section>
+        </div>
+      );
+    }
+
     if (activeSection === 'formularios') {
       const championship = championships.find(item => String(item.id) === String(registrationConfigChampionshipId));
       const categoryCars = cars.filter(car => championship && String(car.idcategoria) === String(championship.idcategoria));
@@ -3360,6 +3488,11 @@ export default function Admin() {
             </table>
           </div>
 
+          {resultRound && resultAchievementRows.length ? <section className="border-t-4 border-black bg-black/20 px-4 py-5 lg:px-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Marcas oficiales</p><h3 className="mt-1 font-racing text-xl font-bold text-white">Pole, victorias y campeón</h3></div><p className="text-xs text-gray-500">Marcá los reconocimientos y presioná Guardar.</p></div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] border-collapse text-sm"><thead><tr className="bg-racing-dark text-[10px] uppercase tracking-wider text-gray-500"><th className="border border-racing-border px-3 py-3 text-left">Piloto</th>{resultAchievementFields.map(field => <th key={field.key} className="border border-racing-border px-3 py-3 text-center">{field.label}</th>)}</tr></thead><tbody>{resultAchievementRows.map(result => <tr key={result.id || result._key} className="bg-racing-gray"><td className="border border-racing-border px-3 py-2 font-semibold text-white">{result.piloto}</td>{resultAchievementFields.map(field => <td key={field.key} className="border border-racing-border px-3 py-2 text-center"><label className="inline-flex cursor-pointer items-center justify-center"><input type="checkbox" checked={Boolean(Number(result[field.key]))} onChange={() => handleResultAchievementChange(result, field.key)} className="h-5 w-5 accent-red-600"/><span className="sr-only">{field.label}: {result.piloto}</span></label></td>)}</tr>)}</tbody></table></div>
+          </section> : null}
+
           {resultChampionshipId ? (
             <div className="mt-14 border-y-4 border-black bg-racing-gray shadow-2xl">
               <div className="flex flex-col gap-1 border-b border-racing-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
@@ -3405,7 +3538,7 @@ export default function Admin() {
                           <div className="flex min-w-60 items-center gap-3">
                             {standing.autoLogo ? <img src={standing.autoLogo} alt={`Logo ${standing.marca || ''}`} className="h-9 w-12 shrink-0 object-contain" /> : <div className="h-9 w-12 shrink-0" />}
                             <div className="min-w-0">
-                              <p className="truncate font-semibold" title={standing.piloto}>{standing.piloto}</p>
+                              <p className="flex items-center gap-2 truncate font-semibold" title={standing.piloto}><span className="truncate">{standing.piloto}</span>{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[9px] font-bold uppercase text-black">Campeón</span> : null}</p>
                               <p className="truncate text-[11px] font-normal text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p>
                             </div>
                           </div>
@@ -5606,7 +5739,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-11">
+            <nav className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
               {adminSections.map(section => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;

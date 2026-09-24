@@ -31,7 +31,8 @@ export default function Footer() {
                 { to: '/', label: 'Inicio' },
                 { to: '/eventos', label: 'Próximas fechas' },
                 { to: '/campeonatos', label: 'Campeonatos' },
-                { to: '/pilotos', label: 'Pilotos' },
+                { to: '/estadisticas', label: 'Estadísticas' },
+                { to: '/replays', label: 'Replays' },
               ].map(({ to, label }) => (
                 <li key={to}>
                   <Link to={to} className="text-gray-400 hover:text-racing-red text-sm transition-colors duration-200">

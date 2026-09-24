@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const ensureResultAchievements = require('../utils/ensureResultAchievements');
 
 const pointsExpression = alias => `
   COALESCE(${alias}.presentismo, 0)
@@ -9,19 +10,47 @@ const pointsExpression = alias => `
 `;
 
 const winsExpression = alias => `
-  (CASE WHEN TRIM(${alias}.pos_sprint) = '1' THEN 1 ELSE 0 END)
-  + (CASE WHEN TRIM(${alias}.pos_final) = '1' THEN 1 ELSE 0 END)
+  (CASE WHEN ${alias}.ganador_final = 1 OR TRIM(${alias}.pos_final) = '1' THEN 1 ELSE 0 END)
+`;
+
+const seriesWinsExpression = alias => `
+  (CASE WHEN ${alias}.ganador_sprint = 1 OR TRIM(${alias}.pos_sprint) = '1' THEN 1 ELSE 0 END)
 `;
 
 const polesExpression = alias => `
-  (CASE WHEN TRIM(${alias}.pos_qualy_sprint) = '1' THEN 1 ELSE 0 END)
-  + (CASE WHEN TRIM(${alias}.pos_qualy_final) = '1' THEN 1 ELSE 0 END)
+  (CASE WHEN ${alias}.pole_sprint = 1 OR TRIM(${alias}.pos_qualy_sprint) = '1' THEN 1 ELSE 0 END)
+  + (CASE WHEN ${alias}.pole_final = 1 OR TRIM(${alias}.pos_qualy_final) = '1' THEN 1 ELSE 0 END)
 `;
 
 const podiumsExpression = alias => `
-  (CASE WHEN TRIM(${alias}.pos_sprint) IN ('1', '2', '3') THEN 1 ELSE 0 END)
-  + (CASE WHEN TRIM(${alias}.pos_final) IN ('1', '2', '3') THEN 1 ELSE 0 END)
+  (CASE WHEN TRIM(${alias}.pos_final) IN ('1', '2', '3') THEN 1 ELSE 0 END)
 `;
+
+const getTopChampions = champions => {
+  const drivers = new Map();
+  champions.forEach(champion => {
+    const key = String(champion.idpiloto);
+    const current = drivers.get(key) || {
+      id: champion.idpiloto,
+      nombre: champion.nombre,
+      ig: champion.ig,
+      titulos: 0,
+      categoria: champion.categoria,
+      categoria_logo: champion.categoria_logo,
+      ultima_fecha: champion.ultima_fecha,
+    };
+    current.titulos += 1;
+    if (new Date(champion.ultima_fecha) > new Date(current.ultima_fecha)) {
+      current.categoria = champion.categoria;
+      current.categoria_logo = champion.categoria_logo;
+      current.ultima_fecha = champion.ultima_fecha;
+    }
+    drivers.set(key, current);
+  });
+  return [...drivers.values()]
+    .sort((a, b) => b.titulos - a.titulos || new Date(b.ultima_fecha) - new Date(a.ultima_fecha) || a.nombre.localeCompare(b.nombre))
+    .slice(0, 10);
+};
 
 const getCalculatedChampions = async () => {
   const [scores] = await pool.query(`
@@ -29,6 +58,7 @@ const getCalculatedChampions = async () => {
            c.temporada, c.anio, cat.categoria, cat.logo AS categoria_logo,
            ROUND(SUM(${pointsExpression('r')}), 2) AS puntos,
            SUM(${winsExpression('r')}) AS victorias,
+           MAX(COALESCE(r.campeon, 0)) AS campeon_marcado,
            dates.ultima_fecha
     FROM resultados r
     JOIN pilotos p ON p.id = r.idpiloto
@@ -44,15 +74,18 @@ const getCalculatedChampions = async () => {
     ORDER BY dates.ultima_fecha DESC, puntos DESC, victorias DESC, r.idpiloto ASC
   `);
 
-  const champions = new Map();
+  const championships = new Map();
   scores.forEach(score => {
-    if (!champions.has(String(score.idcampeonato))) champions.set(String(score.idcampeonato), score);
+    const key = String(score.idcampeonato);
+    if (!championships.has(key)) championships.set(key, []);
+    championships.get(key).push(score);
   });
-  return [...champions.values()];
+  return [...championships.values()].map(entries => entries.find(entry => Number(entry.campeon_marcado) === 1) || entries[0]);
 };
 
 const getOverview = async (req, res, next) => {
   try {
+    await ensureResultAchievements();
     const [[summary], [topWinners], champions] = await Promise.all([
       pool.query(`
         SELECT
@@ -60,14 +93,15 @@ const getOverview = async (req, res, next) => {
           (SELECT COUNT(DISTINCT idcampeonato) FROM calendario WHERE fecha < NOW()) AS campeonatos_disputados,
           (SELECT COUNT(*) FROM pilotos) AS pilotos_cargados,
           (SELECT COUNT(DISTINCT idpiloto) FROM resultados
-            WHERE TRIM(pos_sprint) = '1' OR TRIM(pos_final) = '1') AS pilotos_ganadores,
-          (SELECT COUNT(DISTINCT idcampeonato, ronda) FROM resultados) AS fechas_con_resultados
+            WHERE ganador_final = 1 OR TRIM(pos_final) = '1') AS pilotos_ganadores,
+          (SELECT MIN(fecha) FROM calendario WHERE fecha < NOW()) AS fecha_inicio
       `),
       pool.query(`
         SELECT p.id, p.nombre, p.ig,
                SUM(${winsExpression('r')}) AS victorias,
                SUM(${polesExpression('r')}) AS poles,
                SUM(${podiumsExpression('r')}) AS podios,
+               SUM(${seriesWinsExpression('r')}) AS series_ganadas,
                ROUND(SUM(${pointsExpression('r')}), 2) AS puntos,
                COUNT(DISTINCT r.idcampeonato) AS campeonatos
         FROM resultados r
@@ -82,8 +116,12 @@ const getOverview = async (req, res, next) => {
 
     res.json({
       data: {
-        summary: { ...summary, campeones_calculados: champions.length },
+        summary: {
+          ...summary,
+          campeones_distintos: new Set(champions.map(champion => String(champion.idpiloto))).size,
+        },
         topWinners,
+        topChampions: getTopChampions(champions),
         champions,
       },
     });
@@ -94,6 +132,7 @@ const getOverview = async (req, res, next) => {
 
 const searchDrivers = async (req, res, next) => {
   try {
+    await ensureResultAchievements();
     const search = String(req.query.search || '').trim();
     if (search.length < 2) return res.json({ data: [] });
     const [rows] = await pool.query(`
@@ -111,6 +150,7 @@ const searchDrivers = async (req, res, next) => {
 
 const getDriverStatistics = async (req, res, next) => {
   try {
+    await ensureResultAchievements();
     const driverId = Number(req.params.id);
     const [[driver]] = await pool.query(`
       SELECT id, nombre, localidad, provincia, nacionalidad, ig
@@ -125,6 +165,7 @@ const getDriverStatistics = async (req, res, next) => {
                SUM(${polesExpression('r')}) AS poles,
                SUM(${winsExpression('r')}) AS victorias,
                SUM(${podiumsExpression('r')}) AS podios,
+               SUM(${seriesWinsExpression('r')}) AS series_ganadas,
                ROUND(SUM(${pointsExpression('r')}), 2) AS puntos
         FROM resultados r
         WHERE idpiloto = ?
@@ -136,6 +177,7 @@ const getDriverStatistics = async (req, res, next) => {
                SUM(${polesExpression('r')}) AS poles,
                SUM(${winsExpression('r')}) AS victorias,
                SUM(${podiumsExpression('r')}) AS podios,
+               SUM(${seriesWinsExpression('r')}) AS series_ganadas,
                ROUND(SUM(${pointsExpression('r')}), 2) AS puntos
         FROM resultados r
         JOIN campeonatos c ON c.id = r.idcampeonato
@@ -159,6 +201,7 @@ const getDriverStatistics = async (req, res, next) => {
           poles: Number(totals.poles || 0),
           victorias: Number(totals.victorias || 0),
           podios: Number(totals.podios || 0),
+          series_ganadas: Number(totals.series_ganadas || 0),
           puntos: Number(totals.puntos || 0),
           campeonatos_ganados: wonChampionships.size,
         },

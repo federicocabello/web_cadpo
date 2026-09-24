@@ -100,16 +100,6 @@ export default function Events({ initialStatus = '' }) {
 
   return (
     <div className="animate-fade-in">
-      <div className="bg-racing-gray border-b border-racing-border py-12 px-4">
-        <div className="max-w-7xl mx-auto">
-          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Calendario</p>
-          <h1 className="section-title text-4xl md:text-5xl mb-2">
-            Fechas y <span className="gradient-text">Carreras</span>
-          </h1>
-          <p className="text-gray-400 max-w-xl">Todas las rondas cargadas en la tabla calendario, separadas entre próximas y pasadas.</p>
-        </div>
-      </div>
-
       <div className="sticky top-16 z-40 bg-racing-dark/95 backdrop-blur-md border-b border-racing-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap gap-3 items-center">
           <FunnelIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -131,7 +121,7 @@ export default function Events({ initialStatus = '' }) {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading ? (
           <div className="flex justify-center py-24">
             <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />

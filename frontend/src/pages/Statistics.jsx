@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  BoltIcon,
   ChartBarIcon,
   FlagIcon,
   MagnifyingGlassIcon,
@@ -17,22 +16,25 @@ const summaryCards = [
   { key: 'carreras_disputadas', label: 'Carreras disputadas', icon: FlagIcon },
   { key: 'campeonatos_disputados', label: 'Campeonatos', icon: TrophyIcon },
   { key: 'pilotos_cargados', label: 'Pilotos cargados', icon: UserGroupIcon },
-  { key: 'pilotos_ganadores', label: 'Pilotos ganadores', icon: StarIcon },
-  { key: 'campeones_calculados', label: 'Campeones', icon: ChartBarIcon },
-  { key: 'fechas_con_resultados', label: 'Fechas con resultados', icon: BoltIcon },
+  { key: 'pilotos_ganadores', label: 'Ganadores distintos en finales', icon: StarIcon },
+  { key: 'campeones_distintos', label: 'Campeones distintos', icon: ChartBarIcon },
 ];
 
 const driverStatCards = [
   { key: 'carreras_disputadas', label: 'Carreras' },
   { key: 'campeonatos_disputados', label: 'Campeonatos' },
   { key: 'poles', label: 'Poles' },
-  { key: 'victorias', label: 'Victorias' },
+  { key: 'victorias', label: 'Finales ganadas' },
   { key: 'podios', label: 'Podios' },
+  { key: 'series_ganadas', label: 'Series ganadas' },
   { key: 'campeonatos_ganados', label: 'Títulos' },
   { key: 'puntos', label: 'Puntos' },
 ];
 
 const formatNumber = value => Number(value || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+const formatDate = value => value
+  ? new Date(value).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+  : 'el primer campeonato registrado';
 
 export default function Statistics() {
   const [overview, setOverview] = useState(null);
@@ -86,31 +88,28 @@ export default function Statistics() {
 
   return (
     <div className="animate-fade-in">
-      <div className="border-b border-racing-border bg-racing-gray px-4 py-12">
-        <div className="mx-auto max-w-7xl">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-racing-red">Datos de la liga</p>
-          <h1 className="section-title mb-2 text-4xl md:text-5xl">
-            Estadísticas <span className="gradient-text">CADPO</span>
-          </h1>
-          <p className="max-w-2xl text-gray-400">Historia de campeonatos, carreras y pilotos calculada desde los resultados cargados.</p>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-10 px-4 py-8 sm:px-6 lg:px-8">
         {loading ? (
           <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
         ) : error && !overview ? (
           <div className="card-glass p-10 text-center text-gray-400">{error}</div>
         ) : overview ? (
           <>
-            <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-              {summaryCards.map(({ key, label, icon: Icon }) => (
-                <article key={key} className="card-glass p-5">
-                  <Icon className="mb-4 h-7 w-7 text-racing-red" />
-                  <p className="font-racing text-3xl font-bold text-white md:text-4xl">{formatNumber(overview.summary[key])}</p>
-                  <p className="mt-1 text-xs uppercase tracking-wider text-gray-500">{label}</p>
-                </article>
-              ))}
+            <section>
+              <div className="mb-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-racing-red">Historia CADPO</p>
+                <h1 className="mt-1 font-racing text-2xl font-bold uppercase text-white sm:text-3xl">Estadísticas totales</h1>
+                <p className="mt-1 text-sm text-gray-500">Desde {formatDate(overview.summary.fecha_inicio)} hasta hoy</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+                {summaryCards.map(({ key, label, icon: Icon }) => (
+                  <article key={key} className="card-glass p-5">
+                    <Icon className="mb-4 h-7 w-7 text-racing-red" />
+                    <p className="font-racing text-3xl font-bold text-white md:text-4xl">{formatNumber(overview.summary[key])}</p>
+                    <p className="mt-1 text-xs uppercase tracking-wider text-gray-500">{label}</p>
+                  </article>
+                ))}
+              </div>
             </section>
 
             <section className="card-glass p-6 md:p-8">
@@ -152,7 +151,7 @@ export default function Statistics() {
                       {driverStats.driver.ig ? <a href={getInstagramUrl(driverStats.driver.ig)} target="_blank" rel="noreferrer" className="text-sm text-racing-red hover:text-white">{formatInstagramHandle(driverStats.driver.ig)}</a> : null}
                     </div>
                   </div>
-                  <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+                  <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
                     {driverStatCards.map(item => (
                       <div key={item.key} className="border border-racing-border bg-racing-dark p-4 text-center">
                         <p className="font-racing text-2xl font-bold text-white">{formatNumber(driverStats.totals[item.key])}</p>
@@ -164,13 +163,13 @@ export default function Statistics() {
                   <div className="mt-8 overflow-x-auto border border-racing-border">
                     <table className="w-full text-sm">
                       <thead className="bg-racing-dark text-xs uppercase tracking-wider text-gray-500">
-                        <tr><th className="px-4 py-3 text-left">Campeonato</th><th className="px-4 py-3 text-center">Carreras</th><th className="px-4 py-3 text-center">Poles</th><th className="px-4 py-3 text-center">Victorias</th><th className="px-4 py-3 text-center">Podios</th><th className="px-4 py-3 text-right">Puntos</th></tr>
+                        <tr><th className="px-4 py-3 text-left">Campeonato</th><th className="px-4 py-3 text-center">Carreras</th><th className="px-4 py-3 text-center">Poles</th><th className="px-4 py-3 text-center">Finales</th><th className="px-4 py-3 text-center">Podios</th><th className="px-4 py-3 text-center">Series</th><th className="px-4 py-3 text-right">Puntos</th></tr>
                       </thead>
                       <tbody className="divide-y divide-racing-border">
                         {driverStats.championships.map(item => (
                           <tr key={item.idcampeonato} className="hover:bg-racing-card/60">
                             <td className="px-4 py-3"><div className="flex items-center gap-3">{item.categoria_logo ? <img src={item.categoria_logo} alt="" className="h-9 w-9 object-contain" /> : null}<div><p className="font-semibold text-white">{item.categoria} · T{item.temporada}</p><p className="text-xs text-gray-500">{item.anio}{item.campeon ? ' · Campeón' : ''}</p></div></div></td>
-                            <td className="px-4 py-3 text-center">{item.carreras}</td><td className="px-4 py-3 text-center">{item.poles}</td><td className="px-4 py-3 text-center">{item.victorias}</td><td className="px-4 py-3 text-center">{item.podios}</td><td className="px-4 py-3 text-right font-racing font-bold text-yellow-300">{formatNumber(item.puntos)}</td>
+                            <td className="px-4 py-3 text-center">{item.carreras}</td><td className="px-4 py-3 text-center">{item.poles}</td><td className="px-4 py-3 text-center">{item.victorias}</td><td className="px-4 py-3 text-center">{item.podios}</td><td className="px-4 py-3 text-center">{item.series_ganadas}</td><td className="px-4 py-3 text-right font-racing font-bold text-yellow-300">{formatNumber(item.puntos)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -180,22 +179,36 @@ export default function Statistics() {
               ) : null}
             </section>
 
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid gap-6 xl:grid-cols-3">
               <section className="card-glass overflow-hidden">
-                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ranking histórico</p><h2 className="mt-1 font-racing text-2xl font-bold">Pilotos más ganadores</h2></div>
+                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ranking histórico</p><h2 className="mt-1 font-racing text-2xl font-bold">Más victorias en finales</h2></div>
                 <div className="divide-y divide-racing-border">
                   {overview.topWinners.map((driver, index) => (
                     <button key={driver.id} type="button" onClick={() => selectDriver(driver)} className="grid w-full grid-cols-[40px_1fr_auto] items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-racing-card/60">
                       <span className="font-racing text-xl font-bold text-racing-red">{index + 1}</span>
-                      <span><strong className="block text-white">{driver.nombre}</strong><span className="text-xs text-gray-500">{driver.poles} poles · {driver.podios} podios</span></span>
-                      <span className="text-right"><strong className="block font-racing text-xl text-yellow-300">{driver.victorias}</strong><span className="text-[10px] uppercase text-gray-500">victorias</span></span>
+                      <span><strong className="block text-white">{driver.nombre}</strong><span className="text-xs text-gray-500">{driver.poles} poles · {driver.podios} podios · {driver.series_ganadas} series</span></span>
+                      <span className="text-right"><strong className="block font-racing text-xl text-yellow-300">{driver.victorias}</strong><span className="text-[10px] uppercase text-gray-500">finales</span></span>
                     </button>
                   ))}
                 </div>
               </section>
 
               <section className="card-glass overflow-hidden">
-                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Por puntaje final</p><h2 className="mt-1 font-racing text-2xl font-bold">Campeones recientes</h2></div>
+                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ranking histórico</p><h2 className="mt-1 font-racing text-2xl font-bold">Más campeones</h2></div>
+                <div className="divide-y divide-racing-border">
+                  {(overview.topChampions || []).map((champion, index) => (
+                    <button key={champion.id} type="button" onClick={() => selectDriver(champion)} className="grid w-full grid-cols-[40px_44px_1fr_auto] items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-racing-card/60">
+                      <span className="font-racing text-xl font-bold text-racing-red">{index + 1}</span>
+                      {champion.categoria_logo ? <img src={champion.categoria_logo} alt="" className="h-10 w-10 object-contain" /> : <TrophyIcon className="h-8 w-8 text-racing-red" />}
+                      <span className="min-w-0"><strong className="block truncate text-white">{champion.nombre}</strong><span className="block truncate text-xs text-gray-500">Último título · {champion.categoria}</span></span>
+                      <span className="text-right"><strong className="block font-racing text-xl text-yellow-300">{champion.titulos}</strong><span className="text-[10px] uppercase text-gray-500">títulos</span></span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="card-glass overflow-hidden">
+                <div className="border-b border-racing-border px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Últimos campeonatos</p><h2 className="mt-1 font-racing text-2xl font-bold">Campeones recientes</h2></div>
                 <div className="max-h-[620px] divide-y divide-racing-border overflow-y-auto">
                   {overview.champions.map(champion => (
                     <button key={champion.idcampeonato} type="button" onClick={() => selectDriver({ ...champion, id: champion.idpiloto })} className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-racing-card/60">
@@ -205,7 +218,7 @@ export default function Statistics() {
                     </button>
                   ))}
                 </div>
-                <p className="border-t border-racing-border px-6 py-3 text-xs text-gray-600">Campeones calculados por mayor puntaje acumulado en cada campeonato finalizado.</p>
+                <p className="border-t border-racing-border px-6 py-3 text-xs text-gray-600">Se prioriza el campeón marcado en Resultados; si no existe, se toma el mayor puntaje del campeonato finalizado.</p>
               </section>
             </div>
           </>

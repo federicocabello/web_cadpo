@@ -7,7 +7,6 @@ import {
   ClockIcon,
   CalendarDaysIcon,
   FlagIcon,
-  UsersIcon,
   TagIcon,
   ChartBarIcon,
   ArrowDownTrayIcon,
@@ -55,9 +54,10 @@ const FacebookIcon = ({ className = '' }) => (
 const navLinks = [
   { to: '/', label: 'INICIO', Icon: HomeIcon },
   { to: '/tiempos-en-vivo', label: 'TIEMPOS EN VIVO', Icon: ClockIcon },
+  { to: '/resultados', label: 'RESULTADOS', Icon: TrophyIcon },
+  { to: '/replays', label: 'REPLAYS', Icon: ArrowDownTrayIcon },
   { to: '/proximas-fechas', label: 'PRÓXIMAS FECHAS', Icon: CalendarDaysIcon },
   { to: '/campeonatos', label: 'CAMPEONATOS', Icon: FlagIcon },
-  { to: '/pilotos', label: 'PILOTOS', Icon: UsersIcon },
   { to: '/categorias', label: 'CATEGORÍAS', Icon: TagIcon },
   { to: '/estadisticas', label: 'ESTADÍSTICAS', Icon: ChartBarIcon },
 ]
@@ -181,20 +181,21 @@ function ChampionshipTicker() {
         {championship.fechas_cumplidas} {Number(championship.fechas_cumplidas) === 1 ? 'fecha cumplida' : 'fechas cumplidas'}
       </span>
       <span className="text-racing-red">•</span>
-      {championship.standings.map(standing => (
+      {championship.standings.map((standing, index) => (
         <span key={`${copy}-${standing.idpiloto}`} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-gray-200 sm:text-sm">
           {standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}
           <strong className={`font-racing text-base ${standing.posicion === 1 ? 'text-yellow-300' : standing.posicion === 2 ? 'text-gray-200' : standing.posicion === 3 ? 'text-amber-600' : 'text-racing-red'}`}>{standing.posicion}°</strong>
           <span className="font-semibold text-white">{standing.nombre}</span>
           <span className="font-racing font-bold text-yellow-200">{formatTickerPoints(standing.puntos)} pts.</span>
-          <span className="ml-2 text-racing-red">•</span>
+          {index < championship.standings.length - 1 ? <span className="ml-2 text-racing-red">•</span> : null}
         </span>
       ))}
+      <span className="mx-8 h-px w-28 shrink-0 bg-gradient-to-r from-transparent via-racing-red/60 to-transparent sm:mx-12 sm:w-40" aria-hidden="true" />
     </div>
   )
 
   return (
-    <div className="championship-ticker overflow-hidden border-t border-racing-border/80 bg-black/95 py-2 shadow-[0_6px_20px_rgba(0,0,0,0.35)]" aria-label={`Top 10 del campeonato ${championship.categoria}`}>
+    <div className="championship-ticker overflow-hidden border-t border-racing-border/80 bg-black/95 py-2 shadow-[0_6px_20px_rgba(0,0,0,0.35)]" aria-label={`Top 12 del campeonato ${championship.categoria}`}>
       <div className="championship-ticker-track flex w-max items-center">
         {tickerContent(0)}
         {tickerContent(1)}
@@ -314,12 +315,12 @@ export default function Navbar() {
                   download={download || undefined}
                   target={target}
                   rel={target ? 'noreferrer' : undefined}
-                  className={`group inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 font-racing text-[10px] font-bold tracking-wide transition-all duration-300 hover:-translate-y-0.5 ${className}`}
+                  className={`group inline-flex h-9 w-9 items-center overflow-hidden whitespace-nowrap rounded-md border px-2.5 font-racing text-[10px] font-bold tracking-wide transition-[width,transform,background-color,border-color] duration-300 hover:w-40 hover:-translate-y-0.5 ${className}`}
                   aria-label={label}
                   title={label}
                 >
                   <Icon className="h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-110" />
-                  {shortLabel}
+                  <span className="max-w-0 overflow-hidden opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100">{shortLabel}</span>
                 </a>
               ))}
             </div>

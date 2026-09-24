@@ -266,18 +266,6 @@ export default function Championships({ initialStatus = '' }) {
 
   return (
     <div className="animate-fade-in">
-      <div className="border-b border-racing-border bg-racing-gray px-4 py-12">
-        <div className="mx-auto max-w-7xl">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-racing-red">Competición</p>
-          <h1 className="section-title mb-2 text-4xl md:text-5xl">
-            {initialStatus === 'upcoming' ? 'Próximos campeonatos' : 'Campeonatos'} <span className="gradient-text">CADPO</span>
-          </h1>
-          <p className="max-w-2xl text-gray-400">
-            Consultá las inscripciones disponibles, los campeonatos en curso y el historial completo. En cada torneo también podés acceder a su reglamento cuando esté publicado.
-          </p>
-        </div>
-      </div>
-
       <div className="sticky top-16 z-40 border-b border-racing-border bg-racing-dark/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 md:flex-row md:items-center">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -315,7 +303,7 @@ export default function Championships({ initialStatus = '' }) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {loading ? (
           <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
         ) : filteredChampionships.length === 0 || (statusFilter !== 'all' && paginationItems.length === 0) ? (

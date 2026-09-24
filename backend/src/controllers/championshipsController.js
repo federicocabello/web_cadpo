@@ -181,7 +181,7 @@ const getLatestActiveStandings = async (req, res, next) => {
        WHERE r.idcampeonato = ?
        GROUP BY p.id, p.nombre, am.id, am.marca, am.logo
        ORDER BY puntos DESC, p.nombre ASC
-       LIMIT 10`,
+       LIMIT 12`,
       [championship.id]
     );
 

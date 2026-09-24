@@ -5,11 +5,11 @@ import Home from './pages/Home'
 import Events from './pages/Events'
 import Championships from './pages/Championships'
 import Registration from './pages/Registration'
-import Drivers from './pages/Drivers'
 import Categories from './pages/Categories'
 import LiveTiming from './pages/LiveTiming'
 import Results from './pages/Results'
 import Statistics from './pages/Statistics'
+import Replays from './pages/Replays'
 import { healthApi } from './services/api'
 
 const Admin = lazy(() => import('./pages/Admin'))
@@ -80,8 +80,8 @@ function App() {
           <Route path="/tiempos-en-vivo" element={<LiveTiming />} />
           <Route path="/resultados" element={<Results />} />
           <Route path="/estadisticas" element={<Statistics />} />
+          <Route path="/replays" element={<Replays />} />
           <Route path="/inscripcion" element={<Registration />} />
-          <Route path="/pilotos" element={<Drivers />} />
           <Route path="/categorias" element={<Categories />} />
           <Route
             path="/admin"

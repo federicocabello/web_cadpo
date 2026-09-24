@@ -43,17 +43,7 @@ export default function Categories() {
 
   return (
     <div className="animate-fade-in">
-      <div className="bg-racing-gray border-b border-racing-border py-12 px-4">
-        <div className="max-w-7xl mx-auto">
-          <p className="text-racing-red text-xs uppercase tracking-widest font-semibold mb-2">Campeonatos</p>
-          <h1 className="section-title text-4xl md:text-5xl mb-2">
-            Categorías <span className="gradient-text">CADPO</span>
-          </h1>
-          <p className="text-gray-400 max-w-xl">Listado de categorías con campeonatos cargados en la base.</p>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading ? (
           <div className="flex justify-center py-24">
             <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />

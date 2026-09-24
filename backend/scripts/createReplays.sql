@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS replays (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  idcampeonato INT NOT NULL,
+  ronda SMALLINT UNSIGNED NOT NULL,
+  tanda VARCHAR(80) NOT NULL,
+  archivo VARCHAR(255) NOT NULL,
+  nombre_original VARCHAR(255) NOT NULL,
+  tamano BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  INDEX idx_replays_campeonato_ronda (idcampeonato, ronda)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
