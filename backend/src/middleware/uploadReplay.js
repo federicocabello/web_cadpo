@@ -23,7 +23,7 @@ module.exports = multer({
   fileFilter: (req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
     if (!allowedExtensions.has(extension)) {
-      cb(new Error('Formato de replay no permitido. Usá VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z.'));
+      cb(new Error('Formato de repetición no permitido. Usá VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z.'));
       return;
     }
     cb(null, true);

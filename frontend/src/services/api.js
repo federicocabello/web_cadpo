@@ -129,6 +129,12 @@ export const replaysApi = {
   remove: id => api.delete(`/replays/${id}`),
 };
 
+export const templatesApi = {
+  getAll: params => api.get('/templates', { params }),
+  upload: (data, onUploadProgress) => api.post('/templates', data, { timeout: 0, onUploadProgress }),
+  remove: id => api.delete(`/templates/${id}`),
+};
+
 export const statisticsApi = {
   getOverview: () => api.get('/statistics'),
   searchDrivers: search => api.get('/statistics/drivers', { params: { search } }),

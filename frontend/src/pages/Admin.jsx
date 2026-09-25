@@ -3,6 +3,7 @@ import {
   CalendarDaysIcon,
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
+  ArchiveBoxIcon,
   BellAlertIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
@@ -23,7 +24,7 @@ import {
   WrenchScrewdriverIcon,
   WrenchIcon,
 } from '@heroicons/react/24/outline';
-import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
@@ -51,7 +52,8 @@ const formatEventDateTime = value => {
 
 const adminSections = [
   { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
-  { id: 'replays', label: 'REPLAYS', icon: ArrowDownTrayIcon },
+  { id: 'replays', label: 'REPETICIONES', icon: ArrowDownTrayIcon },
+  { id: 'plantillas', label: 'PLANTILLAS', icon: ArchiveBoxIcon },
   { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
   { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
   { id: 'marcas', label: 'MARCAS', icon: TagIcon },
@@ -591,6 +593,7 @@ export default function Admin() {
   const registrationImagesInputRef = useRef(null);
   const officialCarPhotoInputRef = useRef(null);
   const replayInputRef = useRef(null);
+  const templateInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -608,6 +611,7 @@ export default function Admin() {
   const [officialCars, setOfficialCars] = useState([]);
   const [officialCarForm, setOfficialCarForm] = useState(emptyOfficialCarForm);
   const [officialCarCollapsedBrands, setOfficialCarCollapsedBrands] = useState({});
+  const [registrationFormCollapsed, setRegistrationFormCollapsed] = useState({ backgrounds: true, enabledCars: true });
   const [officialCarsMessage, setOfficialCarsMessage] = useState('');
   const [savingOfficialCar, setSavingOfficialCar] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
@@ -632,6 +636,12 @@ export default function Admin() {
   const [replayMessage, setReplayMessage] = useState('');
   const [savingReplay, setSavingReplay] = useState(false);
   const [replayUploadProgress, setReplayUploadProgress] = useState(0);
+  const [templates, setTemplates] = useState([]);
+  const [templateChampionshipId, setTemplateChampionshipId] = useState('');
+  const [templateFile, setTemplateFile] = useState(null);
+  const [templateMessage, setTemplateMessage] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateUploadProgress, setTemplateUploadProgress] = useState(0);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
@@ -704,6 +714,7 @@ export default function Admin() {
   const [carPage, setCarPage] = useState(1);
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
+  const [registrationPlanFilter, setRegistrationPlanFilter] = useState('');
   const [registrationEdits, setRegistrationEdits] = useState({});
   const [registrationOfficialCars, setRegistrationOfficialCars] = useState([]);
   const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
@@ -1075,6 +1086,10 @@ export default function Admin() {
     return registrations.filter(registration => {
       if (String(registration.idcampeonato) !== String(registrationChampionshipFilter)) return false;
 
+      const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
+      const planId = registrationEdits[registrationKey]?.plan_id || getRegistrationPlanId(registration);
+      if (registrationPlanFilter && planId !== registrationPlanFilter) return false;
+
       if (!search) return true;
       return [
         registration.nombre,
@@ -1090,12 +1105,13 @@ export default function Admin() {
         .filter(value => value !== null && value !== undefined)
         .some(value => String(value).toLocaleLowerCase('es-AR').includes(search));
     });
-  }, [registrationChampionshipFilter, registrationSearch, registrations]);
+  }, [registrationChampionshipFilter, registrationEdits, registrationPlanFilter, registrationSearch, registrations]);
 
   useEffect(() => {
     if (registrationChampionshipFilter && !selectedRegistrationChampionship) {
       setRegistrationChampionshipFilter('');
       setRegistrationSearch('');
+      setRegistrationPlanFilter('');
     }
   }, [registrationChampionshipFilter, selectedRegistrationChampionship]);
 
@@ -1233,7 +1249,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -1245,6 +1261,7 @@ export default function Admin() {
           monitorApi.getStatus(),
           registrationFormsApi.getAdminAll(),
           replaysApi.getAll(),
+          templatesApi.getAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -1260,6 +1277,7 @@ export default function Admin() {
         setMonitorStatus(monitorRes.data.data ?? null);
         setRegistrationConfigs(registrationConfigsRes.data.data ?? []);
         setReplays(replaysRes.data.data ?? []);
+        setTemplates(templatesRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -1360,6 +1378,7 @@ export default function Admin() {
     setOfficialCarsMessage('');
     setOfficialCarForm(emptyOfficialCarForm);
     setOfficialCarCollapsedBrands({});
+    setRegistrationFormCollapsed({ backgrounds: true, enabledCars: true });
     loadChampionshipPrizes(id);
     if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
     setRegistrationImageFiles([]);
@@ -1635,6 +1654,7 @@ export default function Admin() {
     const championshipId = String(value || '');
     setRegistrationChampionshipFilter(championshipId);
     setRegistrationSearch('');
+    setRegistrationPlanFilter('');
     setRegistrationMessage('');
     setRegistrationEdits({});
     setEditingRegistrationNumbers({});
@@ -3198,55 +3218,127 @@ export default function Admin() {
       setReplays(refreshed.data.data || []);
       setReplayFile(null);
       if (replayInputRef.current) replayInputRef.current.value = '';
-      setReplayMessage(response.data.message || 'Replay publicado correctamente.');
+      setReplayMessage(response.data.message || 'Repetición publicada correctamente.');
     } catch (error) {
-      setReplayMessage(error.response?.data?.error || 'No se pudo publicar el replay.');
+      setReplayMessage(error.response?.data?.error || 'No se pudo publicar la repetición.');
     } finally {
       setSavingReplay(false);
     }
   };
 
   const deleteReplay = async replay => {
-    if (!window.confirm(`¿Eliminar el replay de Fecha ${replay.ronda} · ${replay.tanda}?`)) return;
+    if (!window.confirm(`¿Eliminar la repetición de Fecha ${replay.ronda} · ${replay.tanda}?`)) return;
     setReplayMessage('');
     try {
       const response = await replaysApi.remove(replay.id);
       setReplays(current => current.filter(item => item.id !== replay.id));
-      setReplayMessage(response.data.message || 'Replay eliminado correctamente.');
+      setReplayMessage(response.data.message || 'Repetición eliminada correctamente.');
     } catch (error) {
-      setReplayMessage(error.response?.data?.error || 'No se pudo eliminar el replay.');
+      setReplayMessage(error.response?.data?.error || 'No se pudo eliminar la repetición.');
+    }
+  };
+
+  const uploadTemplate = async event => {
+    event.preventDefault();
+    if (!templateFile || !templateChampionshipId) return;
+    setSavingTemplate(true);
+    setTemplateUploadProgress(0);
+    setTemplateMessage('');
+    try {
+      const data = new FormData();
+      data.append('idcampeonato', templateChampionshipId);
+      data.append('plantilla', templateFile);
+      const response = await templatesApi.upload(data, progressEvent => {
+        const ratio = progressEvent.progress
+          ?? (progressEvent.total ? progressEvent.loaded / progressEvent.total : 0);
+        setTemplateUploadProgress(Math.min(100, Math.max(0, Math.round(ratio * 100))));
+      });
+      const refreshed = await templatesApi.getAll();
+      setTemplates(refreshed.data.data || []);
+      setTemplateFile(null);
+      if (templateInputRef.current) templateInputRef.current.value = '';
+      setTemplateMessage(response.data.message || 'Plantilla publicada correctamente.');
+    } catch (error) {
+      setTemplateMessage(error.response?.data?.error || 'No se pudo publicar la plantilla.');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const deleteTemplate = async template => {
+    if (!window.confirm(`¿Eliminar la plantilla de ${template.categoria} · Temporada ${template.temporada}?`)) return;
+    setTemplateMessage('');
+    try {
+      const response = await templatesApi.remove(template.id);
+      setTemplates(current => current.filter(item => item.id !== template.id));
+      setTemplateMessage(response.data.message || 'Plantilla eliminada correctamente.');
+    } catch (error) {
+      setTemplateMessage(error.response?.data?.error || 'No se pudo eliminar la plantilla.');
     }
   };
 
   const renderSection = () => {
+    if (activeSection === 'plantillas') {
+      const existingTemplate = templates.find(item => String(item.idcampeonato) === String(templateChampionshipId));
+      return (
+        <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
+          <section className="card-glass self-start p-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Archivos descargables</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar plantilla</h2>
+            <p className="mt-2 text-sm text-gray-400">Subí un archivo ZIP para el campeonato. Solo puede haber una plantilla activa por campeonato.</p>
+            <form onSubmit={uploadTemplate} className="mt-6 space-y-4">
+              <label className="block"><span className="text-sm text-gray-300">Campeonato</span><select value={templateChampionshipId} onChange={event => { setTemplateChampionshipId(event.target.value); setTemplateMessage(''); }} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
+              {existingTemplate ? <p className="border border-yellow-400/30 bg-yellow-400/10 p-3 text-xs text-yellow-200">Este campeonato ya tiene una plantilla. Al publicar el nuevo ZIP se reemplazará el archivo actual.</p> : null}
+              <label className="block"><span className="text-sm text-gray-300">Archivo ZIP</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center transition hover:border-cyan-300"><ArrowUpTrayIcon className="h-7 w-7 text-cyan-300"/><span className="mt-2 break-all text-sm text-gray-300">{templateFile?.name || 'Seleccionar plantilla'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">Formato ZIP</span></span><input ref={templateInputRef} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={event => setTemplateFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
+              <button type="submit" disabled={savingTemplate || !templateFile || !templateChampionshipId} className="inline-flex w-full items-center justify-center gap-2 bg-cyan-300 px-5 py-3 font-racing text-sm font-bold uppercase text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{savingTemplate ? 'Subiendo plantilla...' : existingTemplate ? 'Reemplazar plantilla' : 'Publicar plantilla'}</button>
+              {templateMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{templateMessage}</p> : null}
+            </form>
+          </section>
+
+          {savingTemplate ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 px-5 backdrop-blur-md" role="status" aria-live="polite" aria-label="Subiendo plantilla">
+            <div className="w-full max-w-xl border border-cyan-300/50 bg-racing-dark p-7 shadow-[0_0_60px_rgba(34,211,238,0.2)] sm:p-10">
+              <div className="flex items-center gap-4"><div className="relative h-14 w-14 shrink-0"><div className="absolute inset-0 animate-spin rounded-full border-2 border-cyan-300/20 border-t-cyan-300"/><ArchiveBoxIcon className="absolute inset-0 m-auto h-6 w-6 text-cyan-300"/></div><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">No cierres esta pantalla</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">{templateUploadProgress >= 100 ? 'Procesando plantilla…' : 'Subiendo plantilla…'}</h2></div></div>
+              <div className="mt-7 h-3 overflow-hidden bg-white/10"><div className="h-full bg-cyan-300 transition-[width] duration-300" style={{ width: `${templateUploadProgress}%` }}/></div>
+              <div className="mt-3 flex items-center justify-between gap-4"><p className="truncate text-xs text-gray-500">{templateFile?.name}</p><strong className="font-racing text-2xl text-white">{templateUploadProgress}%</strong></div>
+            </div>
+          </div> : null}
+
+          <section className="card-glass overflow-hidden">
+            <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Plantillas publicadas</h2></header>
+            <div className="divide-y divide-racing-border">{templates.map(template => <article key={template.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{template.categoria_logo ? <img src={template.categoria_logo} alt="" className="h-12 w-14 shrink-0 object-contain"/> : <ArchiveBoxIcon className="h-9 w-9 shrink-0 text-cyan-300"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-cyan-300">{template.categoria}</p><h3 className="truncate font-racing text-lg font-bold text-white">Temporada {template.temporada} · {template.anio}</h3><p className="truncate text-xs text-gray-500">{template.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={`/api/templates/${template.id}/download`} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label="Descargar plantilla"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteTemplate(template)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar plantilla"><TrashIcon className="h-5 w-5"/></button></div></article>)}{!templates.length ? <div className="py-20 text-center text-gray-500"><ArchiveBoxIcon className="mx-auto h-12 w-12"/><p className="mt-3">Todavía no hay plantillas publicadas.</p></div> : null}</div>
+          </section>
+        </div>
+      );
+    }
+
     if (activeSection === 'replays') {
       return (
         <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
           <section className="card-glass self-start p-6">
             <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Archivos descargables</p>
-            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar replay</h2>
+            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar repetición</h2>
             <p className="mt-2 text-sm text-gray-400">Relacioná el archivo con un campeonato, una fecha y la tanda correspondiente.</p>
             <form onSubmit={uploadReplay} className="mt-6 space-y-4">
               <label className="block"><span className="text-sm text-gray-300">Campeonato</span><select value={replayForm.idcampeonato} onChange={handleReplayChampionshipChange} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
               <label className="block"><span className="text-sm text-gray-300">Fecha</span><select value={replayForm.ronda} onChange={event => setReplayForm(current => ({ ...current, ronda: event.target.value }))} className="input-field mt-2" required disabled={!replayForm.idcampeonato}><option value="">Seleccionar fecha</option>{replayEvents.map(item => <option key={item.id} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label>
               <label className="block"><span className="text-sm text-gray-300">Tanda</span><select value={replayForm.tanda} onChange={event => setReplayForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar tanda</option>{replaySessionOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
-              <label className="block"><span className="text-sm text-gray-300">Archivo del replay</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center hover:border-racing-red"><ArrowUpTrayIcon className="h-7 w-7 text-racing-red"/><span className="mt-2 break-all text-sm text-gray-300">{replayFile?.name || 'Seleccionar replay'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z</span></span><input ref={replayInputRef} type="file" accept=".vcr,.rpl,.replay,.acreplay,.zip,.rar,.7z" onChange={event => setReplayFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
-              <button type="submit" disabled={savingReplay || !replayFile} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50">{savingReplay ? 'Subiendo replay...' : 'Publicar replay'}</button>
+              <label className="block"><span className="text-sm text-gray-300">Archivo de la repetición</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center hover:border-racing-red"><ArrowUpTrayIcon className="h-7 w-7 text-racing-red"/><span className="mt-2 break-all text-sm text-gray-300">{replayFile?.name || 'Seleccionar repetición'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">VCR, RPL, REPLAY, ACREPLAY, ZIP, RAR o 7Z</span></span><input ref={replayInputRef} type="file" accept=".vcr,.rpl,.replay,.acreplay,.zip,.rar,.7z" onChange={event => setReplayFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
+              <button type="submit" disabled={savingReplay || !replayFile} className="btn-primary w-full justify-center disabled:cursor-not-allowed disabled:opacity-50">{savingReplay ? 'Subiendo repetición...' : 'Publicar repetición'}</button>
               {replayMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{replayMessage}</p> : null}
             </form>
           </section>
 
-          {savingReplay ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 px-5 backdrop-blur-md" role="status" aria-live="polite" aria-label="Subiendo replay">
+          {savingReplay ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 px-5 backdrop-blur-md" role="status" aria-live="polite" aria-label="Subiendo repetición">
             <div className="w-full max-w-xl border border-racing-red/50 bg-racing-dark p-7 shadow-[0_0_60px_rgba(220,38,38,0.22)] sm:p-10">
-              <div className="flex items-center gap-4"><div className="relative h-14 w-14 shrink-0"><div className="absolute inset-0 animate-spin rounded-full border-2 border-racing-red/20 border-t-racing-red"/><ArrowUpTrayIcon className="absolute inset-0 m-auto h-6 w-6 text-racing-red"/></div><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-racing-red">No cierres esta pantalla</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">{replayUploadProgress >= 100 ? 'Procesando replay…' : 'Subiendo replay…'}</h2></div></div>
+              <div className="flex items-center gap-4"><div className="relative h-14 w-14 shrink-0"><div className="absolute inset-0 animate-spin rounded-full border-2 border-racing-red/20 border-t-racing-red"/><ArrowUpTrayIcon className="absolute inset-0 m-auto h-6 w-6 text-racing-red"/></div><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-racing-red">No cierres esta pantalla</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">{replayUploadProgress >= 100 ? 'Procesando repetición…' : 'Subiendo repetición…'}</h2></div></div>
               <div className="mt-7 h-3 overflow-hidden bg-white/10"><div className="h-full bg-racing-red transition-[width] duration-300" style={{ width: `${replayUploadProgress}%` }}/></div>
               <div className="mt-3 flex items-center justify-between gap-4"><p className="truncate text-xs text-gray-500">{replayFile?.name}</p><strong className="font-racing text-2xl text-white">{replayUploadProgress}%</strong></div>
             </div>
           </div> : null}
 
           <section className="card-glass overflow-hidden">
-            <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Replays publicados</h2></header>
-            <div className="divide-y divide-racing-border">{replays.map(replay => <article key={replay.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{replay.categoria_logo ? <img src={replay.categoria_logo} alt="" className="h-10 w-12 shrink-0 object-contain"/> : <TrophyIcon className="h-8 w-8 shrink-0 text-racing-red"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-racing-red">{replay.categoria} · T{replay.temporada}</p><h3 className="truncate font-racing text-lg font-bold text-white">Fecha {replay.ronda} · {replay.tanda}</h3><p className="truncate text-xs text-gray-500">{replay.circuito || 'Circuito'} · {replay.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={`/api/replays/${replay.id}/download`} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-green-400 hover:text-green-400" aria-label="Descargar replay"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteReplay(replay)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar replay"><TrashIcon className="h-5 w-5"/></button></div></article>)}{!replays.length ? <div className="py-20 text-center text-gray-500"><ArrowDownTrayIcon className="mx-auto h-12 w-12"/><p className="mt-3">Todavía no hay replays publicados.</p></div> : null}</div>
+            <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Repeticiones publicadas</h2></header>
+            <div className="divide-y divide-racing-border">{replays.map(replay => <article key={replay.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{replay.categoria_logo ? <img src={replay.categoria_logo} alt="" className="h-10 w-12 shrink-0 object-contain"/> : <TrophyIcon className="h-8 w-8 shrink-0 text-racing-red"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-racing-red">{replay.categoria} · T{replay.temporada}</p><h3 className="truncate font-racing text-lg font-bold text-white">Fecha {replay.ronda} · {replay.tanda}</h3><p className="truncate text-xs text-gray-500">{replay.circuito || 'Circuito'} · {replay.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={`/api/replays/${replay.id}/download`} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-green-400 hover:text-green-400" aria-label="Descargar repetición"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteReplay(replay)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar repetición"><TrashIcon className="h-5 w-5"/></button></div></article>)}{!replays.length ? <div className="py-20 text-center text-gray-500"><ArrowDownTrayIcon className="mx-auto h-12 w-12"/><p className="mt-3">Todavía no hay repeticiones publicadas.</p></div> : null}</div>
           </section>
         </div>
       );
@@ -3298,14 +3390,19 @@ export default function Admin() {
                 <div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · pinturas oficiales excluidas · el límite general de {registrationConfig.limite_inscriptos || 0} siempre tiene prioridad</p></div>
               </div>
               <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
-              <section className="border border-yellow-400/25 bg-yellow-400/5 p-5">
-                <div className="flex items-center gap-3"><PhotoIcon className="h-6 w-6 text-yellow-300"/><div><h3 className="font-racing text-xl font-bold text-white">Fondos del campeonato</h3><p className="text-xs text-gray-500">Estas fotos se muestran aleatoriamente en el Inicio.</p></div></div>
-                {!editingRegistrationConfig ? <p className="mt-4 border border-dashed border-racing-border p-4 text-center text-sm text-gray-400">Primero creá el formulario. Después podrás cargar sus fotos.</p> : <>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label><span className="text-sm text-gray-300">Seleccionar fotos</span><input ref={registrationImagesInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setRegistrationImageFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 fotos por carga, 8 MB cada una.</small></label><button type="button" onClick={uploadRegistrationGallery} disabled={!registrationImageFiles.length || savingRegistrationImages} className="inline-flex min-h-12 items-center justify-center gap-2 border border-yellow-300 bg-yellow-400 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingRegistrationImages ? 'Subiendo...' : `Subir ${registrationImageFiles.length || ''} foto${registrationImageFiles.length === 1 ? '' : 's'}`}</button></div>
-                  {registrationGalleryPath ? <p className="mt-3 break-all text-xs text-gray-600">Carpeta: {registrationGalleryPath}</p> : null}
-                  {registrationGalleryMessage ? <p className="mt-3 text-sm text-yellow-200">{registrationGalleryMessage}</p> : null}
-                  <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">{registrationGallery.map(image => <article key={image.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Fondo del campeonato" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteRegistrationGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 opacity-100 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{!registrationGallery.length ? <div className="col-span-full border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no hay fotos cargadas.</div> : null}</div>
-                </>}
+              <section className="overflow-hidden border border-yellow-400/25 bg-yellow-400/5">
+                <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, backgrounds: !current.backgrounds }))} className="flex w-full items-center justify-between gap-4 p-5 text-left transition hover:bg-yellow-400/[0.06]" aria-expanded={!registrationFormCollapsed.backgrounds}>
+                  <span className="flex min-w-0 items-center gap-3"><PhotoIcon className="h-6 w-6 shrink-0 text-yellow-300"/><span><span className="block font-racing text-xl font-bold text-white">Fondos del campeonato</span><span className="block text-xs text-gray-500">Estas fotos se muestran aleatoriamente en el Inicio.</span></span></span>
+                  <span className="flex shrink-0 items-center gap-3"><span className="text-xs font-bold uppercase text-gray-500">{registrationGallery.length} foto{registrationGallery.length === 1 ? '' : 's'}</span><ChevronDownIcon className={`h-5 w-5 text-yellow-300 transition-transform duration-500 ${registrationFormCollapsed.backgrounds ? '-rotate-90' : ''}`}/></span>
+                </button>
+                <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.backgrounds ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="border-t border-yellow-400/20 p-5">
+                  {!editingRegistrationConfig ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-400">Primero creá el formulario. Después podrás cargar sus fotos.</p> : <>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label><span className="text-sm text-gray-300">Seleccionar fotos</span><input ref={registrationImagesInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setRegistrationImageFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 fotos por carga, 8 MB cada una.</small></label><button type="button" onClick={uploadRegistrationGallery} disabled={!registrationImageFiles.length || savingRegistrationImages} className="inline-flex min-h-12 items-center justify-center gap-2 border border-yellow-300 bg-yellow-400 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingRegistrationImages ? 'Subiendo...' : `Subir ${registrationImageFiles.length || ''} foto${registrationImageFiles.length === 1 ? '' : 's'}`}</button></div>
+                    {registrationGalleryPath ? <p className="mt-3 break-all text-xs text-gray-600">Carpeta: {registrationGalleryPath}</p> : null}
+                    {registrationGalleryMessage ? <p className="mt-3 text-sm text-yellow-200">{registrationGalleryMessage}</p> : null}
+                    <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">{registrationGallery.map(image => <article key={image.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Fondo del campeonato" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteRegistrationGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 opacity-100 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{!registrationGallery.length ? <div className="col-span-full border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no hay fotos cargadas.</div> : null}</div>
+                  </>}
+                </div></div></div>
               </section>
               <section className="border border-yellow-400/30 bg-yellow-400/[0.04] p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-yellow-400 text-black"><TrophyIcon className="h-5 w-5"/></span><div><p className="font-racing text-xl font-bold uppercase text-white">Premios del campeonato</p><p className="mt-1 text-xs text-gray-500">Definí las posiciones premiadas de este formulario y marcá todos los premios que correspondan.</p></div></div><button type="button" onClick={addChampionshipPrize} className="border border-yellow-400/50 bg-yellow-400/10 px-4 py-2.5 text-xs font-bold uppercase text-yellow-300 transition hover:bg-yellow-400 hover:text-black">Agregar posición</button></div>
@@ -3318,7 +3415,13 @@ export default function Admin() {
                 {championshipPrizesMessage ? <p className="mt-4 border border-yellow-400/20 bg-yellow-400/[0.05] p-3 text-sm text-yellow-200">{championshipPrizesMessage}</p> : null}
                 <button type="button" onClick={saveChampionshipPrizes} disabled={loadingChampionshipPrizes || savingChampionshipPrizes} className="mt-5 w-full bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingChampionshipPrizes ? 'Guardando premios...' : 'Guardar premios'}</button>
               </section>
-              <div><p className="text-sm font-semibold text-gray-300">Autos habilitados</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}</div>{!categoryCars.length ? <p className="mt-2 text-sm text-yellow-300">La categoría no tiene autos cargados.</p> : null}</div>
+              <section className="overflow-hidden border border-racing-border bg-black/20">
+                <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, enabledCars: !current.enabledCars }))} className="flex w-full items-center justify-between gap-4 p-4 text-left transition hover:bg-white/[0.04] sm:p-5" aria-expanded={!registrationFormCollapsed.enabledCars}>
+                  <span><span className="block font-racing text-xl font-bold text-white">Autos habilitados</span><span className="mt-1 block text-xs text-gray-500">Seleccioná los modelos disponibles para este formulario.</span></span>
+                  <span className="flex shrink-0 items-center gap-3"><span className="text-xs font-bold uppercase text-gray-500">{registrationConfig.autos_habilitados.length}/{categoryCars.length}</span><ChevronDownIcon className={`h-5 w-5 text-racing-red transition-transform duration-500 ${registrationFormCollapsed.enabledCars ? '-rotate-90' : ''}`}/></span>
+                </button>
+                <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.enabledCars ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="grid gap-2 border-t border-racing-border p-4 md:grid-cols-3 sm:p-5">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}{!categoryCars.length ? <p className="text-sm text-yellow-300 md:col-span-3">La categoría no tiene autos cargados.</p> : null}</div></div></div>
+              </section>
               <section className="border border-racing-border bg-black/20 p-4 sm:p-5">
                 <div><p className="text-sm font-semibold text-gray-200">Secciones de inscripción</p><p className="mt-1 text-xs text-gray-500">Las cuatro secciones son fijas. Activá las que estarán disponibles y personalizá sus datos.</p></div>
                 <div className="mt-5 space-y-4">
@@ -3346,9 +3449,9 @@ export default function Admin() {
                 {officialCarsMessage ? <p className="mt-4 text-sm text-yellow-200">{officialCarsMessage}</p> : null}
                 <div className="mt-5 space-y-2">{officialCarGroups.map(group => {
                   const groupKey = `model:${group.id}`;
-                  const collapsed = Boolean(officialCarCollapsedBrands[groupKey]);
+                  const collapsed = officialCarCollapsedBrands[groupKey] !== false;
                   return <section key={group.id} className="overflow-hidden border border-racing-border bg-black/20">
-                    <button type="button" onClick={() => setOfficialCarCollapsedBrands(current => ({ ...current, [groupKey]: !current[groupKey] }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-yellow-400/5" aria-expanded={!collapsed}>
+                    <button type="button" onClick={() => setOfficialCarCollapsedBrands(current => ({ ...current, [groupKey]: current[groupKey] === false }))} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-yellow-400/5" aria-expanded={!collapsed}>
                       <span className="flex min-w-0 items-center gap-3">{group.logo ? <img src={group.logo} alt="" className="h-9 w-12 shrink-0 object-contain"/> : null}<span className="truncate font-racing text-lg font-bold uppercase text-white">{group.marca} {group.modelo}</span><span className="shrink-0 text-xs font-semibold uppercase text-gray-500">{group.cars.length} auto{group.cars.length === 1 ? '' : 's'}</span></span>
                       <ChevronDownIcon className={`h-5 w-5 shrink-0 text-yellow-300 transition-transform duration-500 ${collapsed ? '-rotate-90' : ''}`}/>
                     </button>
@@ -4684,7 +4787,7 @@ export default function Admin() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <ClearFiltersButton active={Boolean(registrationSearch)} onClick={() => setRegistrationSearch('')} />
+                  <ClearFiltersButton active={Boolean(registrationSearch || registrationPlanFilter)} onClick={() => { setRegistrationSearch(''); setRegistrationPlanFilter(''); }} />
                   <button
                     type="button"
                     onClick={handleSaveRegistrationChanges}
@@ -4697,29 +4800,24 @@ export default function Admin() {
                   </button>
                 </div>
               </div>
-              <div className="mt-5 max-h-80 overflow-y-auto border border-racing-border bg-black/20 p-2">
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {registrationChampionshipGroups.map(championship => { const selected = String(registrationChampionshipFilter) === String(championship.id); return <button key={championship.id} type="button" onClick={() => selectRegistrationChampionship(championship.id)} className={`group relative flex min-h-24 items-center gap-3 overflow-hidden border px-3 py-3 text-left transition ${selected ? 'border-racing-red bg-racing-red/15 shadow-[0_0_24px_rgba(220,38,38,0.16)]' : 'border-racing-border bg-racing-dark hover:border-racing-red/60 hover:bg-white/[0.04]'}`}>{championship.categoria_logo ? <img src={championship.categoria_logo} alt="" className="h-14 w-16 shrink-0 object-contain transition-transform group-hover:scale-105"/> : <span className="flex h-14 w-16 shrink-0 items-center justify-center border border-white/10 bg-black/40 font-racing text-xl text-gray-600">T{championship.temporada}</span>}<span className="min-w-0 flex-1"><strong className="block truncate font-racing text-base uppercase text-white">{championship.categoria}</strong><span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Temporada {championship.temporada} · {championship.anio}</span><span className={`mt-2 inline-block px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${selected ? 'bg-racing-red text-white' : championship.registrationsCount ? 'bg-yellow-400/15 text-yellow-300' : 'bg-white/5 text-gray-500'}`}>{championship.registrationsCount} inscripto{championship.registrationsCount === 1 ? '' : 's'}</span></span>{selected ? <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-racing-red shadow-[0_0_10px_rgba(239,68,68,0.9)]"/> : null}</button>; })}
-                  {!registrationChampionshipGroups.length ? <p className="border border-dashed border-racing-border p-5 text-center text-sm text-gray-500 sm:col-span-2 xl:col-span-3">Todavía no hay campeonatos cargados.</p> : null}
-                </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-[minmax(300px,1fr)_minmax(190px,0.55fr)_minmax(240px,0.75fr)] md:items-end">
+                <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Campeonato</span><select value={registrationChampionshipFilter} onChange={event => selectRegistrationChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato</option>{registrationChampionshipGroups.map(championship => <option key={championship.id} value={championship.id}>{championship.categoria} · Temporada {championship.temporada} · {championship.anio} · {championship.registrationsCount} inscripto{championship.registrationsCount === 1 ? '' : 's'}</option>)}</select></label>
+                <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Tipo de diseño</span><select value={registrationPlanFilter} onChange={event => setRegistrationPlanFilter(event.target.value)} disabled={!registrationChampionshipFilter} className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"><option value="">Todos los diseños</option><option value="extra">Extra</option><option value="diseno_liga">Diseño de la liga</option><option value="personalizado">Yo mismo lo diseño</option><option value="diseno_oficial">Pintura oficial</option></select></label>
+                <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Buscar piloto</span><span className="relative mt-2 block"><MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500"/><input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} disabled={!registrationChampionshipFilter} className="input-field pl-10 disabled:cursor-not-allowed disabled:opacity-40" placeholder="Piloto, número, auto..."/></span></label>
               </div>
-              {registrationChampionshipFilter ? <div className="relative mt-4">
-                  <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
-                  <input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} className="input-field pl-10" placeholder="Piloto, número, auto..." />
-                </div> : null}
               {registrationMessage ? <div className="mt-3 border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-sm">
+              <table className="w-full min-w-[1180px] text-sm">
                 <thead><tr className="border-b border-racing-border bg-racing-dark">
-                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Nº</th>
-                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Piloto</th>
-                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Auto</th>
-                  <th className="px-4 py-3 text-left text-xs uppercase text-gray-400">Diseño elegido</th>
-                  <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Total a abonar</th>
-                  <th className="px-4 py-3 text-center text-xs uppercase text-gray-400">Pago</th>
-                  <th className="px-4 py-3 text-right text-xs uppercase text-gray-400">Acción</th>
+                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Nº</th>
+                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Piloto</th>
+                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Auto</th>
+                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Diseño elegido</th>
+                  <th className="px-3 py-2 text-right text-xs uppercase text-gray-400">Total a abonar</th>
+                  <th className="px-3 py-2 text-center text-xs uppercase text-gray-400">Pago</th>
+                  <th className="px-3 py-2 text-right text-xs uppercase text-gray-400">Acción</th>
                 </tr></thead>
                 <tbody className="divide-y divide-racing-border">
                   {displayedRegistrations.length ? displayedRegistrations.map(registration => {
@@ -4752,6 +4850,8 @@ export default function Admin() {
                     const selectedPlan = enabledRegistrationPlans.find(plan => plan.id === edit.plan_id);
                     const isExtraPlan = edit.plan_id === 'extra';
                     const isOfficialPlan = edit.plan_id === 'diseno_oficial';
+                    const isLeagueDesignPlan = edit.plan_id === 'diseno_liga';
+                    const isOwnDesignPlan = edit.plan_id === 'personalizado';
                     const selectedOfficialCar = enabledRegistrationOfficialCars.find(car => String(car.id) === String(edit.idauto_oficial));
                     const amountDue = selectedPlan
                       ? Number(selectedRegistrationConfig?.precio || 0) + Number(selectedPlan.precio_adicional || 0)
@@ -4759,10 +4859,10 @@ export default function Admin() {
 
                     const isSelectedDriver = String(selectedRegistrationDriverId) === String(registration.idpiloto);
 
-                    return <tr key={registrationKey} className={`${isSelectedDriver ? 'bg-racing-red/10 shadow-[inset_3px_0_0_#e63946]' : isDirty ? 'bg-yellow-400/5' : ''} hover:bg-racing-card/60`}>
-                      <td className="px-4 py-3">
+                    return <tr key={registrationKey} className={`${!edit.pago ? 'bg-yellow-400/[0.09] shadow-[inset_4px_0_0_#facc15]' : isSelectedDriver ? 'bg-racing-red/10 shadow-[inset_3px_0_0_#e63946]' : isDirty ? 'bg-cyan-400/[0.04]' : ''} transition-colors hover:bg-racing-card/60`}>
+                      <td className="px-3 py-1.5">
                         {isExtraPlan || isOfficialPlan ? (
-                          <span className="font-anton block min-w-16 text-center text-4xl leading-normal text-yellow-300">
+                          <span className="font-anton block min-w-14 text-center text-3xl leading-none text-yellow-300">
                             {isExtraPlan ? 'EXTRA' : (edit.numero || '—')}
                           </span>
                         ) : isEditingNumber ? (
@@ -4788,7 +4888,7 @@ export default function Admin() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <span className="font-anton min-w-16 text-center text-4xl leading-normal text-yellow-300">
+                            <span className="font-anton min-w-14 text-center text-3xl leading-none text-yellow-300">
                               {edit.numero || '—'}
                             </span>
                             <button
@@ -4802,20 +4902,20 @@ export default function Admin() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-lg font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
-                      <td className="px-4 py-3">
-                        {isOfficialPlan ? <div className="min-w-[260px] border border-yellow-400/20 bg-yellow-400/5 px-3 py-2">
-                          <span className="block text-[10px] font-bold uppercase tracking-wider text-yellow-300">Modelo de la pintura</span>
-                          <span className="mt-1 block font-semibold text-white">
+                      <td className="px-3 py-1.5"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-base font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
+                      <td className="px-3 py-1.5">
+                        {isOfficialPlan ? <div className="min-w-[240px] border-l-2 border-sky-400 bg-sky-400/[0.07] px-3 py-1.5">
+                          <span className="block text-[9px] font-bold uppercase tracking-wider text-sky-300">Pintura oficial</span>
+                          <span className="block truncate font-semibold text-white">
                             {selectedOfficialCar ? `${selectedOfficialCar.marca} ${selectedOfficialCar.modelo}` : 'Seleccioná una pintura oficial'}
                           </span>
-                        </div> : <div className="grid min-w-[300px] grid-cols-2 gap-2">
+                        </div> : <div className="grid min-w-[300px] grid-cols-2 gap-1.5">
                           <div className="flex min-w-0 items-center gap-2">
-                            {selectedBrand?.logo ? <img src={selectedBrand.logo} alt="" className="h-10 w-12 shrink-0 object-contain" /> : null}
+                            {selectedBrand?.logo ? <img src={selectedBrand.logo} alt="" className="h-8 w-10 shrink-0 object-contain" /> : null}
                             <select
                               value={edit.idmarca}
                               onChange={event => handleRegistrationEdit(registration, 'idmarca', event.target.value)}
-                              className="input-field min-w-0 flex-1 py-2 text-sm"
+                              className="input-field min-w-0 flex-1 py-1.5 text-sm"
                               aria-label={`Marca de ${registration.nombre}`}
                             >
                               <option value="">Seleccionar marca</option>
@@ -4825,7 +4925,7 @@ export default function Admin() {
                           <select
                             value={edit.idauto}
                             onChange={event => handleRegistrationEdit(registration, 'idauto', event.target.value)}
-                            className="input-field py-2 text-sm"
+                            className="input-field py-1.5 text-sm"
                             disabled={!edit.idmarca}
                             aria-label={`Modelo de ${registration.nombre}`}
                           >
@@ -4834,12 +4934,12 @@ export default function Admin() {
                           </select>
                         </div>}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="min-w-[260px] space-y-2">
+                      <td className="px-3 py-1.5">
+                        <div className={`grid min-w-[360px] gap-1.5 border-l-2 pl-2 ${isOfficialPlan ? 'grid-cols-2 border-sky-400 bg-sky-400/[0.07]' : isLeagueDesignPlan ? 'grid-cols-1 border-violet-400 bg-violet-500/[0.06]' : isOwnDesignPlan ? 'grid-cols-1 border-cyan-400 bg-cyan-500/[0.06]' : 'grid-cols-1 border-gray-700'}`}>
                           <select
                             value={edit.plan_id}
                             onChange={event => handleRegistrationPlanChange(registration, event.target.value)}
-                            className="input-field py-2 text-sm"
+                            className="input-field py-1.5 text-sm"
                             aria-label={`Tipo de diseño de ${registration.nombre}`}
                           >
                             <option value="">Seleccionar plan</option>
@@ -4848,7 +4948,7 @@ export default function Admin() {
                           {isOfficialPlan ? <select
                             value={edit.idauto_oficial}
                             onChange={event => handleRegistrationOfficialCarChange(registration, event.target.value)}
-                            className="input-field py-2 text-sm"
+                            className="input-field py-1.5 text-sm"
                             aria-label={`Pintura oficial de ${registration.nombre}`}
                           >
                             <option value="">Seleccionar pintura oficial</option>
@@ -4861,11 +4961,11 @@ export default function Admin() {
                           </select> : null}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-3 py-1.5 text-right">
                         {amountDue !== null && amountDue !== undefined ? <strong className="whitespace-nowrap font-racing text-xl font-bold text-green-400">{formatPrice(amountDue)}</strong> : <span className="text-xs text-gray-600">Sin definir</span>}
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <label className={`inline-flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase ${edit.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
+                      <td className="px-3 py-1.5 text-center">
+                        <label className={`inline-flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-xs font-bold uppercase ${edit.pago ? 'bg-green-500/15 text-green-400' : 'bg-yellow-500/15 text-yellow-300'}`}>
                           <input
                             type="checkbox"
                             checked={edit.pago}
@@ -4875,7 +4975,7 @@ export default function Admin() {
                           {edit.pago ? 'Pagado' : 'Pendiente'}
                         </label>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-3 py-1.5 text-right">
                         <button type="button" onClick={() => handleDeleteRegistration(registration)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-racing-border text-gray-400 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar inscripción">
                           <TrashIcon className="h-4 w-4" />
                         </button>
@@ -5861,7 +5961,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
+            <nav className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:gap-1.5">
               {adminSections.map(section => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;
@@ -5871,13 +5971,13 @@ export default function Admin() {
                     key={section.id}
                     type="button"
                     onClick={() => setActiveSection(section.id)}
-                    className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-3 font-racing text-sm font-semibold transition-all ${isActive
+                    className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 py-2 font-racing text-[10px] font-semibold transition-all 2xl:text-[11px] ${isActive
                       ? 'border-racing-red bg-racing-red text-white shadow-racing'
                       : 'border-racing-border bg-racing-card text-gray-300 hover:border-racing-red hover:text-white'
                       }`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    <span>{section.label}</span>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{section.label}</span>
                   </button>
                 );
               })}

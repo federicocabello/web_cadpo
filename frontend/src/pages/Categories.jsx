@@ -14,6 +14,8 @@ export default function Categories() {
   const categoryStripRef = useRef(null);
   const categoryDragRef = useRef({ active: false, pointerId: null, startX: 0, scrollLeft: 0, moved: false });
   const suppressCategoryClickRef = useRef(false);
+  const lightboxTouchRef = useRef({ x: 0, y: 0 });
+  const lightboxOpen = Boolean(selectedImage);
 
   const startCategoryDrag = event => {
     const strip = categoryStripRef.current;
@@ -99,6 +101,28 @@ export default function Categories() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImage]);
 
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+    const scrollPosition = window.scrollY;
+    const previousStyles = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+    };
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollPosition}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = previousStyles.overflow;
+      document.body.style.position = previousStyles.position;
+      document.body.style.top = previousStyles.top;
+      document.body.style.width = previousStyles.width;
+      window.scrollTo(0, scrollPosition);
+    };
+  }, [lightboxOpen]);
+
   const moveSelectedImage = direction => {
     setSelectedImage(current => {
       if (!current) return null;
@@ -107,6 +131,20 @@ export default function Categories() {
       const nextIndex = (current.index + direction + images.length) % images.length;
       return { ...images[nextIndex], season: current.season, index: nextIndex };
     });
+  };
+
+  const startLightboxSwipe = event => {
+    const touch = event.touches[0];
+    if (touch) lightboxTouchRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const finishLightboxSwipe = event => {
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const horizontalDistance = touch.clientX - lightboxTouchRef.current.x;
+    const verticalDistance = touch.clientY - lightboxTouchRef.current.y;
+    if (Math.abs(horizontalDistance) < 45 || Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) return;
+    moveSelectedImage(horizontalDistance < 0 ? 1 : -1);
   };
 
   return (
@@ -145,7 +183,7 @@ export default function Categories() {
         </> : null}
       </>}
 
-      {selectedImage ? <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-3 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Foto ampliada" onClick={() => setSelectedImage(null)}><button type="button" onClick={() => setSelectedImage(null)} className="absolute right-4 top-4 z-20 inline-flex h-11 w-11 items-center justify-center border border-white/20 bg-black/70 text-white hover:border-racing-red hover:text-racing-red" aria-label="Cerrar foto"><XMarkIcon className="h-6 w-6"/></button>{selectedImage.season.images.length > 1 ? <><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(-1); }} className="absolute left-3 top-1/2 z-20 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:left-7 sm:h-14 sm:w-14" aria-label="Foto anterior"><ChevronLeftIcon className="h-7 w-7"/></button><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(1); }} className="absolute right-3 top-1/2 z-20 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:right-7 sm:h-14 sm:w-14" aria-label="Foto siguiente"><ChevronRightIcon className="h-7 w-7"/></button></> : null}<div className="flex max-h-full max-w-full flex-col items-center px-10 sm:px-16" onClick={event => event.stopPropagation()}><img src={selectedImage.url} alt="Foto ampliada de la categoría" className="max-h-[82vh] max-w-full object-contain shadow-2xl"/><div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center"><p className="font-racing text-sm font-bold uppercase text-gray-300">Temporada {selectedImage.season.temporada} · {selectedImage.season.anio}</p><span className="text-xs text-gray-600">{selectedImage.index + 1} / {selectedImage.season.images.length}</span></div></div></div> : null}
+      {selectedImage ? <div className="fixed inset-0 z-[200] flex touch-none items-center justify-center bg-black/95 p-3 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Foto ampliada" onClick={() => setSelectedImage(null)} onTouchStart={startLightboxSwipe} onTouchEnd={finishLightboxSwipe}><button type="button" onClick={() => setSelectedImage(null)} className="absolute right-4 top-4 z-20 inline-flex h-11 w-11 items-center justify-center border border-white/20 bg-black/70 text-white hover:border-racing-red hover:text-racing-red" aria-label="Cerrar foto"><XMarkIcon className="h-6 w-6"/></button>{selectedImage.season.images.length > 1 ? <><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(-1); }} className="absolute left-2 top-1/2 z-20 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:left-7 sm:h-14 sm:w-14" aria-label="Foto anterior"><ChevronLeftIcon className="h-7 w-7"/></button><button type="button" onClick={event => { event.stopPropagation(); moveSelectedImage(1); }} className="absolute right-2 top-1/2 z-20 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-racing-red hover:bg-racing-red sm:right-7 sm:h-14 sm:w-14" aria-label="Foto siguiente"><ChevronRightIcon className="h-7 w-7"/></button></> : null}<div className="flex max-h-full max-w-full flex-col items-center px-9 sm:px-16" onClick={event => event.stopPropagation()}><img src={selectedImage.url} alt="Foto ampliada de la categoría" draggable="false" className="max-h-[82vh] max-w-full select-none object-contain shadow-2xl"/><div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center"><p className="font-racing text-sm font-bold uppercase text-gray-300">Temporada {selectedImage.season.temporada} · {selectedImage.season.anio}</p><span className="text-xs text-gray-600">{selectedImage.index + 1} / {selectedImage.season.images.length}</span></div></div></div> : null}
     </main>
   );
 }

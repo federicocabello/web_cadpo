@@ -47,13 +47,13 @@ const download = async (req, res, next) => {
        LIMIT 1`,
       [req.params.id]
     );
-    if (!replay) return res.status(404).json({ error: 'Replay no encontrado' });
+    if (!replay) return res.status(404).json({ error: 'Repetición no encontrada' });
 
     const relativePath = String(replay.archivo || '').replace(/^[/\\]+/, '');
     const resolvedPath = path.resolve(publicDir, relativePath);
     const replayRoot = path.resolve(publicDir, 'media', 'replays');
     if (!resolvedPath.startsWith(`${replayRoot}${path.sep}`)) {
-      return res.status(400).json({ error: 'Ruta de replay inválida' });
+      return res.status(400).json({ error: 'Ruta de la repetición inválida' });
     }
 
     const extension = path.extname(replay.nombre_original || replay.archivo || '');
@@ -114,7 +114,7 @@ const create = async (req, res, next) => {
     const championshipId = Number(req.body.idcampeonato);
     const round = Number(req.body.ronda);
     const session = String(req.body.tanda || '').trim().slice(0, 80);
-    if (!req.file) return res.status(400).json({ error: 'Seleccioná un archivo de replay' });
+    if (!req.file) return res.status(400).json({ error: 'Seleccioná un archivo de repetición' });
     if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1 || !session) {
       await removeUploadedFile(req.file);
       return res.status(400).json({ error: 'Seleccioná el campeonato, la fecha y la tanda' });
@@ -137,7 +137,7 @@ const create = async (req, res, next) => {
     );
     res.status(201).json({
       data: { id: result.insertId, idcampeonato: championshipId, ronda: round, tanda: session, archivo: publicPath },
-      message: 'Replay publicado correctamente',
+      message: 'Repetición publicada correctamente',
     });
   } catch (error) {
     await removeUploadedFile(req.file).catch(() => {});
@@ -149,7 +149,7 @@ const remove = async (req, res, next) => {
   try {
     await ensureReplayTable();
     const [[replay]] = await pool.query('SELECT archivo FROM replays WHERE id = ?', [req.params.id]);
-    if (!replay) return res.status(404).json({ error: 'Replay no encontrado' });
+    if (!replay) return res.status(404).json({ error: 'Repetición no encontrada' });
     await pool.query('DELETE FROM replays WHERE id = ?', [req.params.id]);
     const relativePath = String(replay.archivo || '').replace(/^[/\\]+/, '');
     const resolvedPath = path.resolve(publicDir, relativePath);
@@ -159,7 +159,7 @@ const remove = async (req, res, next) => {
         if (error.code !== 'ENOENT') throw error;
       });
     }
-    res.json({ message: 'Replay eliminado correctamente' });
+    res.json({ message: 'Repetición eliminada correctamente' });
   } catch (error) {
     next(error);
   }

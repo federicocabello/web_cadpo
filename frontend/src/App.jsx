@@ -11,6 +11,7 @@ import LiveTiming from './pages/LiveTiming'
 import Results from './pages/Results'
 import Statistics from './pages/Statistics'
 import Replays from './pages/Replays'
+import Templates from './pages/Templates'
 import { healthApi } from './services/api'
 
 const Admin = lazy(() => import('./pages/Admin'))
@@ -84,6 +85,7 @@ function App() {
           <Route path="/resultados" element={<Results />} />
           <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/replays" element={<Replays />} />
+          <Route path="/plantillas" element={<Templates />} />
           <Route path="/inscripcion" element={<Registration />} />
           <Route path="/categorias" element={<Categories />} />
           <Route

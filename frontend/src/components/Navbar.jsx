@@ -10,6 +10,7 @@ import {
   TagIcon,
   ChartBarIcon,
   ArrowDownTrayIcon,
+  ArchiveBoxIcon,
   PlayCircleIcon,
   TrophyIcon,
 } from '@heroicons/react/24/outline'
@@ -55,7 +56,8 @@ const navLinks = [
   { to: '/', label: 'INICIO', Icon: HomeIcon },
   { to: '/tiempos-en-vivo', label: 'TIEMPOS EN VIVO', Icon: ClockIcon },
   { to: '/resultados', label: 'RESULTADOS', Icon: TrophyIcon },
-  { to: '/replays', label: 'REPLAYS', Icon: ArrowDownTrayIcon },
+  { to: '/replays', label: 'REPETICIONES', Icon: ArrowDownTrayIcon },
+  { to: '/plantillas', label: 'PLANTILLAS', Icon: ArchiveBoxIcon },
   { to: '/proximas-fechas', label: 'PRÓXIMAS FECHAS', Icon: CalendarDaysIcon },
   { to: '/campeonatos', label: 'CAMPEONATOS', Icon: FlagIcon },
   { to: '/categorias', label: 'CATEGORÍAS', Icon: TagIcon },
