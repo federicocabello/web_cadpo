@@ -64,12 +64,12 @@ export default function ChampionshipCard({ championship, wide = false }) {
       </div>
 
       <div className={`mt-auto grid gap-2 ${wide ? 'lg:mt-0 lg:w-64 lg:shrink-0' : ''}`}>
-        {displayStatus === 'registration' ? (
+        {championship.hasRegistrationForm ? (
           <Link
             to={`/inscripcion?campeonato=${championship.id}`}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/50 bg-emerald-500 px-5 py-3 font-racing text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-emerald-300 hover:shadow-[0_0_24px_rgba(52,211,153,0.25)]"
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border px-5 py-3 font-racing text-xs font-bold uppercase tracking-widest transition-all ${championship.registrationPhase === 'open' ? 'border-emerald-400/50 bg-emerald-500 text-black hover:bg-emerald-300 hover:shadow-[0_0_24px_rgba(52,211,153,0.25)]' : 'border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300 hover:bg-amber-400 hover:text-black'}`}
           >
-            Inscribirse ahora
+            {championship.registrationPhase === 'open' ? 'Inscribirse ahora' : 'Ver información'}
             <ArrowRightIcon className="h-4 w-4" />
           </Link>
         ) : null}

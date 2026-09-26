@@ -202,6 +202,8 @@ export default function Championships({ initialStatus = '' }) {
     return championships
       .map(championship => ({
         ...championship,
+        registrationPhase: registrationPhases.get(Number(championship.id)) || '',
+        hasRegistrationForm: registrationPhases.has(Number(championship.id)),
         displayStatus: getDisplayStatus(
           championship,
           registrationPhases.get(Number(championship.id)),

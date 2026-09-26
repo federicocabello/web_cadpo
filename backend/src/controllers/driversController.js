@@ -19,7 +19,7 @@ const normalizeDriver = body => ({
   ig: normalizeInstagram(body.ig),
 });
 
-const findDuplicate = async ({ nombre, telefono, steam }, excludeId = null) => {
+const findDuplicate = async ({ nombre, telefono }, excludeId = null) => {
   const conditions = [];
   const params = [];
 
@@ -31,14 +31,9 @@ const findDuplicate = async ({ nombre, telefono, steam }, excludeId = null) => {
     conditions.push('telefono = ?');
     params.push(telefono);
   }
-  if (steam) {
-    conditions.push('LOWER(steam) = LOWER(?)');
-    params.push(steam);
-  }
-
   if (!conditions.length) return null;
 
-  let sql = `SELECT id, nombre, telefono, steam FROM pilotos WHERE (${conditions.join(' OR ')})`;
+  let sql = `SELECT id, nombre, telefono FROM pilotos WHERE (${conditions.join(' OR ')})`;
   if (excludeId) {
     sql += ' AND id <> ?';
     params.push(excludeId);
@@ -55,10 +50,6 @@ const duplicateMessage = (duplicate, driver) => {
     repeatedFields.push('el nombre');
   }
   if (driver.telefono && digitsOnly(duplicate.telefono) === driver.telefono) repeatedFields.push('el teléfono');
-  if (driver.steam && String(duplicate.steam || '').trim().toLocaleLowerCase('es-AR') === driver.steam.toLocaleLowerCase('es-AR')) {
-    repeatedFields.push('Steam');
-  }
-
   return `Ya existe un piloto con ${repeatedFields.join(' y ') || 'esos datos'}`;
 };
 

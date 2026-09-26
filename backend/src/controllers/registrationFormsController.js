@@ -222,6 +222,7 @@ const configSelect = `
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
          cat.categoria, cat.logo AS categoria_logo,
          COUNT(DISTINCT cal.ronda) AS cantidad_fechas,
+         MIN(cal.fecha) AS primera_fecha,
          (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) AS inscriptos_actuales,
          CASE
            WHEN NOW() < cfg.fecha_apertura THEN 'upcoming'
@@ -258,7 +259,7 @@ const normalizeConfig = row => {
     preinscriptos: preEnrolled,
     cupos_ocupados: Math.min(totalLimit, occupied),
     lugares_disponibles: Math.max(0, totalLimit - occupied),
-    phase: row.phase,
+    phase: row.phase === 'open' && occupied >= totalLimit ? 'full' : row.phase,
   };
 };
 
@@ -897,7 +898,6 @@ const submit = async (req, res, next) => {
       const duplicateConditions = [];
       const duplicateParams = [driverId];
       if (driver.telefono) { duplicateConditions.push('telefono=?'); duplicateParams.push(driver.telefono); }
-      if (driver.steam) { duplicateConditions.push('LOWER(steam)=LOWER(?)'); duplicateParams.push(driver.steam); }
       let duplicateDriver = null;
       if (duplicateConditions.length) {
         [[duplicateDriver]] = await connection.query(
@@ -914,7 +914,6 @@ const submit = async (req, res, next) => {
       const duplicateConditions = ['LOWER(nombre)=LOWER(?)'];
       const duplicateParams = [driver.nombre];
       if (driver.telefono) { duplicateConditions.push('telefono=?'); duplicateParams.push(driver.telefono); }
-      if (driver.steam) { duplicateConditions.push('LOWER(steam)=LOWER(?)'); duplicateParams.push(driver.steam); }
       const [[duplicate]] = await connection.query(
         `SELECT id FROM pilotos WHERE ${duplicateConditions.join(' OR ')} LIMIT 1 FOR UPDATE`, duplicateParams
       );

@@ -117,13 +117,13 @@ export default function Statistics() {
               </div>
             </section>
 
-            <section className="card-glass p-6 md:p-8">
+            <section className="card-glass relative z-20 overflow-visible p-6 md:p-8">
               <div className="max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Ficha individual</p>
                 <h2 className="mt-1 font-racing text-3xl font-bold">Buscar piloto</h2>
                 <p className="mt-2 text-sm text-gray-400">Buscá por nombre o usuario de Instagram y seleccioná al piloto.</p>
               </div>
-              <div className="relative mt-6 max-w-2xl">
+              <div className="relative z-50 mt-6 max-w-2xl">
                 <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" />
                 <input
                   value={search}
@@ -134,7 +134,7 @@ export default function Statistics() {
                 />
                 {search ? <button type="button" onClick={clearDriver} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white" aria-label="Limpiar piloto"><XMarkIcon className="h-5 w-5" /></button> : null}
                 {suggestions.length ? (
-                  <div className="absolute z-30 mt-2 max-h-80 w-full overflow-y-auto border border-racing-border bg-racing-dark shadow-2xl">
+                  <div className="absolute left-0 top-full z-[100] mt-2 max-h-80 w-full overflow-y-auto border border-racing-border bg-racing-dark shadow-[0_24px_60px_rgba(0,0,0,0.85)]">
                     {suggestions.map(driver => (
                       <button key={driver.id} type="button" onClick={() => selectDriver(driver)} className="flex w-full items-center gap-3 border-b border-racing-border px-4 py-3 text-left transition-colors hover:bg-racing-red/10">
                         <CountryFlag country={driver.nacionalidad} className="text-lg" />
