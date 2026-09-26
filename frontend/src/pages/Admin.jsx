@@ -592,6 +592,7 @@ export default function Admin() {
   const carImageInputRef = useRef(null);
   const registrationImagesInputRef = useRef(null);
   const officialCarPhotoInputRef = useRef(null);
+  const registrationSectionAutoSelectRef = useRef(false);
   const replayInputRef = useRef(null);
   const templateInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
@@ -715,7 +716,9 @@ export default function Admin() {
   const [registrationSearch, setRegistrationSearch] = useState('');
   const [registrationChampionshipFilter, setRegistrationChampionshipFilter] = useState('');
   const [registrationPlanFilter, setRegistrationPlanFilter] = useState('');
+  const [registrationReadyFilter, setRegistrationReadyFilter] = useState('');
   const [registrationEdits, setRegistrationEdits] = useState({});
+  const [registrationNumberAvailability, setRegistrationNumberAvailability] = useState({});
   const [registrationOfficialCars, setRegistrationOfficialCars] = useState([]);
   const [savingRegistrationChanges, setSavingRegistrationChanges] = useState(false);
   const [editingRegistrationNumbers, setEditingRegistrationNumbers] = useState({});
@@ -1089,6 +1092,9 @@ export default function Admin() {
       const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
       const planId = registrationEdits[registrationKey]?.plan_id || getRegistrationPlanId(registration);
       if (registrationPlanFilter && planId !== registrationPlanFilter) return false;
+      const ready = registrationEdits[registrationKey]?.listo ?? Boolean(registration.listo);
+      if (registrationReadyFilter === 'ready' && !ready) return false;
+      if (registrationReadyFilter === 'pending' && ready) return false;
 
       if (!search) return true;
       return [
@@ -1105,15 +1111,41 @@ export default function Admin() {
         .filter(value => value !== null && value !== undefined)
         .some(value => String(value).toLocaleLowerCase('es-AR').includes(search));
     });
-  }, [registrationChampionshipFilter, registrationEdits, registrationPlanFilter, registrationSearch, registrations]);
+  }, [registrationChampionshipFilter, registrationEdits, registrationPlanFilter, registrationReadyFilter, registrationSearch, registrations]);
 
   useEffect(() => {
     if (registrationChampionshipFilter && !selectedRegistrationChampionship) {
       setRegistrationChampionshipFilter('');
       setRegistrationSearch('');
       setRegistrationPlanFilter('');
+      setRegistrationReadyFilter('');
     }
   }, [registrationChampionshipFilter, selectedRegistrationChampionship]);
+
+  useEffect(() => {
+    if (activeSection !== 'inscriptos') {
+      registrationSectionAutoSelectRef.current = false;
+      return;
+    }
+    if (registrationSectionAutoSelectRef.current || !registrationChampionshipGroups.length) return;
+
+    registrationSectionAutoSelectRef.current = true;
+    const latestChampionshipId = String(registrationChampionshipGroups[0].id);
+    setRegistrationChampionshipFilter(latestChampionshipId);
+    setRegistrationSearch('');
+    setRegistrationPlanFilter('');
+    setRegistrationReadyFilter('');
+    setRegistrationMessage('');
+    setRegistrationEdits({});
+    setEditingRegistrationNumbers({});
+    setRegistrationOfficialCars([]);
+    setSelectedRegistrationDriverId(null);
+    setRegistrationDriverDetails(emptyDriverForm);
+    setRegistrationDriverDetailsMessage('');
+    registrationFormsApi.getOfficialCars(latestChampionshipId)
+      .then(response => setRegistrationOfficialCars(response.data.data || []))
+      .catch(error => setRegistrationMessage(error.response?.data?.error || 'No se pudieron cargar las pinturas oficiales.'));
+  }, [activeSection, registrationChampionshipGroups]);
 
   const displayedEvents = useMemo(() => {
     const search = eventSearch.trim().toLocaleLowerCase('es-AR');
@@ -1655,6 +1687,7 @@ export default function Admin() {
     setRegistrationChampionshipFilter(championshipId);
     setRegistrationSearch('');
     setRegistrationPlanFilter('');
+    setRegistrationReadyFilter('');
     setRegistrationMessage('');
     setRegistrationEdits({});
     setEditingRegistrationNumbers({});
@@ -2904,6 +2937,7 @@ export default function Admin() {
         idauto: String(registration.idauto || ''),
         numero: String(registration.numero ?? ''),
         pago: Boolean(registration.pago),
+        listo: Boolean(registration.listo),
         plan_id: getRegistrationPlanId(registration),
         idauto_oficial: String(registration.idauto_oficial || ''),
       };
@@ -2930,6 +2964,7 @@ export default function Admin() {
         idauto: String(registration.idauto || ''),
         numero: String(registration.numero ?? ''),
         pago: Boolean(registration.pago),
+        listo: Boolean(registration.listo),
         plan_id: getRegistrationPlanId(registration),
         idauto_oficial: String(registration.idauto_oficial || ''),
       };
@@ -2962,6 +2997,7 @@ export default function Admin() {
         idauto: String(registration.idauto || ''),
         numero: String(registration.numero ?? ''),
         pago: Boolean(registration.pago),
+        listo: Boolean(registration.listo),
         plan_id: getRegistrationPlanId(registration),
         idauto_oficial: String(registration.idauto_oficial || ''),
       };
@@ -2977,7 +3013,52 @@ export default function Admin() {
         },
       };
     });
+    if (field === 'numero') {
+      setRegistrationNumberAvailability(current => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
     setRegistrationMessage('');
+  };
+
+  const validateAdminRegistrationNumber = async (registration, number = null) => {
+    const key = `${registration.idcampeonato}-${registration.idpiloto}`;
+    const edit = registrationEdits[key];
+    const planId = edit?.plan_id || getRegistrationPlanId(registration);
+    if (planId === 'extra' || planId === 'diseno_oficial') return true;
+
+    const candidate = Number(number ?? edit?.numero ?? registration.numero);
+    if (!Number.isInteger(candidate) || candidate < 1 || candidate > 255) {
+      setRegistrationNumberAvailability(current => ({
+        ...current,
+        [key]: { available: false, number: candidate, message: 'Ingresá un número entero entre 1 y 255.' },
+      }));
+      return false;
+    }
+
+    setRegistrationNumberAvailability(current => ({ ...current, [key]: { checking: true, number: candidate } }));
+    try {
+      const response = await registrationFormsApi.checkNumber(registration.idcampeonato, candidate, registration.idpiloto, true);
+      const available = Boolean(response.data.data.available);
+      const reason = response.data.data.reason;
+      const message = available
+        ? `Número ${candidate} disponible.`
+        : reason === 'reserved_official'
+          ? `El número ${candidate} está reservado para una pintura oficial.`
+          : reason === 'reserved_ranking'
+            ? `El número ${candidate} está reservado para un piloto rankeado.`
+            : reason === 'ranked_number'
+              ? `A este piloto le corresponde el número ${response.data.data.assignedNumber} por ranking.`
+              : `El número ${candidate} ya está ocupado en este campeonato.`;
+      setRegistrationNumberAvailability(current => ({ ...current, [key]: { available, number: candidate, message } }));
+      return available;
+    } catch (error) {
+      const message = error.response?.data?.error || 'No se pudo comprobar la disponibilidad del número.';
+      setRegistrationNumberAvailability(current => ({ ...current, [key]: { available: false, number: candidate, message } }));
+      return false;
+    }
   };
 
   const handleSaveRegistrationChanges = async () => {
@@ -2988,8 +3069,23 @@ export default function Admin() {
       return;
     }
 
-    setSavingRegistrationChanges(true);
     setRegistrationMessage('');
+    const registrationsByKey = new Map(registrations.map(registration => [`${registration.idcampeonato}-${registration.idpiloto}`, registration]));
+    const numbersAreAvailable = await Promise.all(changes.map(change => {
+      const registration = registrationsByKey.get(`${change.idcampeonato}-${change.idpiloto}`);
+      if (!registration) return false;
+      const numberChanged = Number(change.numero) !== Number(registration.numero);
+      const planChanged = change.plan_id !== getRegistrationPlanId(registration);
+      return numberChanged || planChanged
+        ? validateAdminRegistrationNumber(registration, change.numero)
+        : true;
+    }));
+    if (numbersAreAvailable.some(available => !available)) {
+      setRegistrationMessage('No se guardaron los cambios. Corregí los números marcados como ocupados o reservados.');
+      return;
+    }
+
+    setSavingRegistrationChanges(true);
     try {
       await registrationsApi.updateBulk(changes.map(change => ({
         idcampeonato: Number(change.idcampeonato),
@@ -2997,6 +3093,7 @@ export default function Admin() {
         idauto: Number(change.idauto),
         numero: Number(change.numero),
         pago: Boolean(change.pago),
+        listo: Boolean(change.listo),
         plan_id: change.plan_id,
         idauto_oficial: change.idauto_oficial ? Number(change.idauto_oficial) : null,
       })));
@@ -3010,7 +3107,23 @@ export default function Admin() {
       }
       setRegistrationMessage(`${changes.length} inscripción${changes.length === 1 ? '' : 'es'} actualizada${changes.length === 1 ? '' : 's'}.`);
     } catch (err) {
-      setRegistrationMessage(err.response?.data?.error || 'No se pudieron guardar los cambios.');
+      const errorMessage = err.response?.data?.error || 'No se pudieron guardar los cambios.';
+      const conflictingNumber = errorMessage.match(/número\s+(\d+)/i)?.[1];
+      if (conflictingNumber) {
+        setRegistrationNumberAvailability(current => {
+          const next = { ...current };
+          changes.forEach(change => {
+            if (Number(change.numero) !== Number(conflictingNumber)) return;
+            next[`${change.idcampeonato}-${change.idpiloto}`] = {
+              available: false,
+              number: Number(conflictingNumber),
+              message: errorMessage,
+            };
+          });
+          return next;
+        });
+      }
+      setRegistrationMessage(errorMessage);
     } finally {
       setSavingRegistrationChanges(false);
     }
@@ -4753,6 +4866,20 @@ export default function Admin() {
         : [];
       const enabledRegistrationOfficialCars = registrationOfficialCars.filter(officialCar =>
         enabledRegistrationCarIds.has(String(officialCar.idauto)));
+      const selectedChampionshipRegistrations = registrations.filter(registration =>
+        String(registration.idcampeonato) === String(registrationChampionshipFilter));
+      const registrationModelCounts = [...selectedChampionshipRegistrations.reduce((counts, registration) => {
+        const registrationKey = `${registration.idcampeonato}-${registration.idpiloto}`;
+        const editedCarId = registrationEdits[registrationKey]?.idauto;
+        const selectedCar = cars.find(car => String(car.id) === String(editedCarId || registration.idauto));
+        const brand = selectedCar?.marca || registration.marca || 'Sin marca';
+        const model = selectedCar?.modelo || registration.modelo || 'Sin modelo';
+        const key = `${brand}|||${model}`;
+        const current = counts.get(key) || { brand, model, count: 0 };
+        counts.set(key, { ...current, count: current.count + 1 });
+        return counts;
+      }, new Map()).values()].sort((a, b) =>
+        `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`, 'es-AR', { sensitivity: 'base' }));
       return (
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_minmax(0,1fr)]">
           <section className="card-glass self-start p-5 xl:sticky xl:top-24 sm:p-6">
@@ -4780,14 +4907,20 @@ export default function Admin() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="font-racing text-2xl font-bold">Pilotos inscriptos</h2>
-                  <p className="mt-1 text-sm text-gray-400">
-                    {selectedRegistrationChampionship
-                      ? `${displayedRegistrations.length} inscripción${displayedRegistrations.length === 1 ? '' : 'es'} en ${selectedRegistrationChampionship.categoria}`
-                      : 'Seleccioná un campeonato para gestionar sus inscriptos'}
-                  </p>
+                  {selectedRegistrationChampionship ? <div className="mt-1">
+                    <p className="text-sm text-gray-400">
+                      {selectedChampionshipRegistrations.length} piloto{selectedChampionshipRegistrations.length === 1 ? '' : 's'} inscripto{selectedChampionshipRegistrations.length === 1 ? '' : 's'} · {registrationModelCounts.length} modelo{registrationModelCounts.length === 1 ? '' : 's'}
+                      {displayedRegistrations.length !== selectedChampionshipRegistrations.length ? ` · Mostrando ${displayedRegistrations.length}` : ''}
+                    </p>
+                    {registrationModelCounts.length ? <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                      {registrationModelCounts.map(item => <span key={`${item.brand}-${item.model}`} className="text-gray-500">
+                        <strong className="font-semibold text-gray-300">{item.brand} {item.model}</strong> · {item.count}
+                      </span>)}
+                    </div> : null}
+                  </div> : <p className="mt-1 text-sm text-gray-400">Seleccioná un campeonato para gestionar sus inscriptos</p>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <ClearFiltersButton active={Boolean(registrationSearch || registrationPlanFilter)} onClick={() => { setRegistrationSearch(''); setRegistrationPlanFilter(''); }} />
+                  <ClearFiltersButton active={Boolean(registrationSearch || registrationPlanFilter || registrationReadyFilter)} onClick={() => { setRegistrationSearch(''); setRegistrationPlanFilter(''); setRegistrationReadyFilter(''); }} />
                   <button
                     type="button"
                     onClick={handleSaveRegistrationChanges}
@@ -4800,21 +4933,23 @@ export default function Admin() {
                   </button>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 md:grid-cols-[minmax(300px,1fr)_minmax(190px,0.55fr)_minmax(240px,0.75fr)] md:items-end">
+              <div className="mt-5 grid gap-3 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(280px,1fr)_minmax(180px,0.55fr)_minmax(170px,0.5fr)_minmax(220px,0.7fr)]">
                 <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Campeonato</span><select value={registrationChampionshipFilter} onChange={event => selectRegistrationChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato</option>{registrationChampionshipGroups.map(championship => <option key={championship.id} value={championship.id}>{championship.categoria} · Temporada {championship.temporada} · {championship.anio} · {championship.registrationsCount} inscripto{championship.registrationsCount === 1 ? '' : 's'}</option>)}</select></label>
                 <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Tipo de diseño</span><select value={registrationPlanFilter} onChange={event => setRegistrationPlanFilter(event.target.value)} disabled={!registrationChampionshipFilter} className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"><option value="">Todos los diseños</option><option value="extra">Extra</option><option value="diseno_liga">Diseño de la liga</option><option value="personalizado">Yo mismo lo diseño</option><option value="diseno_oficial">Pintura oficial</option></select></label>
+                <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Piloto listo</span><select value={registrationReadyFilter} onChange={event => setRegistrationReadyFilter(event.target.value)} disabled={!registrationChampionshipFilter} className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-40"><option value="">Todos</option><option value="ready">Pilotos listos</option><option value="pending">Pilotos pendientes</option></select></label>
                 <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Buscar piloto</span><span className="relative mt-2 block"><MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500"/><input value={registrationSearch} onChange={event => setRegistrationSearch(event.target.value)} disabled={!registrationChampionshipFilter} className="input-field pl-10 disabled:cursor-not-allowed disabled:opacity-40" placeholder="Piloto, número, auto..."/></span></label>
               </div>
               {registrationMessage ? <div className="mt-3 border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{registrationMessage}</div> : null}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] text-sm">
+              <table className="w-full min-w-[1260px] text-sm">
                 <thead><tr className="border-b border-racing-border bg-racing-dark">
-                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Nº</th>
-                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Piloto</th>
-                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Auto</th>
-                  <th className="px-3 py-2 text-left text-xs uppercase text-gray-400">Diseño elegido</th>
+                  <th className="px-3 py-2 text-center text-xs uppercase text-gray-400">Piloto listo</th>
+                  <th className="w-[112px] px-2 py-2 text-center text-xs uppercase text-gray-400">Nº</th>
+                  <th className="w-[240px] px-3 py-2 text-left text-xs uppercase text-gray-400">Piloto</th>
+                  <th className="w-[250px] px-2 py-2 text-left text-xs uppercase text-gray-400">Auto</th>
+                  <th className="w-[280px] px-2 py-2 text-left text-xs uppercase text-gray-400">Diseño elegido</th>
                   <th className="px-3 py-2 text-right text-xs uppercase text-gray-400">Total a abonar</th>
                   <th className="px-3 py-2 text-center text-xs uppercase text-gray-400">Pago</th>
                   <th className="px-3 py-2 text-right text-xs uppercase text-gray-400">Acción</th>
@@ -4830,6 +4965,7 @@ export default function Admin() {
                       idauto: String(registration.idauto || ''),
                       numero: String(registration.numero ?? ''),
                       pago: Boolean(registration.pago),
+                      listo: Boolean(registration.listo),
                       plan_id: getRegistrationPlanId(registration),
                       idauto_oficial: String(registration.idauto_oficial || ''),
                     };
@@ -4847,6 +4983,7 @@ export default function Admin() {
                     const selectedBrand = availableBrands.find(brand => String(brand.id) === String(edit.idmarca));
                     const isDirty = Boolean(registrationEdits[registrationKey]);
                     const isEditingNumber = Boolean(editingRegistrationNumbers[registrationKey]);
+                    const numberAvailability = registrationNumberAvailability[registrationKey];
                     const selectedPlan = enabledRegistrationPlans.find(plan => plan.id === edit.plan_id);
                     const isExtraPlan = edit.plan_id === 'extra';
                     const isOfficialPlan = edit.plan_id === 'diseno_oficial';
@@ -4860,41 +4997,53 @@ export default function Admin() {
                     const isSelectedDriver = String(selectedRegistrationDriverId) === String(registration.idpiloto);
 
                     return <tr key={registrationKey} className={`${!edit.pago ? 'bg-yellow-400/[0.09] shadow-[inset_4px_0_0_#facc15]' : isSelectedDriver ? 'bg-racing-red/10 shadow-[inset_3px_0_0_#e63946]' : isDirty ? 'bg-cyan-400/[0.04]' : ''} transition-colors hover:bg-racing-card/60`}>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-1.5 text-center">
+                        <label className={`inline-flex cursor-pointer items-center gap-2 border px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${edit.listo ? 'border-violet-400/40 bg-violet-500/15 text-violet-300' : 'border-gray-700 bg-black/20 text-gray-500 hover:border-gray-500'}`}>
+                          <input type="checkbox" checked={edit.listo} onChange={event => handleRegistrationEdit(registration, 'listo', event.target.checked)} className="h-4 w-4 accent-violet-500"/>
+                          {edit.listo ? 'Listo' : 'Pendiente'}
+                        </label>
+                      </td>
+                      <td className="w-[112px] min-w-[112px] px-2 py-1.5 align-middle">
                         {isExtraPlan || isOfficialPlan ? (
-                          <span className="font-anton block min-w-14 text-center text-3xl leading-none text-yellow-300">
+                          <span className="font-anton flex h-10 w-full items-center justify-center text-center text-3xl leading-none text-yellow-300">
                             {isExtraPlan ? 'EXTRA' : (edit.numero || '—')}
                           </span>
                         ) : isEditingNumber ? (
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              min="0"
-                              max="255"
-                              value={edit.numero}
-                              onChange={event => handleRegistrationEdit(registration, 'numero', event.target.value)}
-                              className="input-field font-anton w-16 px-1 py-1.5 text-center text-xl text-yellow-300"
-                              aria-label={`Número de ${registration.nombre}`}
-                              autoFocus
-                            />
+                          <div className="relative flex min-h-10 w-full items-center justify-center">
+                            <div className="flex items-center justify-center">
+                              <input
+                                type="number"
+                                min="1"
+                                max="255"
+                                value={edit.numero}
+                                onChange={event => handleRegistrationEdit(registration, 'numero', event.target.value)}
+                                onBlur={() => validateAdminRegistrationNumber(registration, edit.numero)}
+                                className={`input-field font-anton w-16 px-1 py-1.5 text-center text-xl text-yellow-300 ${numberAvailability?.available === false ? 'border-red-500' : numberAvailability?.available === true ? 'border-green-500' : ''}`}
+                                aria-label={`Número de ${registration.nombre}`}
+                                autoFocus
+                              />
+                            </div>
                             <button
                               type="button"
                               onClick={() => setEditingRegistrationNumbers(current => ({ ...current, [registrationKey]: false }))}
-                              className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-400 hover:border-yellow-300 hover:text-yellow-300"
+                              className="absolute right-0 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center border border-racing-border text-gray-400 hover:border-yellow-300 hover:text-yellow-300"
                               aria-label="Cerrar edición del número"
                             >
                               <XMarkIcon className="h-4 w-4" />
                             </button>
+                            {numberAvailability ? <p className={`absolute left-1/2 top-full z-20 mt-1 w-40 -translate-x-1/2 border border-racing-border bg-racing-dark px-2 py-1 text-center text-[9px] font-semibold leading-tight shadow-lg ${numberAvailability.checking ? 'text-gray-400' : numberAvailability.available ? 'text-green-400' : 'text-red-400'}`}>
+                              {numberAvailability.checking ? 'Comprobando...' : numberAvailability.message}
+                            </p> : null}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <span className="font-anton min-w-14 text-center text-3xl leading-none text-yellow-300">
+                          <div className="relative flex h-10 w-full items-center justify-center">
+                            <span className="font-anton w-14 text-center text-3xl leading-none text-yellow-300">
                               {edit.numero || '—'}
                             </span>
                             <button
                               type="button"
                               onClick={() => setEditingRegistrationNumbers(current => ({ ...current, [registrationKey]: true }))}
-                              className="inline-flex h-7 w-7 items-center justify-center text-gray-500 hover:text-yellow-300"
+                              className="absolute right-0 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center text-gray-500 hover:text-yellow-300"
                               aria-label={`Editar número de ${registration.nombre}`}
                             >
                               <PencilSquareIcon className="h-4 w-4" />
@@ -4902,20 +5051,20 @@ export default function Admin() {
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-1.5"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-base font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
-                      <td className="px-3 py-1.5">
-                        {isOfficialPlan ? <div className="min-w-[240px] border-l-2 border-sky-400 bg-sky-400/[0.07] px-3 py-1.5">
+                      <td className="w-[240px] min-w-[240px] px-3 py-1.5"><button type="button" onClick={() => selectRegistrationDriverDetails(registration)} className={`text-left text-base font-semibold italic underline-offset-4 transition hover:text-racing-red hover:underline ${isSelectedDriver ? 'text-racing-red' : 'text-white'}`}>{registration.nombre}</button></td>
+                      <td className="w-[250px] px-2 py-1.5">
+                        {isOfficialPlan ? <div className="w-[220px] border-l-2 border-sky-400 bg-sky-400/[0.07] px-2 py-1.5">
                           <span className="block text-[9px] font-bold uppercase tracking-wider text-sky-300">Pintura oficial</span>
                           <span className="block truncate font-semibold text-white">
                             {selectedOfficialCar ? `${selectedOfficialCar.marca} ${selectedOfficialCar.modelo}` : 'Seleccioná una pintura oficial'}
                           </span>
-                        </div> : <div className="grid min-w-[300px] grid-cols-2 gap-1.5">
+                        </div> : <div className="grid w-[250px] grid-cols-2 gap-1">
                           <div className="flex min-w-0 items-center gap-2">
                             {selectedBrand?.logo ? <img src={selectedBrand.logo} alt="" className="h-8 w-10 shrink-0 object-contain" /> : null}
                             <select
                               value={edit.idmarca}
                               onChange={event => handleRegistrationEdit(registration, 'idmarca', event.target.value)}
-                              className="input-field min-w-0 flex-1 py-1.5 text-sm"
+                              className="input-field min-w-0 flex-1 px-2 py-1.5 text-xs"
                               aria-label={`Marca de ${registration.nombre}`}
                             >
                               <option value="">Seleccionar marca</option>
@@ -4925,7 +5074,7 @@ export default function Admin() {
                           <select
                             value={edit.idauto}
                             onChange={event => handleRegistrationEdit(registration, 'idauto', event.target.value)}
-                            className="input-field py-1.5 text-sm"
+                            className="input-field min-w-0 px-2 py-1.5 text-xs"
                             disabled={!edit.idmarca}
                             aria-label={`Modelo de ${registration.nombre}`}
                           >
@@ -4934,12 +5083,12 @@ export default function Admin() {
                           </select>
                         </div>}
                       </td>
-                      <td className="px-3 py-1.5">
-                        <div className={`grid min-w-[360px] gap-1.5 border-l-2 pl-2 ${isOfficialPlan ? 'grid-cols-2 border-sky-400 bg-sky-400/[0.07]' : isLeagueDesignPlan ? 'grid-cols-1 border-violet-400 bg-violet-500/[0.06]' : isOwnDesignPlan ? 'grid-cols-1 border-cyan-400 bg-cyan-500/[0.06]' : 'grid-cols-1 border-gray-700'}`}>
+                      <td className="w-[280px] px-2 py-1.5">
+                        <div className={`grid w-[280px] gap-1 border-l-2 pl-2 ${isOfficialPlan ? 'grid-cols-2 border-sky-400 bg-sky-400/[0.07]' : isLeagueDesignPlan ? 'grid-cols-1 border-violet-400 bg-violet-500/[0.06]' : isOwnDesignPlan ? 'grid-cols-1 border-cyan-400 bg-cyan-500/[0.06]' : 'grid-cols-1 border-gray-700'}`}>
                           <select
                             value={edit.plan_id}
                             onChange={event => handleRegistrationPlanChange(registration, event.target.value)}
-                            className="input-field py-1.5 text-sm"
+                            className="input-field min-w-0 px-2 py-1.5 text-xs"
                             aria-label={`Tipo de diseño de ${registration.nombre}`}
                           >
                             <option value="">Seleccionar plan</option>
@@ -4948,7 +5097,7 @@ export default function Admin() {
                           {isOfficialPlan ? <select
                             value={edit.idauto_oficial}
                             onChange={event => handleRegistrationOfficialCarChange(registration, event.target.value)}
-                            className="input-field py-1.5 text-sm"
+                            className="input-field min-w-0 px-2 py-1.5 text-xs"
                             aria-label={`Pintura oficial de ${registration.nombre}`}
                           >
                             <option value="">Seleccionar pintura oficial</option>
@@ -4982,7 +5131,7 @@ export default function Admin() {
                       </td>
                     </tr>;
                   }) : (
-                    <tr><td colSpan="7" className="px-4 py-12 text-center text-gray-500">{registrationChampionshipFilter ? 'No hay inscripciones que coincidan con la búsqueda.' : 'Seleccioná un campeonato para ver y gestionar sus pilotos.'}</td></tr>
+                    <tr><td colSpan="8" className="px-4 py-12 text-center text-gray-500">{registrationChampionshipFilter ? 'No hay inscripciones que coincidan con los filtros.' : 'Seleccioná un campeonato para ver y gestionar sus pilotos.'}</td></tr>
                   )}
                 </tbody>
               </table>

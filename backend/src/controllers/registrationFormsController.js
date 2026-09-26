@@ -373,13 +373,17 @@ const checkNumber = async (req, res, next) => {
     const number = Number(req.params.number);
     if (!Number.isInteger(number) || number < 1 || number > 255) return res.status(400).json({ error: 'El número debe estar entre 1 y 255' });
     const driverId = Number(req.query.idpiloto) || null;
+    const excludeCurrentDriver = req.query.excludeCurrent === '1' && driverId;
     const ranking = await getPreviousSeasonRanking(req.params.id);
     const rankedPosition = driverId ? ranking.positions.get(driverId) || null : null;
     const reservedDriver = [...ranking.positions.entries()].find(([, position]) => position === number)?.[0] || null;
     const [numberRegistrationResult, officialNumberResult, rankedOfficialNumberResult] = await Promise.all([
       pool.query(
-        'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND numero = ? LIMIT 1',
-        [req.params.id, number],
+        `SELECT idpiloto FROM inscriptos
+         WHERE idcampeonato = ? AND numero = ?
+           AND (? IS NULL OR idpiloto <> ?)
+         LIMIT 1`,
+        [req.params.id, number, excludeCurrentDriver, excludeCurrentDriver],
       ),
       pool.query(
         'SELECT id FROM inscripciones_autos_oficiales WHERE idcampeonato = ? AND numero = ? LIMIT 1',

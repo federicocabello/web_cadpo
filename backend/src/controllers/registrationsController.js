@@ -1,5 +1,21 @@
 const pool = require('../config/db');
 
+let readyColumnPromise;
+const ensureReadyColumn = () => {
+  if (!readyColumnPromise) {
+    readyColumnPromise = (async () => {
+      const [columns] = await pool.query("SHOW COLUMNS FROM inscriptos LIKE 'listo'");
+      if (!columns.length) {
+        await pool.query('ALTER TABLE inscriptos ADD COLUMN listo TINYINT(1) NOT NULL DEFAULT 0');
+      }
+    })().catch(error => {
+      readyColumnPromise = null;
+      throw error;
+    });
+  }
+  return readyColumnPromise;
+};
+
 const parseIds = value => {
   let values = value;
   if (typeof values === 'string') {
@@ -97,9 +113,10 @@ const assertPaymentCapacity = async (connection, championshipId, driverId, carId
 // ── GET /api/inscriptos?idcampeonato=X ────────────────────────────────────────
 const getAll = async (req, res, next) => {
   try {
+    await ensureReadyColumn();
     const { idcampeonato } = req.query;
     let query = `
-      SELECT i.numero, i.pago, i.tipo_inscripcion,
+      SELECT i.numero, i.pago, i.listo, i.tipo_inscripcion,
              COALESCE(i.idauto_oficial, inferred_official.id) AS idauto_oficial,
              i.precio_inscripcion, i.idcampeonato,
              p.id AS idpiloto, p.nombre, p.localidad, p.provincia, p.telefono, p.nacionalidad, p.steam, p.ig,
@@ -246,6 +263,7 @@ const updateBulk = async (req, res, next) => {
       let idauto = Number(change.idauto);
       let numero = Number(change.numero);
       const pago = change.pago === true || change.pago === 1 || change.pago === '1' ? 1 : 0;
+      const listo = change.listo === true || change.listo === 1 || change.listo === '1' ? 1 : 0;
       const requestedPlanId = canonicalPlanId(change.plan_id);
       let officialCarId = change.idauto_oficial ? Number(change.idauto_oficial) : null;
       if (!idcampeonato || !idpiloto || !requestedPlanId) {
@@ -377,9 +395,9 @@ const updateBulk = async (req, res, next) => {
       await connection.query(
         `UPDATE inscriptos
          SET idauto = ?, numero = ?, pago = ?, tipo_inscripcion = ?,
-             idauto_oficial = ?, precio_inscripcion = ?
+             idauto_oficial = ?, precio_inscripcion = ?, listo = ?
          WHERE idcampeonato = ? AND idpiloto = ?`,
-        [idauto, numero, pago, requestedPlanId, officialCarId, registrationPrice, idcampeonato, idpiloto]
+        [idauto, numero, pago, requestedPlanId, officialCarId, registrationPrice, listo, idcampeonato, idpiloto]
       );
       await connection.query(
         `INSERT INTO inscripciones_detalle
@@ -408,6 +426,7 @@ const updateBulk = async (req, res, next) => {
 
 // ── DELETE /api/inscriptos/:idcampeonato/:idpiloto ────────────────────────────
 const remove = async (req, res, next) => {
+  await ensureReadyColumn();
   const connection = await pool.getConnection();
   try {
     const { idcampeonato, idpiloto } = req.params;

@@ -157,7 +157,12 @@ export const registrationFormsApi = {
   start: id => api.post(`/registration-forms/${id}/start`),
   searchDrivers: (id, search, formToken) => api.get(`/registration-forms/${id}/drivers`, { params: { search, formToken } }),
   getPreviousRanking: (id, formToken) => api.get(`/registration-forms/${id}/previous-ranking`, { params: { formToken } }),
-  checkNumber: (id, number, driverId) => api.get(`/registration-forms/${id}/numbers/${number}`, { params: driverId ? { idpiloto: driverId } : {} }),
+  checkNumber: (id, number, driverId, excludeCurrent = false) => api.get(`/registration-forms/${id}/numbers/${number}`, {
+    params: {
+      ...(driverId ? { idpiloto: driverId } : {}),
+      ...(excludeCurrent ? { excludeCurrent: 1 } : {}),
+    },
+  }),
   checkAvailability: (id, data) => api.post(`/registration-forms/${id}/availability`, data),
   submit: (id, data) => api.post(`/registration-forms/${id}/submit`, data),
   getAdminAll: () => api.get('/registration-forms/admin/all'),
