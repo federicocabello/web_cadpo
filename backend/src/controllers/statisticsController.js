@@ -153,7 +153,7 @@ const getDriverStatistics = async (req, res, next) => {
     await ensureResultAchievements();
     const driverId = Number(req.params.id);
     const [[driver]] = await pool.query(`
-      SELECT id, nombre, localidad, provincia, nacionalidad, ig
+      SELECT id, nombre, localidad, provincia, telefono, nacionalidad, steam, ig
       FROM pilotos WHERE id = ?
     `, [driverId]);
     if (!driver) return res.status(404).json({ error: 'Piloto no encontrado' });

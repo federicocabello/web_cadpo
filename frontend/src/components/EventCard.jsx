@@ -12,13 +12,16 @@ const statusConfig = {
 const formatDate = value => {
   if (!value) return 'Por confirmar';
 
-  return formatCalendarDate(value, {
+  const formatted = formatCalendarDate(value, {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   });
+
+  return `${formatted} H`;
 };
 
 export default function EventCard({ event, featured = false, showNearbyActions = false, showLiveTiming = false }) {
@@ -98,7 +101,7 @@ export default function EventCard({ event, featured = false, showNearbyActions =
           </div>
 
           <div className={`grid gap-2 ${featured ? 'sm:min-w-56' : 'mt-4'}`}>
-            {showNearbyActions && event.transmision ? (
+            {event.transmision ? (
               <a href={event.transmision} target="_blank" rel="noreferrer" className="btn-primary w-full justify-center">
                 <PlayCircleIcon className="h-5 w-5" />
                 Ver transmisión

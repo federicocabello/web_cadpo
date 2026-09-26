@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import {
   ChartBarIcon,
   FlagIcon,
+  IdentificationIcon,
   MagnifyingGlassIcon,
+  MapPinIcon,
+  PhoneIcon,
   StarIcon,
   TrophyIcon,
   UserGroupIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { CountryFlag } from '../components/CountryFlag';
+import { getCountryName } from '../data/countries';
 import { statisticsApi } from '../services/api';
 import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 
@@ -32,6 +36,7 @@ const driverStatCards = [
 ];
 
 const formatNumber = value => Number(value || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+const displayValue = value => String(value || '').trim() || 'Sin cargar';
 const formatDate = value => value
   ? new Date(value).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
   : 'el primer campeonato registrado';
@@ -149,6 +154,32 @@ export default function Statistics() {
                       <h3 className="font-racing text-3xl font-bold text-white">{driverStats.driver.nombre}</h3>
                       <p className="text-sm text-gray-500">{[driverStats.driver.localidad, driverStats.driver.provincia].filter(Boolean).join(', ')}</p>
                       {driverStats.driver.ig ? <a href={getInstagramUrl(driverStats.driver.ig)} target="_blank" rel="noreferrer" className="text-sm text-racing-red hover:text-white">{formatInstagramHandle(driverStats.driver.ig)}</a> : null}
+                    </div>
+                  </div>
+                  <div className="mt-6 grid overflow-hidden border border-racing-border bg-black/20 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                    <div className="border-b border-racing-border p-4 sm:border-r lg:border-b-0">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><MapPinIcon className="h-4 w-4 text-racing-red"/>Localidad</span>
+                      <p className="mt-2 break-words text-sm font-semibold text-white">{displayValue(driverStats.driver.localidad)}</p>
+                    </div>
+                    <div className="border-b border-racing-border p-4 lg:border-b-0 lg:border-r">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><MapPinIcon className="h-4 w-4 text-racing-red"/>Provincia</span>
+                      <p className="mt-2 break-words text-sm font-semibold text-white">{displayValue(driverStats.driver.provincia)}</p>
+                    </div>
+                    <div className="border-b border-racing-border p-4 sm:border-r xl:border-b-0">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><FlagIcon className="h-4 w-4 text-racing-red"/>Nacionalidad</span>
+                      <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-white"><CountryFlag country={driverStats.driver.nacionalidad} className="text-base"/>{driverStats.driver.nacionalidad ? getCountryName(driverStats.driver.nacionalidad) : 'Sin cargar'}</p>
+                    </div>
+                    <div className="border-b border-racing-border p-4 lg:border-b-0 lg:border-r">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><PhoneIcon className="h-4 w-4 text-racing-red"/>Teléfono</span>
+                      {driverStats.driver.telefono ? <a href={`tel:${driverStats.driver.telefono}`} className="mt-2 block break-words text-sm font-semibold text-white hover:text-racing-red">{driverStats.driver.telefono}</a> : <p className="mt-2 text-sm text-gray-600">Sin cargar</p>}
+                    </div>
+                    <div className="border-b border-racing-border p-4 sm:border-b-0 sm:border-r">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><span className="text-sm leading-none text-racing-red">@</span>Instagram</span>
+                      {driverStats.driver.ig ? <a href={getInstagramUrl(driverStats.driver.ig)} target="_blank" rel="noreferrer" className="mt-2 block break-words text-sm font-semibold text-white hover:text-racing-red">{formatInstagramHandle(driverStats.driver.ig)}</a> : <p className="mt-2 text-sm text-gray-600">Sin cargar</p>}
+                    </div>
+                    <div className="p-4">
+                      <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-500"><IdentificationIcon className="h-4 w-4 text-racing-red"/>ID Steam</span>
+                      <p className="mt-2 break-all text-sm font-semibold text-white">{displayValue(driverStats.driver.steam)}</p>
                     </div>
                   </div>
                   <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">

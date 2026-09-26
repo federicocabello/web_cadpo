@@ -60,8 +60,7 @@ export default function Events({ initialStatus = '' }) {
     const fetchEvents = async () => {
       setLoading(true);
       try {
-        const params = statusFilter ? { status: statusFilter } : {};
-        const res = await eventsApi.getAll(params);
+        const res = await eventsApi.getAll();
         setEvents(res.data.data ?? []);
       } catch (err) {
         console.error(err);
@@ -70,7 +69,7 @@ export default function Events({ initialStatus = '' }) {
       }
     };
     fetchEvents();
-  }, [statusFilter]);
+  }, []);
 
   const nearbyEventIds = useMemo(() => new Set(
     getWeeklyChampionshipEvents(events).map(event => String(event.id)),
@@ -79,11 +78,15 @@ export default function Events({ initialStatus = '' }) {
     getLiveTimingEvents(events).map(event => String(event.id)),
   ), [events]);
   const upcomingEvents = useMemo(() => events
-    .filter(event => event.status === 'upcoming')
-    .sort((a, b) => eventTime(a) - eventTime(b)), [events]);
+    .filter(() => statusFilter !== 'completed')
+    .filter(event => eventTime(event) > 0)
+    .filter(event => eventTime(event) >= Date.now())
+    .sort((a, b) => eventTime(a) - eventTime(b)), [events, statusFilter]);
   const completedEvents = useMemo(() => events
-    .filter(event => event.status === 'completed')
-    .sort((a, b) => eventTime(b) - eventTime(a)), [events]);
+    .filter(() => statusFilter !== 'upcoming')
+    .filter(event => eventTime(event) > 0)
+    .filter(event => eventTime(event) < Date.now())
+    .sort((a, b) => eventTime(b) - eventTime(a)), [events, statusFilter]);
   const pastPageCount = Math.max(1, Math.ceil(completedEvents.length / PAST_PAGE_SIZE));
   const visibleCompletedEvents = useMemo(
     () => completedEvents.slice((pastPage - 1) * PAST_PAGE_SIZE, pastPage * PAST_PAGE_SIZE),
@@ -126,7 +129,7 @@ export default function Events({ initialStatus = '' }) {
           <div className="flex justify-center py-24">
             <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : events.length > 0 ? (
+        ) : upcomingEvents.length > 0 || completedEvents.length > 0 ? (
           <div className="grid gap-12">
             <EventSection
               title="Próximas fechas"
