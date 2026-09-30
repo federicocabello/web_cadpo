@@ -19,7 +19,28 @@ const parseIds = value => {
   if (typeof values === 'string') {
     try { values = JSON.parse(values); } catch { values = values.split(','); }
   }
-  return [...new Set((Array.isArray(values) ? values : []).map(Number).filter(Number.isInteger))];
+  return [...new Set((Array.isArray(values) ? values : []).map(item => Number(item?.id ?? item)).filter(Number.isInteger))];
+};
+const parseEnabledCarConfig = (value, totalLimit) => {
+  let values = value;
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values); } catch { values = values.split(','); }
+  }
+  const list = Array.isArray(values) ? values : [];
+  const ids = parseIds(list);
+  const limits = {};
+  list.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const id = Number(item.id);
+    const limit = Number(item.limite);
+    if (Number.isInteger(id) && Number.isInteger(limit) && limit >= 1) limits[id] = limit;
+  });
+  if (ids.some(id => !limits[id])) {
+    const base = ids.length ? Math.floor(Number(totalLimit || 0) / ids.length) : 0;
+    const remainder = ids.length ? Number(totalLimit || 0) % ids.length : 0;
+    ids.forEach((id, index) => { limits[id] = Math.max(1, base + (index < remainder ? 1 : 0)); });
+  }
+  return { ids, limits };
 };
 const planTypes = new Set(['sin_numero', 'con_numero', 'pintura_oficial']);
 const fixedPlanDefinitions = [
@@ -237,13 +258,10 @@ const configSelect = `
 `;
 
 const normalizeConfig = row => {
-  let enabledCars = row.autos_habilitados;
-  if (typeof enabledCars === 'string') {
-    try { enabledCars = JSON.parse(enabledCars); } catch { enabledCars = []; }
-  }
-  const enabledCarIds = parseIds(enabledCars);
   const totalLimit = Number(row.limite_inscriptos);
-  const modelLimit = enabledCarIds.length ? Math.ceil(totalLimit / enabledCarIds.length) : 0;
+  const enabledCars = parseEnabledCarConfig(row.autos_habilitados, totalLimit);
+  const enabledCarIds = enabledCars.ids;
+  const modelLimit = enabledCarIds.length ? Math.max(...Object.values(enabledCars.limits)) : 0;
   const registered = Number(row.inscriptos_actuales);
   const preEnrolled = Number(row.preinscriptos || 0);
   const occupied = registered + preEnrolled;
@@ -254,6 +272,7 @@ const normalizeConfig = row => {
     permite_pintura_oficial: Boolean(row.permite_pintura_oficial),
     permite_extra: Boolean(row.permite_extra),
     autos_habilitados: enabledCarIds,
+    limites_por_modelo: enabledCars.limits,
     planes: normalizeFixedPlans(row),
     limite_por_modelo: modelLimit,
     preinscriptos: preEnrolled,
@@ -303,9 +322,9 @@ const loadForm = async id => {
     );
     cars = rows.map(car => ({
       ...car,
-      limite_modelo: config.limite_por_modelo,
-      lugares_modelo: Math.max(0, config.limite_por_modelo - Number(car.ocupados_modelo)),
-      disponible: Number(car.ocupados_modelo) < config.limite_por_modelo,
+      limite_modelo: Number(config.limites_por_modelo[car.id] || 0),
+      lugares_modelo: Math.max(0, Number(config.limites_por_modelo[car.id] || 0) - Number(car.ocupados_modelo)),
+      disponible: Number(car.ocupados_modelo) < Number(config.limites_por_modelo[car.id] || 0),
     }));
   }
   const officialCars = await listOfficialCars(id);
@@ -709,6 +728,8 @@ const saveConfig = async (req, res, next) => {
     const preEnrolled = Number(req.body.preinscriptos || 0);
     const setupDetails = String(req.body.setup_detalle || '').trim();
     const carIds = parseIds(req.body.autos_habilitados);
+    const submittedModelLimits = req.body.limites_por_modelo && typeof req.body.limites_por_modelo === 'object'
+      ? req.body.limites_por_modelo : {};
     const submittedPlans = parsePlans(req.body.planes);
     const plans = fixedPlanDefinitions.map(definition => {
       const submitted = submittedPlans.find(plan => planAliases[definition.id].includes(plan.id));
@@ -736,7 +757,15 @@ const saveConfig = async (req, res, next) => {
       return res.status(400).json({ error: 'Los preinscriptos deben estar entre cero y el límite total' });
     }
     if (!carIds.length) return res.status(400).json({ error: 'Habilitá al menos un modelo de auto' });
-    const modelLimit = Math.ceil(registrationLimit / carIds.length);
+    const modelLimits = Object.fromEntries(carIds.map(carId => [carId, Number(submittedModelLimits[carId])]));
+    if (Object.values(modelLimits).some(limit => !Number.isInteger(limit) || limit < 1 || limit > 65535)) {
+      return res.status(400).json({ error: 'Ingresá un límite válido para cada modelo habilitado' });
+    }
+    if (Object.values(modelLimits).reduce((sum, limit) => sum + limit, 0) !== registrationLimit) {
+      return res.status(400).json({ error: 'La suma de los límites por modelo debe coincidir con el límite total' });
+    }
+    const modelLimit = Math.max(...Object.values(modelLimits));
+    const enabledCarsPayload = carIds.map(carId => ({ id: carId, limite: modelLimits[carId] }));
     if (!setupDetails) return res.status(400).json({ error: 'Ingresá los detalles del setup' });
     if (!plans.some(plan => plan.habilitado)) return res.status(400).json({ error: 'Habilitá al menos una sección de inscripción' });
     if (plans.some(plan => !plan.titulo || !plan.descripcion)) {
@@ -774,7 +803,7 @@ const saveConfig = async (req, res, next) => {
        permite_pintura_oficial=VALUES(permite_pintura_oficial),
        permite_extra=VALUES(permite_extra)`,
       [id, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
-        JSON.stringify(carIds), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
+        JSON.stringify(enabledCarsPayload), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
     );
     res.json({ message: 'Formulario de inscripción guardado', data: await loadForm(id) });
   } catch (error) { next(error); }
@@ -870,14 +899,13 @@ const submit = async (req, res, next) => {
     if (Number(registrationCount.total) >= Number(lockedConfig.limite_inscriptos)) {
       throw Object.assign(new Error('No quedan cupos disponibles en el campeonato'), { statusCode: 409 });
     }
-    const lockedCarIds = parseIds(lockedConfig.autos_habilitados);
+    const lockedCars = parseEnabledCarConfig(lockedConfig.autos_habilitados, lockedConfig.limite_inscriptos);
+    const lockedCarIds = lockedCars.ids;
     if (!lockedCarIds.includes(carId)) {
       throw Object.assign(new Error('El modelo seleccionado ya no está habilitado'), { statusCode: 409 });
     }
     if (selectedPlan.id !== 'diseno_oficial') {
-      const modelLimit = lockedCarIds.length
-        ? Math.ceil(Number(lockedConfig.limite_inscriptos) / lockedCarIds.length)
-        : 0;
+      const modelLimit = Number(lockedCars.limits[carId] || 0);
       const [[modelCount]] = await connection.query(
         `SELECT COUNT(*) AS total FROM inscriptos i
          WHERE i.idcampeonato = ? AND i.idauto = ? AND i.pago = 1

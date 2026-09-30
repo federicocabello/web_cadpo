@@ -214,6 +214,25 @@
     --action-glow: rgba(16, 185, 129, 0.62);
   }
 
+  .server-action-blue {
+    --action-glow: rgba(37, 99, 235, 0.62);
+  }
+
+  .server-action-white {
+    --action-glow: rgba(255, 255, 255, 0.45);
+  }
+
+  .server-action-turquoise {
+    --action-glow: rgba(0, 255, 205, 0.55);
+  }
+
+  .event-action-button {
+    background-image: linear-gradient(110deg, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.28) 49%, transparent 56%, transparent 100%);
+    background-position: 140% 0;
+    background-size: 240% 100%;
+    animation: event-action-sheen 4s ease-in-out infinite;
+  }
+
   .server-action-yellow {
     --action-glow: rgba(250, 204, 21, 0.55);
   }
@@ -337,6 +356,11 @@
 @keyframes server-button-pulse {
   0%, 100% { box-shadow: 0 0 0 color-mix(in srgb, var(--action-glow) 30%, transparent); }
   50% { box-shadow: 0 0 24px var(--action-glow); }
+}
+
+@keyframes event-action-sheen {
+  0%, 62% { background-position: 140% 0; }
+  100% { background-position: -140% 0; }
 }
 
 @keyframes registration-background-enter {

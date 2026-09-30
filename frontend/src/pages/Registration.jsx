@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BanknotesIcon, CalendarDaysIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, DocumentTextIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon, TrophyIcon, UserGroupIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
+import { driverCountries } from '../data/countries';
 import ChampionshipPrizes from '../components/ChampionshipPrizes';
 import { championshipsApi, mediaApi, registrationFormsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -9,7 +10,7 @@ import { formatPrice } from '../utils/currency';
 import { formatInstagramHandle } from '../utils/instagram';
 
 const clsx = (...classes) => classes.filter(Boolean).join(' ');
-const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: '', steam: '', ig: '', rankingPosition: null };
+const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: 'ar', steam: '', ig: '', rankingPosition: null };
 const formatPersonName = value => String(value || '').trim().toLocaleLowerCase('es-AR')
   .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
 const getRegistrationPhase = (form, now) => {
@@ -262,7 +263,7 @@ export default function Registration() {
     setDriver({
       idpiloto: selected.id, nombre: selected.nombre || '', localidad: selected.localidad || '',
       provincia: selected.provincia || '', telefono: selected.telefono || '',
-      nacionalidad: selected.nacionalidad || '', steam: selected.steam || '', ig: formatInstagramHandle(selected.ig),
+      nacionalidad: selected.nacionalidad || 'ar', steam: selected.steam || '', ig: formatInstagramHandle(selected.ig),
       rankingPosition,
     });
     setNumber(usesOfficialCar && selectedOfficialCar ? String(selectedOfficialCar.numero) : rankingPosition && !rankingConflictsWithOfficial ? String(rankingPosition) : '');
@@ -455,13 +456,17 @@ export default function Registration() {
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Usuario de Instagram <span className="text-gray-600">(opcional)</span></span><input name="ig" value={driver.ig} onChange={changeDriver} className={clsx('input-field', 'mt-2')} placeholder="@usuario o enlace de Instagram" autoComplete="off"/><span className={clsx('mt-1.5', 'block', 'text-xs', 'leading-relaxed', 'text-gray-500')}>Lo usamos para etiquetarte en las fotos de la liga.</span></label>
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Localidad <span className="text-gray-600">(opcional)</span></span><input name="localidad" value={driver.localidad} onChange={changeDriver} className={clsx('input-field', 'mt-2')}/></label>
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Provincia <span className="text-gray-600">(opcional)</span></span><input name="provincia" value={driver.provincia} onChange={changeDriver} className={clsx('input-field', 'mt-2')}/></label>
-                <label><span className={clsx('text-sm', 'text-gray-300')}>Nacionalidad <span className="text-gray-600">(opcional)</span></span><CountrySelect value={driver.nacionalidad} onChange={value => setDriver(current => ({ ...current, nacionalidad: value }))} allowEmpty className="mt-2"/></label>
+                <label><span className={clsx('text-sm', 'text-gray-300')}>País</span><CountrySelect value={driver.nacionalidad} onChange={value => setDriver(current => ({ ...current, nacionalidad: value }))} options={driverCountries} className="mt-2"/></label>
               </div>
             </section>
 
             <section className={clsx('card-glass', 'order-3', 'p-4', 'sm:p-6')}>
               <h3 className={clsx('font-racing', 'text-xl', 'font-bold', 'sm:text-2xl')}>3. Auto habilitado</h3>
-              <p className={clsx('mt-2', 'text-sm', 'text-gray-500')}>{usesOfficialCar ? 'Las pinturas oficiales no consumen el cupo por modelo.' : `Cada modelo admite hasta ${config.limite_por_modelo} autos confirmados entre Extra, Personalizado y Diseño de la liga.`}</p>
+              <p className={clsx('mt-2', 'text-sm', 'text-gray-500')}>{usesOfficialCar ? 'Las pinturas oficiales no consumen el cupo por modelo.' : 'Cada marca y modelo tiene su propio límite de autos confirmados, indicado debajo.'}</p>
+              <div className={clsx('mt-4', 'border', 'border-green-400/35', 'bg-green-500/[0.08]', 'p-4', 'shadow-[inset_3px_0_0_rgba(74,222,128,0.9)]', 'sm:flex', 'sm:items-start', 'sm:gap-4', 'sm:p-5')}>
+                <span className={clsx('inline-flex', 'h-10', 'w-10', 'shrink-0', 'items-center', 'justify-center', 'bg-green-400', 'text-black')}><CheckCircleIcon className="h-6 w-6"/></span>
+                <div className="mt-3 min-w-0 sm:mt-0"><p className={clsx('font-racing', 'text-lg', 'font-bold', 'uppercase', 'tracking-wide', 'text-green-300')}>Categoría equilibrada</p><p className={clsx('mt-1', 'text-sm', 'leading-relaxed', 'text-gray-200')}>Todos los autos fueron revisados al detalle, probados y testeados. Cada marca y modelo tiene la misma potencia, el mismo comportamiento y un rendimiento equivalente. Elegí el auto que más te guste: ninguno ofrece una ventaja competitiva.</p></div>
+              </div>
               <div className={clsx('mt-5', 'grid', 'gap-4', 'sm:grid-cols-2', 'lg:grid-cols-3')}>
                 {officialCarGroups.map(group => {
                   const groupExpanded = Boolean(officialCarCollapsedGroups[group.id]);

@@ -78,7 +78,8 @@ const countriesByCode = new Map(countries.map(country => [country.code, country]
 const selectCountries = codes => codes.map(code => countriesByCode.get(code)).filter(Boolean);
 
 export const driverCountries = selectCountries([
-  'ar', 'br', 'cl', 'uy', 'py', 'ec', 've', 'co',
+  'ar', 'bo', 'br', 'cl', 'co', 'cr', 'cu', 'do', 'ec', 'sv',
+  'gt', 'hn', 'mx', 'ni', 'pa', 'py', 'pe', 'pr', 'uy', 've',
 ]);
 
 export const circuitCountries = selectCountries([

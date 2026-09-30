@@ -21,7 +21,29 @@ const parseIds = value => {
   if (typeof values === 'string') {
     try { values = JSON.parse(values); } catch { values = values.split(','); }
   }
-  return [...new Set((Array.isArray(values) ? values : []).map(Number).filter(Number.isInteger))];
+  return [...new Set((Array.isArray(values) ? values : []).map(item => Number(item?.id ?? item)).filter(Number.isInteger))];
+};
+
+const parseEnabledCarConfig = (value, totalLimit) => {
+  let values = value;
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values); } catch { values = values.split(','); }
+  }
+  const list = Array.isArray(values) ? values : [];
+  const ids = parseIds(list);
+  const limits = {};
+  list.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const id = Number(item.id);
+    const limit = Number(item.limite);
+    if (Number.isInteger(id) && Number.isInteger(limit) && limit >= 1) limits[id] = limit;
+  });
+  if (ids.some(id => !limits[id])) {
+    const base = ids.length ? Math.floor(Number(totalLimit || 0) / ids.length) : 0;
+    const remainder = ids.length ? Number(totalLimit || 0) % ids.length : 0;
+    ids.forEach((id, index) => { limits[id] = Math.max(1, base + (index < remainder ? 1 : 0)); });
+  }
+  return { ids, limits };
 };
 
 const planAliases = {
@@ -75,7 +97,8 @@ const assertPaymentCapacity = async (connection, championshipId, driverId, carId
   );
   if (!config) return;
 
-  const enabledCars = parseIds(config.autos_habilitados);
+  const enabledCarConfig = parseEnabledCarConfig(config.autos_habilitados, config.limite_inscriptos);
+  const enabledCars = enabledCarConfig.ids;
   if (!enabledCars.includes(Number(carId))) {
     throw Object.assign(new Error('El auto ya no está habilitado para este campeonato'), { statusCode: 409 });
   }
@@ -90,9 +113,7 @@ const assertPaymentCapacity = async (connection, championshipId, driverId, carId
 
   if (planId === 'diseno_oficial') return;
 
-  const modelLimit = enabledCars.length
-    ? Math.ceil(Number(config.limite_inscriptos) / enabledCars.length)
-    : 0;
+  const modelLimit = Number(enabledCarConfig.limits[carId] || 0);
   const [[model]] = await connection.query(
     `SELECT COUNT(*) AS cantidad FROM inscriptos i
      WHERE i.idcampeonato = ? AND i.idauto = ? AND i.pago = 1 AND i.idpiloto <> ?

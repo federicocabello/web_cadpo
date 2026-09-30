@@ -5,6 +5,7 @@ import {
   ArrowUpTrayIcon,
   ArchiveBoxIcon,
   BellAlertIcon,
+  BuildingOffice2Icon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -24,7 +25,7 @@ import {
   WrenchScrewdriverIcon,
   WrenchIcon,
 } from '@heroicons/react/24/outline';
-import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, templatesApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
@@ -63,6 +64,7 @@ const adminSections = [
   { id: 'formularios', label: 'FORMULARIOS', icon: ClipboardDocumentListIcon },
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
+  { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
 const adminSectionStorageKey = 'cadpo-admin-section';
@@ -207,6 +209,7 @@ const emptyCarForm = {
 };
 
 const emptyCarBrandForm = { marca: '' };
+const emptySponsorForm = { empresa: '', descripcion: '', direccion: '', activo: true };
 const defaultRegistrationPlans = [
   { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás con un auto genérico completamente gris, sin diseño personalizado.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
   { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Vos mismo diseñás y presentás el diseño de tu auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
@@ -266,6 +269,7 @@ const emptyRegistrationConfig = {
   limite_por_modelo: '10',
   preinscriptos: '0',
   autos_habilitados: [],
+  limites_por_modelo: {},
   planes: cloneRegistrationPlans(defaultRegistrationPlans),
   permite_personalizado: true,
   permite_diseno_liga: true,
@@ -595,6 +599,8 @@ export default function Admin() {
   const registrationSectionAutoSelectRef = useRef(false);
   const replayInputRef = useRef(null);
   const templateInputRef = useRef(null);
+  const sponsorLogoInputRef = useRef(null);
+  const sponsorPhotosInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -643,6 +649,13 @@ export default function Admin() {
   const [templateMessage, setTemplateMessage] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateUploadProgress, setTemplateUploadProgress] = useState(0);
+  const [sponsors, setSponsors] = useState([]);
+  const [sponsorForm, setSponsorForm] = useState(emptySponsorForm);
+  const [sponsorLogoFile, setSponsorLogoFile] = useState(null);
+  const [sponsorPhotoFiles, setSponsorPhotoFiles] = useState([]);
+  const [editingSponsorId, setEditingSponsorId] = useState(null);
+  const [sponsorMessage, setSponsorMessage] = useState('');
+  const [savingSponsor, setSavingSponsor] = useState(false);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
@@ -1281,7 +1294,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes, sponsorsRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -1294,6 +1307,7 @@ export default function Admin() {
           registrationFormsApi.getAdminAll(),
           replaysApi.getAll(),
           templatesApi.getAll(),
+          sponsorsApi.getAdminAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -1310,6 +1324,7 @@ export default function Admin() {
         setRegistrationConfigs(registrationConfigsRes.data.data ?? []);
         setReplays(replaysRes.data.data ?? []);
         setTemplates(templatesRes.data.data ?? []);
+        setSponsors(sponsorsRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -1435,6 +1450,7 @@ export default function Admin() {
       limite_por_modelo: String(existing.limite_por_modelo ?? 10),
       preinscriptos: String(existing.preinscriptos ?? 0),
       autos_habilitados: existing.autos_habilitados || [],
+      limites_por_modelo: existing.limites_por_modelo || {},
       planes: normalizeAdminRegistrationPlans(existing.planes),
       permite_personalizado: existing.permite_personalizado,
       permite_diseno_liga: existing.permite_diseno_liga,
@@ -1452,14 +1468,38 @@ export default function Admin() {
     setRegistrationConfig(current => {
       const numericId = Number(id);
       const removing = current.autos_habilitados.includes(numericId);
+      const nextCarIds = removing
+        ? current.autos_habilitados.filter(carId => carId !== numericId)
+        : [...current.autos_habilitados, numericId];
+      const total = Number(current.limite_inscriptos || 0);
+      const base = nextCarIds.length ? Math.floor(total / nextCarIds.length) : 0;
+      const remainder = nextCarIds.length ? total % nextCarIds.length : 0;
       return {
         ...current,
-        autos_habilitados: removing
-          ? current.autos_habilitados.filter(carId => carId !== numericId)
-          : [...current.autos_habilitados, numericId],
+        autos_habilitados: nextCarIds,
+        limites_por_modelo: Object.fromEntries(nextCarIds.map((carId, index) => [carId, Math.max(1, base + (index < remainder ? 1 : 0))])),
         planes: removing
           ? current.planes.map(plan => ({ ...plan, autos_habilitados: plan.autos_habilitados.filter(carId => carId !== numericId) }))
           : current.planes,
+      };
+    });
+  };
+
+  const updateRegistrationCarLimit = (id, value) => {
+    setRegistrationConfig(current => ({
+      ...current,
+      limites_por_modelo: { ...current.limites_por_modelo, [Number(id)]: value },
+    }));
+  };
+
+  const distributeRegistrationCarLimits = () => {
+    setRegistrationConfig(current => {
+      const total = Number(current.limite_inscriptos || 0);
+      const base = current.autos_habilitados.length ? Math.floor(total / current.autos_habilitados.length) : 0;
+      const remainder = current.autos_habilitados.length ? total % current.autos_habilitados.length : 0;
+      return {
+        ...current,
+        limites_por_modelo: Object.fromEntries(current.autos_habilitados.map((carId, index) => [carId, Math.max(1, base + (index < remainder ? 1 : 0))])),
       };
     });
   };
@@ -3390,7 +3430,119 @@ export default function Admin() {
     }
   };
 
+  const resetSponsorForm = () => {
+    setSponsorForm(emptySponsorForm);
+    setSponsorLogoFile(null);
+    setSponsorPhotoFiles([]);
+    setEditingSponsorId(null);
+    if (sponsorLogoInputRef.current) sponsorLogoInputRef.current.value = '';
+    if (sponsorPhotosInputRef.current) sponsorPhotosInputRef.current.value = '';
+  };
+
+  const editSponsor = sponsor => {
+    setEditingSponsorId(sponsor.id);
+    setSponsorForm({
+      empresa: sponsor.empresa || '',
+      descripcion: sponsor.descripcion || '',
+      direccion: sponsor.direccion || '',
+      activo: Boolean(sponsor.activo),
+    });
+    setSponsorLogoFile(null);
+    setSponsorPhotoFiles([]);
+    if (sponsorLogoInputRef.current) sponsorLogoInputRef.current.value = '';
+    if (sponsorPhotosInputRef.current) sponsorPhotosInputRef.current.value = '';
+    setSponsorMessage(`Editando ${sponsor.empresa}.`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const saveSponsor = async event => {
+    event.preventDefault();
+    if (!sponsorForm.empresa.trim()) return;
+    setSavingSponsor(true);
+    setSponsorMessage('');
+    try {
+      const data = new FormData();
+      data.append('empresa', sponsorForm.empresa.trim());
+      data.append('descripcion', sponsorForm.descripcion.trim());
+      data.append('direccion', sponsorForm.direccion.trim());
+      data.append('activo', String(sponsorForm.activo));
+      if (sponsorLogoFile) data.append('logo', sponsorLogoFile);
+      sponsorPhotoFiles.forEach(file => data.append('fotos', file));
+      const response = editingSponsorId
+        ? await sponsorsApi.update(editingSponsorId, data)
+        : await sponsorsApi.create(data);
+      const refreshed = await sponsorsApi.getAdminAll();
+      setSponsors(refreshed.data.data || []);
+      resetSponsorForm();
+      setSponsorMessage(response.data.message || 'Sponsor guardado correctamente.');
+    } catch (error) {
+      setSponsorMessage(error.response?.data?.error || 'No se pudo guardar el sponsor.');
+    } finally {
+      setSavingSponsor(false);
+    }
+  };
+
+  const deleteSponsorPhoto = async (sponsor, photo) => {
+    if (!window.confirm(`¿Eliminar esta foto de ${sponsor.empresa}?`)) return;
+    setSponsorMessage('');
+    try {
+      await sponsorsApi.removePhoto(sponsor.id, photo.id);
+      setSponsors(current => current.map(item => String(item.id) === String(sponsor.id)
+        ? { ...item, fotos: (item.fotos || []).filter(itemPhoto => String(itemPhoto.id) !== String(photo.id)) }
+        : item));
+      setSponsorMessage('Foto eliminada correctamente.');
+    } catch (error) {
+      setSponsorMessage(error.response?.data?.error || 'No se pudo eliminar la foto.');
+    }
+  };
+
+  const deleteSponsor = async sponsor => {
+    if (!window.confirm(`¿Eliminar a ${sponsor.empresa} y toda su galería?`)) return;
+    setSponsorMessage('');
+    try {
+      const response = await sponsorsApi.remove(sponsor.id);
+      setSponsors(current => current.filter(item => String(item.id) !== String(sponsor.id)));
+      if (String(editingSponsorId) === String(sponsor.id)) resetSponsorForm();
+      setSponsorMessage(response.data.message || 'Sponsor eliminado correctamente.');
+    } catch (error) {
+      setSponsorMessage(error.response?.data?.error || 'No se pudo eliminar el sponsor.');
+    }
+  };
+
   const renderSection = () => {
+    if (activeSection === 'sponsors') {
+      return (
+        <div className="grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <section className="card-glass self-start p-5 xl:sticky xl:top-24 sm:p-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Presencia comercial</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">{editingSponsorId ? 'Modificar sponsor' : 'Agregar sponsor'}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-gray-400">Cargá la empresa, su identidad y las imágenes que se mostrarán en la sección comercial del inicio.</p>
+            <form onSubmit={saveSponsor} className="mt-6 space-y-4">
+              <label className="block"><span className="text-sm text-gray-300">Empresa o emprendimiento</span><input value={sponsorForm.empresa} onChange={event => setSponsorForm(current => ({ ...current, empresa: event.target.value }))} className="input-field mt-2" placeholder="Nombre comercial" required/></label>
+              <label className="block"><span className="text-sm text-gray-300">Descripción</span><textarea value={sponsorForm.descripcion} onChange={event => setSponsorForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-28 resize-y" placeholder="Contá brevemente a qué se dedica..."/></label>
+              <label className="block"><span className="text-sm text-gray-300">Dirección o enlace</span><input value={sponsorForm.direccion} onChange={event => setSponsorForm(current => ({ ...current, direccion: event.target.value }))} className="input-field mt-2" placeholder="Sitio web, red social o dirección física"/></label>
+              <label className="block"><span className="text-sm text-gray-300">Logo</span><input ref={sponsorLogoInputRef} type="file" accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setSponsorLogoFile(event.target.files?.[0] || null)} className="input-field mt-2 file:mr-3 file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">PNG transparente, WEBP, JPG o AVIF. Máximo 8 MB.</small></label>
+              <label className="block"><span className="text-sm text-gray-300">Fotos de la galería</span><input ref={sponsorPhotosInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setSponsorPhotoFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-3 file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 imágenes nuevas por carga.</small></label>
+              <label className="flex cursor-pointer items-center justify-between gap-4 border border-racing-border bg-black/25 px-4 py-3"><span><strong className="block text-sm text-white">Visible en el inicio</strong><span className="text-xs text-gray-500">Podés ocultarlo sin eliminar sus datos.</span></span><input type="checkbox" checked={sponsorForm.activo} onChange={event => setSponsorForm(current => ({ ...current, activo: event.target.checked }))} className="h-5 w-5 accent-cyan-400"/></label>
+              <div className="grid gap-2 sm:grid-cols-2"><button type="submit" disabled={savingSponsor} className="inline-flex min-h-12 items-center justify-center gap-2 bg-cyan-300 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-cyan-200 disabled:opacity-50">{savingSponsor ? 'Guardando...' : editingSponsorId ? 'Guardar cambios' : 'Agregar sponsor'}</button>{editingSponsorId ? <button type="button" onClick={() => { resetSponsorForm(); setSponsorMessage(''); }} className="min-h-12 border border-racing-border px-4 font-racing text-xs font-bold uppercase text-gray-300 hover:border-white hover:text-white">Cancelar</button> : null}</div>
+              {sponsorMessage ? <p className="border border-racing-border bg-black/30 p-3 text-sm text-gray-300">{sponsorMessage}</p> : null}
+            </form>
+          </section>
+
+          <section className="space-y-5">
+            <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">Sponsors cargados</p><h2 className="mt-1 font-racing text-3xl font-bold">Empresas y emprendimientos</h2><p className="mt-1 text-sm text-gray-500">{sponsors.length} sponsor{sponsors.length === 1 ? '' : 's'} registrado{sponsors.length === 1 ? '' : 's'}.</p></div>
+            {sponsors.length ? sponsors.map(sponsor => <article key={sponsor.id} className={`card-glass overflow-hidden border-l-4 ${sponsor.activo ? 'border-l-cyan-300' : 'border-l-gray-700 opacity-70'}`}>
+              <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:p-6">
+                <div className="flex h-28 w-full shrink-0 items-center justify-center bg-black/35 p-4 sm:w-40">{sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} className="h-full w-full object-contain"/> : <BuildingOffice2Icon className="h-12 w-12 text-gray-700"/>}</div>
+                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{sponsor.empresa}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${sponsor.activo ? 'bg-cyan-300 text-black' : 'bg-gray-700 text-gray-300'}`}>{sponsor.activo ? 'Visible' : 'Oculto'}</span></div>{sponsor.direccion ? <p className="mt-1 break-all text-xs text-cyan-300">{sponsor.direccion}</p> : null}</div><div className="flex gap-2"><button type="button" onClick={() => editSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label={`Editar ${sponsor.empresa}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${sponsor.empresa}`}><TrashIcon className="h-4 w-4"/></button></div></div>{sponsor.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}</div>
+              </div>
+              <div className="border-t border-racing-border bg-black/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Galería · {(sponsor.fotos || []).length} fotos</p><button type="button" onClick={() => editSponsor(sponsor)} className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 hover:text-white">Agregar fotos</button></div>{sponsor.fotos?.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">{sponsor.fotos.map(photo => <div key={photo.id} className="group relative aspect-video overflow-hidden bg-black"><img src={photo.imagen} alt={`${sponsor.empresa}`} className="h-full w-full object-cover"/><button type="button" onClick={() => deleteSponsorPhoto(sponsor, photo)} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center bg-black/85 text-gray-300 transition hover:bg-racing-red hover:text-white sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></div>)}</div> : <div className="border border-dashed border-racing-border py-7 text-center text-xs text-gray-600">Todavía no tiene fotos cargadas.</div>}</div>
+            </article>) : <div className="card-glass border border-dashed border-racing-border py-16 text-center"><BuildingOffice2Icon className="mx-auto h-12 w-12 text-gray-700"/><p className="mt-3 text-sm text-gray-500">Todavía no hay sponsors cargados.</p></div>}
+          </section>
+        </div>
+      );
+    }
+
     if (activeSection === 'plantillas') {
       const existingTemplate = templates.find(item => String(item.idcampeonato) === String(templateChampionshipId));
       return (
@@ -3462,6 +3614,8 @@ export default function Admin() {
       const categoryCars = cars.filter(car => championship && String(car.idcategoria) === String(championship.idcategoria));
       const editingRegistrationConfig = registrationConfigs.find(item => String(item.idcampeonato) === String(registrationConfigChampionshipId));
       const enabledOfficialCars = categoryCars.filter(car => registrationConfig.autos_habilitados.includes(Number(car.id)));
+      const assignedModelLimit = registrationConfig.autos_habilitados.reduce((total, carId) => total + Number(registrationConfig.limites_por_modelo?.[carId] || 0), 0);
+      const modelLimitDifference = Number(registrationConfig.limite_inscriptos || 0) - assignedModelLimit;
       const officialCarBrands = [...new Map(enabledOfficialCars.map(car => [String(car.idmarca), {
         id: String(car.idmarca),
         marca: car.marca,
@@ -3498,9 +3652,8 @@ export default function Admin() {
                 <label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">Precio base</span><input name="precio" type="number" min="0" step="0.01" value={registrationConfig.precio} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">A este importe se suma el valor de cada plan.</small></label>
                 <label><span className="text-sm text-gray-300">Límite total</span><input name="limite_inscriptos" type="number" min="1" max="65535" value={registrationConfig.limite_inscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
-                <div><span className="text-sm text-gray-300">Límite automático por modelo</span><div className="input-field mt-2 flex items-center font-racing text-2xl font-bold text-white">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0}</div><small className="mt-1 block text-gray-500">Se recalcula con el límite total y los modelos habilitados. Las pinturas oficiales no consumen este cupo.</small></div>
                 <label><span className="text-sm text-gray-300">Inscriptos manuales</span><input name="preinscriptos" type="number" min="0" max={registrationConfig.limite_inscriptos || 0} value={registrationConfig.preinscriptos} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/><small className="mt-1 block text-gray-500">Sirve para ajustar el contador público. Antes de abrir se muestra como preinscriptos y, al abrir, se suma visualmente a los reales sin ocupar cupos.</small></label>
-                <div className="border border-racing-border bg-racing-dark p-4 md:col-span-2"><span className="text-sm text-gray-400">Distribución automática</span><p className="mt-1 font-racing text-2xl font-bold">{registrationConfig.autos_habilitados.length ? Math.ceil(Number(registrationConfig.limite_inscriptos || 0) / registrationConfig.autos_habilitados.length) : 0} por modelo</p><p className="mt-1 text-xs text-gray-500">{registrationConfig.autos_habilitados.length} modelos habilitados · pinturas oficiales excluidas · el límite general de {registrationConfig.limite_inscriptos || 0} siempre tiene prioridad</p></div>
+                <div className={`border p-4 md:col-span-2 ${modelLimitDifference === 0 ? 'border-green-400/30 bg-green-500/[0.05]' : 'border-yellow-400/40 bg-yellow-400/[0.06]'}`}><div className="flex flex-wrap items-center justify-between gap-3"><div><span className="text-sm text-gray-400">Cupos distribuidos por modelo</span><p className="mt-1 font-racing text-2xl font-bold text-white">{assignedModelLimit} / {registrationConfig.limite_inscriptos || 0}</p></div><button type="button" onClick={distributeRegistrationCarLimits} disabled={!registrationConfig.autos_habilitados.length} className="border border-racing-border px-4 py-2 text-xs font-bold uppercase text-gray-300 transition hover:border-green-400 hover:text-green-300 disabled:opacity-40">Distribuir equitativamente</button></div><p className={`mt-2 text-xs ${modelLimitDifference === 0 ? 'text-green-300' : 'text-yellow-300'}`}>{modelLimitDifference === 0 ? 'La distribución coincide con el límite total.' : modelLimitDifference > 0 ? `Falta asignar ${modelLimitDifference} cupo${modelLimitDifference === 1 ? '' : 's'}.` : `Hay ${Math.abs(modelLimitDifference)} cupo${Math.abs(modelLimitDifference) === 1 ? '' : 's'} de más.`} Las pinturas oficiales no consumen estos cupos.</p></div>
               </div>
               <label className="block"><span className="text-sm text-gray-300">Setup</span><textarea name="setup_detalle" value={registrationConfig.setup_detalle} onChange={handleRegistrationConfigChange} className="input-field mt-2 min-h-28 resize-y" placeholder="Ej.: Setup provisto por la liga, relaciones libres, combustible libre..." required/></label>
               <section className="overflow-hidden border border-yellow-400/25 bg-yellow-400/5">
@@ -3530,10 +3683,13 @@ export default function Admin() {
               </section>
               <section className="overflow-hidden border border-racing-border bg-black/20">
                 <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, enabledCars: !current.enabledCars }))} className="flex w-full items-center justify-between gap-4 p-4 text-left transition hover:bg-white/[0.04] sm:p-5" aria-expanded={!registrationFormCollapsed.enabledCars}>
-                  <span><span className="block font-racing text-xl font-bold text-white">Autos habilitados</span><span className="mt-1 block text-xs text-gray-500">Seleccioná los modelos disponibles para este formulario.</span></span>
+                  <span><span className="block font-racing text-xl font-bold text-white">Autos habilitados</span><span className="mt-1 block text-xs text-gray-500">Seleccioná cada marca y modelo, y definí manualmente su límite.</span></span>
                   <span className="flex shrink-0 items-center gap-3"><span className="text-xs font-bold uppercase text-gray-500">{registrationConfig.autos_habilitados.length}/{categoryCars.length}</span><ChevronDownIcon className={`h-5 w-5 text-racing-red transition-transform duration-500 ${registrationFormCollapsed.enabledCars ? '-rotate-90' : ''}`}/></span>
                 </button>
-                <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.enabledCars ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="grid gap-2 border-t border-racing-border p-4 md:grid-cols-3 sm:p-5">{categoryCars.map(car => <label key={car.id} className={`flex cursor-pointer items-center gap-3 border p-3 ${registrationConfig.autos_habilitados.includes(Number(car.id)) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><input type="checkbox" checked={registrationConfig.autos_habilitados.includes(Number(car.id))} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span>{car.marca} {car.modelo}</span></label>)}{!categoryCars.length ? <p className="text-sm text-yellow-300 md:col-span-3">La categoría no tiene autos cargados.</p> : null}</div></div></div>
+                <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.enabledCars ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="grid gap-2 border-t border-racing-border p-4 md:grid-cols-3 sm:p-5">{categoryCars.map(car => {
+                  const enabled = registrationConfig.autos_habilitados.includes(Number(car.id));
+                  return <div key={car.id} className={`border p-3 ${enabled ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><label className="flex cursor-pointer items-center gap-3"><input type="checkbox" checked={enabled} onChange={() => toggleRegistrationCar(car.id)} className="h-4 w-4 accent-racing-red"/><span className="min-w-0 flex-1 truncate">{car.marca} {car.modelo}</span></label>{enabled ? <label className="mt-3 flex items-center justify-between gap-3 border-t border-racing-border/70 pt-3"><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Límite</span><input type="number" min="1" max="65535" step="1" value={registrationConfig.limites_por_modelo?.[car.id] ?? ''} onChange={event => updateRegistrationCarLimit(car.id, event.target.value)} className="h-10 w-24 border border-racing-border bg-black/40 px-3 text-center font-racing text-xl font-bold text-white outline-none focus:border-racing-red" required/></label> : null}</div>;
+                })}{!categoryCars.length ? <p className="text-sm text-yellow-300 md:col-span-3">La categoría no tiene autos cargados.</p> : null}</div></div></div>
               </section>
               <section className="border border-racing-border bg-black/20 p-4 sm:p-5">
                 <div><p className="text-sm font-semibold text-gray-200">Secciones de inscripción</p><p className="mt-1 text-xs text-gray-500">Las cuatro secciones son fijas. Activá las que estarán disponibles y personalizá sus datos.</p></div>
@@ -6110,7 +6266,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:gap-1.5">
+            <nav className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 xl:grid-cols-[repeat(14,minmax(0,1fr))] xl:gap-1.5">
               {adminSections.map(section => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;

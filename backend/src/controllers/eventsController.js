@@ -11,7 +11,7 @@ const baseSelect = `
          END AS status,
          ci.id AS idcircuito, ci.nombre AS circuito,
          ci.localidad, ci.provincia, ci.pais, ci.imagen, ci.trazado, ci.variante,
-         c.temporada, c.anio, c.plataforma, c.puerto, c.n_server, c.servidor,
+         c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor,
          cat.id AS idcategoria, cat.categoria, cat.logo AS categoria_logo
   FROM calendario cal
   JOIN circuitos ci ON cal.idcircuito = ci.id

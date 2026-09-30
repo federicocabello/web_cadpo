@@ -4,12 +4,16 @@ const pool = require('../config/db');
 const LIVE_TIMING_HOST = process.env.LIVE_TIMING_HOST || 'rh.servegame.com';
 const CHECK_INTERVAL_MS = Math.max(10000, Number(process.env.LIVE_MONITOR_INTERVAL_MS) || 15000);
 const OUTAGE_THRESHOLD_MS = Math.max(60000, Number(process.env.LIVE_MONITOR_OUTAGE_MS) || 60000);
-const REQUEST_TIMEOUT_MS = Math.max(3000, Number(process.env.LIVE_MONITOR_TIMEOUT_MS) || 8000);
+const REQUEST_TIMEOUT_MS = Math.max(12000, Number(process.env.LIVE_MONITOR_TIMEOUT_MS) || 12000);
+const CONFIRMATION_ATTEMPTS = 3;
+const CONFIRMATION_DELAY_MS = 2000;
 const ALERT_RECIPIENT = process.env.LIVE_MONITOR_EMAIL || 'fede.cabello@hotmail.com';
 
 const outages = new Map();
 let interval;
 let checkInProgress = false;
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 const getEnabled = async () => {
   const [[row]] = await pool.query(
@@ -85,6 +89,20 @@ const probeServer = async server => {
   }
 };
 
+const confirmOutage = async server => {
+  let lastError;
+  for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt += 1) {
+    try {
+      await probeServer(server);
+      return { down: false, attempt };
+    } catch (error) {
+      lastError = error;
+      if (attempt < CONFIRMATION_ATTEMPTS) await wait(CONFIRMATION_DELAY_MS);
+    }
+  }
+  return { down: true, error: lastError };
+};
+
 const registerFailure = async (server, error) => {
   const key = String(server.id);
   const now = Date.now();
@@ -93,10 +111,19 @@ const registerFailure = async (server, error) => {
   outages.set(key, current);
 
   if (current.alertSent || now - current.failureSince < OUTAGE_THRESHOLD_MS) return;
+  const confirmation = await confirmOutage(server);
+  if (!confirmation.down) {
+    outages.delete(key);
+    console.warn(`Fallo transitorio descartado para el campeonato ${server.id}; el servidor respondió en la verificación ${confirmation.attempt}.`);
+    return;
+  }
+  current.lastError = confirmation.error?.name === 'AbortError'
+    ? 'Tiempo de espera agotado'
+    : confirmation.error?.message || current.lastError;
   await sendEmail({
     subject: 'SERVIDOR CAIDO',
     text: [
-      'El monitor de CADPO detecto que el servidor de tiempos lleva mas de 1 minuto sin responder.',
+      `El monitor de CADPO detecto que el servidor de tiempos lleva mas de 1 minuto sin responder y confirmo la caida con ${CONFIRMATION_ATTEMPTS} verificaciones adicionales.`,
       '',
       `Campeonato: ${server.categoria} - Temporada ${server.temporada} (${server.anio})`,
       `Servidor: ${LIVE_TIMING_HOST}:${server.puerto} (numero ${server.n_server})`,
@@ -152,6 +179,8 @@ const getStatus = async () => ({
   recipient: ALERT_RECIPIENT,
   outageThresholdSeconds: Math.round(OUTAGE_THRESHOLD_MS / 1000),
   checkIntervalSeconds: Math.round(CHECK_INTERVAL_MS / 1000),
+  requestTimeoutSeconds: Math.round(REQUEST_TIMEOUT_MS / 1000),
+  confirmationAttempts: CONFIRMATION_ATTEMPTS,
   monitoredOutages: outages.size,
 });
 

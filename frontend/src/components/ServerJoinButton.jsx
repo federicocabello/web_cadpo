@@ -1,4 +1,4 @@
-export default function ServerJoinButton({ href, className = '', variant = 'red' }) {
+export default function ServerJoinButton({ href, className = '', variant = 'red', steady = false }) {
   if (!href) return null;
 
   const variantClasses = variant === 'green'
@@ -10,7 +10,7 @@ export default function ServerJoinButton({ href, className = '', variant = 'red'
       href={href}
       target="_blank"
       rel="noreferrer"
-      className={`server-action-button inline-flex items-center gap-3 border px-5 py-3 font-racing text-sm font-bold uppercase text-white transition-transform hover:-translate-y-0.5 active:scale-95 ${variantClasses} ${className}`}
+      className={`server-action-button inline-flex items-center gap-3 border px-5 py-3 font-racing text-sm font-bold uppercase text-white transition-colors ${steady ? '' : 'transition-transform hover:-translate-y-0.5 active:scale-95'} ${variantClasses} ${className}`}
     >
       <span className="server-join-flag h-5 w-7 border border-white/60" aria-hidden="true" />
       Ingresar al servidor

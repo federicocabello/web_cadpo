@@ -135,6 +135,15 @@ export const templatesApi = {
   remove: id => api.delete(`/templates/${id}`),
 };
 
+export const sponsorsApi = {
+  getAll: () => api.get('/sponsors'),
+  getAdminAll: () => api.get('/sponsors/admin'),
+  create: data => api.post('/sponsors/admin', data, { timeout: 60000 }),
+  update: (id, data) => api.put(`/sponsors/admin/${id}`, data, { timeout: 60000 }),
+  removePhoto: (id, photoId) => api.delete(`/sponsors/admin/${id}/fotos/${photoId}`),
+  remove: id => api.delete(`/sponsors/admin/${id}`),
+};
+
 export const statisticsApi = {
   getOverview: () => api.get('/statistics'),
   searchDrivers: search => api.get('/statistics/drivers', { params: { search } }),

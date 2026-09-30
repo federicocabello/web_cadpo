@@ -26,6 +26,7 @@ const registrationFormsRouter = require('./routes/registrationForms');
 const statisticsRouter = require('./routes/statistics');
 const replaysRouter = require('./routes/replays');
 const templatesRouter = require('./routes/templates');
+const sponsorsRouter = require('./routes/sponsors');
 const liveTimingMonitor = require('./services/liveTimingMonitor');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -82,6 +83,7 @@ app.use('/api/registration-forms', registrationFormsRouter);
 app.use('/api/statistics', statisticsRouter);
 app.use('/api/replays', replaysRouter);
 app.use('/api/templates', templatesRouter);
+app.use('/api/sponsors', sponsorsRouter);
 
 // Servir el frontend desde Hostinger, desde el paquete de producción o desde Vite local.
 const hostingerPublicPath = path.join(__dirname, '../../public_html');

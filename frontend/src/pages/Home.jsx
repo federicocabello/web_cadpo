@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ArrowRightIcon, CalendarIcon, ChevronDownIcon, ClockIcon, FlagIcon, MapPinIcon, PlayCircleIcon, UserGroupIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { eventsApi, mediaApi, registrationFormsApi } from '../services/api';
+import { ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { eventsApi, mediaApi, registrationFormsApi, sponsorsApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import { getCountryName } from '../data/countries';
 import ServerJoinButton from '../components/ServerJoinButton';
@@ -132,14 +133,53 @@ function RegistrationPrompt({ registration, mobile = false }) {
   );
 }
 
+function RulesModal({ event, onClose }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = keyboardEvent => {
+      if (keyboardEvent.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/90 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby={`rules-title-${event.idcampeonato}`}>
+      <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Cerrar reglamento"/>
+      <section className="relative z-10 flex h-[96dvh] w-full flex-col overflow-hidden border border-racing-red/45 bg-racing-dark shadow-[0_25px_90px_rgba(0,0,0,0.9)] sm:h-[92dvh] sm:max-w-6xl">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-racing-border bg-black/75 px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-racing-red sm:text-[10px]">Reglamento del campeonato</p>
+            <h2 id={`rules-title-${event.idcampeonato}`} className="truncate font-racing text-lg font-bold uppercase text-white sm:text-2xl">{event.categoria} · Temporada {event.temporada}</h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <a href={event.reglamento} target="_blank" rel="noreferrer" className="hidden border border-gray-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-300 transition-colors hover:border-white hover:text-white sm:inline-flex">Abrir aparte</a>
+            <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 transition-colors hover:border-racing-red hover:bg-racing-red hover:text-white" aria-label="Cerrar reglamento"><XMarkIcon className="h-5 w-5"/></button>
+          </div>
+        </header>
+        <iframe src={event.reglamento} title={`Reglamento de ${event.categoria}`} className="min-h-0 w-full flex-1 bg-white"/>
+        <div className="shrink-0 border-t border-racing-border bg-black px-3 py-2 text-center sm:hidden">
+          <a href={event.reglamento} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-300"><DocumentTextIcon className="h-4 w-4"/>Si no podés visualizarlo, abrir PDF</a>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function EventSection({ event, now, onShowCalendar, registrationPrompt, showLiveTiming }) {
+  const [rulesOpen, setRulesOpen] = useState(false);
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
   const countdown = getCountdown(event.fecha, now);
   const phase = getEventPhase(event, new Date(now));
   const countdownParts = countdown ? [
-    { value: countdown.days, label: 'Días' }, { value: countdown.hours, label: 'Horas' },
-    { value: countdown.minutes, label: 'Minutos' }, { value: countdown.seconds, label: 'Segundos' },
-  ] : [];
+    { key: 'days', value: countdown.days, label: 'Días' }, { key: 'hours', value: countdown.hours, label: 'Horas' },
+    { key: 'minutes', value: countdown.minutes, label: 'Minutos' }, { key: 'seconds', value: countdown.seconds, label: 'Segundos' },
+  ].filter(part => !['days', 'hours'].includes(part.key) || part.value > 0) : [];
 
   return (
     <section className="home-race-height race-hero relative overflow-hidden bg-black">
@@ -150,17 +190,18 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, showLive
       <div className="home-race-height relative z-10 mx-auto grid w-full max-w-[1600px] grid-cols-1 items-center gap-4 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)] lg:gap-12 lg:px-14 lg:py-12 xl:gap-16 xl:px-20">
         <div className="race-hero-content order-2 w-full max-w-4xl justify-self-start lg:order-1">
           <div className="mb-5 inline-flex items-center gap-3 border-l-2 border-racing-red bg-black/55 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white backdrop-blur-md"><span className="h-2 w-2 animate-pulse rounded-full bg-racing-red"/>Próxima fecha</div>
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm"><span className="bg-racing-red px-3 py-1.5 text-white">{event.categoria}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Temporada {event.temporada}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Fecha {event.ronda}</span><button type="button" onClick={() => onShowCalendar(event)} className="inline-flex items-center gap-2 border border-gray-600 bg-black px-3 py-1.5 font-racing text-xs font-bold uppercase text-white shadow-lg transition-all hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-950 active:scale-95"><CalendarIcon className="h-4 w-4"/>Ver calendario</button></div>
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm"><span className="bg-racing-red px-3 py-1.5 text-white">{event.categoria}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Temporada {event.temporada}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Fecha {event.ronda}</span><button type="button" onClick={() => onShowCalendar(event)} className="event-action-button server-action-button server-action-dark inline-flex items-center gap-2 border border-gray-600 bg-black px-3 py-1.5 font-racing text-xs font-bold uppercase text-white shadow-lg transition-colors hover:border-gray-300 hover:bg-gray-900"><CalendarIcon className="h-4 w-4"/>Ver calendario</button></div>
           <h1 className="font-racing text-5xl font-bold uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl xl:text-8xl">{event.circuito}</h1>
           {event.variante ? <p className="mt-2 font-racing text-2xl font-semibold uppercase text-racing-red sm:text-3xl">Variante {event.variante}</p> : null}
           <div className="mt-6 flex flex-col gap-3 text-gray-100 sm:flex-row sm:flex-wrap sm:gap-6"><p className="flex items-center gap-2 text-sm font-medium capitalize sm:text-base"><CalendarIcon className="h-5 w-5 text-racing-red"/>{formatDate(event.fecha)}</p><p className="flex items-center gap-2 text-sm font-medium sm:text-base"><ClockIcon className="h-5 w-5 text-racing-red"/>{formatTime(event.fecha)} H</p>{location ? <p className="flex items-center gap-2 text-sm text-gray-300 sm:text-base"><CountryFlag country={event.pais} className="text-lg"/><MapPinIcon className="h-5 w-5 text-racing-red"/>{location}</p> : null}</div>
-          <div className="mt-8 max-w-3xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid grid-cols-4 gap-2 sm:gap-3">{countdownParts.map(part => <div key={part.label} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
-          <div className="mt-7 flex flex-wrap gap-3 xl:flex-nowrap xl:gap-2"><ServerJoinButton href={event.servidor} className="w-full justify-center sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"/>{event.transmision ? <a href={event.transmision} target="_blank" rel="noreferrer" className="server-action-button server-action-red inline-flex w-full shrink-0 items-center justify-center gap-3 border border-red-400 bg-racing-red px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-racing transition-transform hover:-translate-y-0.5 active:scale-95 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><PlayCircleIcon className="h-5 w-7"/>Ver transmisión</a> : null}{showLiveTiming ? <Link to={`/tiempos-en-vivo?campeonato=${event.idcampeonato}`} className="server-action-button server-action-green inline-flex w-full shrink-0 items-center justify-center gap-3 border border-emerald-300 bg-emerald-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(16,185,129,0.3)] transition-transform hover:-translate-y-0.5 hover:bg-emerald-500 active:scale-95 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><ClockIcon className="h-5 w-7"/>Ver tiempos en vivo</Link> : null}</div>
+          <div className="mt-8 max-w-3xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: `repeat(${countdownParts.length}, minmax(0, 1fr))` }}>{countdownParts.map(part => <div key={part.key} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
+          <div className="mt-7 flex flex-wrap gap-3 xl:flex-nowrap xl:gap-2"><ServerJoinButton href={event.servidor} variant="green" steady className="event-action-button w-full justify-center sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"/>{event.transmision ? <a href={event.transmision} target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-red inline-flex w-full shrink-0 items-center justify-center gap-3 border border-red-400 bg-racing-red px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-racing transition-colors hover:bg-red-600 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><PlayCircleIcon className="h-5 w-7"/>Ver transmisión</a> : null}{showLiveTiming ? <Link to={`/tiempos-en-vivo?campeonato=${event.idcampeonato}`} className="event-action-button server-action-button server-action-blue inline-flex w-full shrink-0 items-center justify-center gap-3 border border-blue-300 bg-blue-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(37,99,235,0.34)] transition-colors hover:bg-blue-500 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><ClockIcon className="h-5 w-7"/>Ver tiempos en vivo</Link> : null}{event.reglamento ? <button type="button" onClick={() => setRulesOpen(true)} className="event-action-button server-action-button server-action-white inline-flex w-full shrink-0 items-center justify-center gap-3 border border-white bg-white px-5 py-3 font-racing text-sm font-bold uppercase text-black shadow-[0_0_22px_rgba(255,255,255,0.2)] transition-colors hover:bg-gray-200 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><DocumentTextIcon className="h-5 w-5"/>Ver reglamento</button> : null}</div>
           <RegistrationPrompt registration={registrationPrompt} mobile/>
         </div>
         <div className="order-1 flex min-h-[200px] w-full items-center justify-center lg:order-2 lg:min-h-[500px] lg:justify-end">{event.circuito_trazado_url ? <img src={event.circuito_trazado_url} alt={`Trazado de ${event.circuito}`} className="race-track-float max-h-[28vh] w-full max-w-[520px] object-contain drop-shadow-[0_18px_35px_rgba(0,0,0,0.9)] lg:max-h-[54vh]" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/> : <FlagIcon className="h-28 w-28 text-white/15"/>}</div>
       </div>
       <RegistrationPrompt registration={registrationPrompt}/>
+      {rulesOpen ? <RulesModal event={event} onClose={() => setRulesOpen(false)}/> : null}
       <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-racing-red to-transparent"/>
     </section>
   );
@@ -206,7 +247,7 @@ function RegistrationSection({ registration, details, images, activeImage, now, 
           <p className="mt-6 max-w-2xl text-sm text-gray-300">Setup: {registration.setup_detalle}</p>
           <div className="mt-4 flex flex-wrap gap-3">{includesLiveBroadcast ? <a href="https://www.youtube.com/@alPodioEnVivo" target="_blank" rel="noreferrer" className={`group flex items-center gap-3 overflow-hidden border-l-2 bg-black/50 px-4 py-3 backdrop-blur-sm transition-colors hover:bg-black/70 ${theme.border}`}><PlayCircleIcon className={`h-6 w-6 shrink-0 ${theme.text}`}/><strong className="block whitespace-nowrap text-sm font-bold uppercase tracking-wide text-white">Transmisión en vivo</strong><span className="max-w-0 -translate-x-2 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 group-hover:max-w-28 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:max-w-28 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"><span className={`block px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${enrollmentStarted ? 'bg-green-600 text-white' : 'bg-yellow-400 text-black'}`}>Ir al canal</span></span></a> : <div className="flex items-center gap-3 border-l-2 border-gray-500 bg-black/50 px-4 py-3 backdrop-blur-sm"><PlayCircleIcon className="h-6 w-6 shrink-0 text-gray-500"/><strong className="block text-sm font-bold uppercase tracking-wide text-gray-300">Sin transmisión en vivo</strong></div>}</div>
           <div className="mt-5 grid max-w-lg grid-cols-2 gap-3"><div className={`flex items-center gap-3 border-l-2 bg-black/50 px-4 py-3 backdrop-blur-sm ${theme.border}`}><CalendarIcon className={`h-6 w-6 shrink-0 ${theme.text}`}/><div><strong className="block font-racing text-xl uppercase text-white">{registration.cantidad_fechas} Fechas</strong>{firstEvent ? <span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wider ${theme.textSoft}`}>Días {raceDay} · {formatTime(firstEvent.fecha)} HS</span> : null}</div></div><div className={`flex min-w-0 items-center gap-3 border-l-2 bg-black/50 px-4 py-3 backdrop-blur-sm ${theme.border}`}><UserGroupIcon className={`h-6 w-6 shrink-0 ${theme.text}`}/><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="font-racing text-xl text-white">{enrollmentStarted ? occupiedPlaces : Number(registration.preinscriptos || 0)}/{registration.limite_inscriptos}</strong>{lowAvailability ? <span className="cta-attention whitespace-nowrap border border-yellow-300/70 bg-yellow-400 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-black shadow-[0_0_18px_rgba(250,204,21,0.3)]">{remainingPlaces === 1 ? 'Queda solo 1 lugar' : `Quedan solo ${remainingPlaces} lugares`}</span> : null}</div><span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{enrollmentStarted ? 'Inscriptos' : 'Pre-inscriptos'}</span></div></div></div>
-          <div className="mt-7 flex flex-wrap items-start gap-4"><div className="flex flex-col items-start gap-2"><Link to={`/inscripcion?campeonato=${registration.idcampeonato}`} className={`group ${open ? 'cta-attention' : ''} ${full ? 'border-gray-500 bg-gray-700 text-gray-100 shadow-[0_0_22px_rgba(107,114,128,0.2)] hover:border-gray-300 hover:bg-gray-600' : theme.button} server-action-button relative inline-flex min-h-14 items-center gap-3 overflow-hidden border px-6 py-3 font-racing text-sm font-bold uppercase transition-transform hover:-translate-y-0.5 active:scale-95`}><span className="flex items-center gap-3 transition-all duration-300 group-hover:scale-95 group-hover:opacity-0 group-focus-visible:scale-95 group-focus-visible:opacity-0"><span>{open ? 'Inscripciones' : full ? 'Cupos completos' : closed ? 'Inscripciones cerradas' : formatRegistrationOpening(registration.fecha_apertura, now)}</span><ArrowRightIcon className="h-5 w-5 shrink-0"/></span><span className="pointer-events-none absolute inset-0 flex scale-95 items-center justify-center gap-3 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100" aria-hidden="true"><span className="registration-info-flag server-join-flag h-7 w-9 shrink-0 border border-black/50"/><span className="text-sm font-bold uppercase">{open ? 'Inscribirse ya' : 'Ver información'}</span></span></Link>{open && closingNotice ? <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-green-200"><ClockIcon className="h-3.5 w-3.5 shrink-0 text-green-300"/><span>{closingNotice.label} <strong className="font-racing text-xs text-white">{closingNotice.value}</strong></span></div> : null}</div><div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Inscripción desde</p><p className={`font-racing text-3xl font-bold ${theme.text}`}>{formatPrice(registration.precio)}</p></div></div>
+          <div className="mt-7 flex flex-wrap items-start gap-4"><div className="flex flex-col items-start gap-2"><Link to={`/inscripcion?campeonato=${registration.idcampeonato}`} className={`event-action-button group ${full ? 'border-gray-500 bg-gray-700 text-gray-100 shadow-[0_0_22px_rgba(107,114,128,0.2)] hover:border-gray-300 hover:bg-gray-600' : theme.button} server-action-button relative inline-flex min-h-14 items-center gap-3 overflow-hidden border px-6 py-3 font-racing text-sm font-bold uppercase transition-colors`}><span className="flex items-center gap-3 transition-all duration-300 group-hover:scale-95 group-hover:opacity-0 group-focus-visible:scale-95 group-focus-visible:opacity-0"><span>{open ? 'Inscripciones' : full ? 'Cupos completos' : closed ? 'Inscripciones cerradas' : formatRegistrationOpening(registration.fecha_apertura, now)}</span><ArrowRightIcon className="h-5 w-5 shrink-0"/></span><span className="pointer-events-none absolute inset-0 flex scale-95 items-center justify-center gap-3 opacity-0 transition-all duration-300 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100" aria-hidden="true"><span className="registration-info-flag server-join-flag h-7 w-9 shrink-0 border border-black/50"/><span className="text-sm font-bold uppercase">{open ? 'Inscribirse ya' : 'Ver información'}</span></span></Link>{open && closingNotice ? <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-green-200"><ClockIcon className="h-3.5 w-3.5 shrink-0 text-green-300"/><span>{closingNotice.label} <strong className="font-racing text-xs text-white">{closingNotice.value}</strong></span></div> : null}</div><div><p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Inscripción desde</p><p className={`font-racing text-3xl font-bold ${theme.text}`}>{formatPrice(registration.precio)}</p></div></div>
         </div>
         {nextEvent ? <aside className={`relative mt-7 ml-auto min-h-32 w-full max-w-lg overflow-hidden border bg-black text-left shadow-[0_18px_45px_rgba(0,0,0,0.55)] md:w-[27rem] lg:w-[28rem] 2xl:absolute 2xl:right-20 2xl:top-12 2xl:mt-0 ${theme.borderSoft}`}>{nextEvent.circuito_foto_url ? <img src={nextEvent.circuito_foto_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-70" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/> : null}<div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/15"/><div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/20"/><div className="relative z-10 flex min-h-32 flex-col p-4"><div className="flex items-center justify-between gap-4"><p className={`text-[10px] font-bold uppercase tracking-[0.22em] ${theme.text}`}>Próxima fecha</p><span className={`shrink-0 px-2.5 py-1 font-racing text-sm font-bold uppercase ${theme.chip}`}>Fecha {nextEvent.ronda}</span></div><div className="mt-auto"><div className="flex items-center gap-2.5"><CountryFlag country={nextEvent.pais} className="shrink-0 text-lg"/><h3 className="font-racing text-lg font-bold uppercase leading-tight text-white drop-shadow-lg">{nextEvent.circuito}{nextEvent.variante ? ` · ${nextEvent.variante}` : ''}</h3></div><div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-5 gap-y-1 text-xs text-gray-200"><span className="flex items-center gap-1.5 capitalize"><CalendarIcon className={`h-4 w-4 ${theme.text}`}/>{formatCalendarDate(nextEvent.fecha, { weekday: 'long', day: '2-digit', month: 'long' })}</span><span className="flex items-center gap-1.5"><ClockIcon className={`h-4 w-4 ${theme.text}`}/>{formatTime(nextEvent.fecha)} HS</span></div></div></div></aside> : null}
       </div>
@@ -248,11 +289,95 @@ function BroadcastSection({ broadcasts, now }) {
           <h2 className="mt-5 font-anton text-5xl uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl">{broadcast.circuito}</h2>
           {broadcast.variante ? <p className="mt-2 font-racing text-2xl font-semibold uppercase text-violet-300">Variante {broadcast.variante}</p> : null}
           <div className="mt-6 flex flex-wrap items-center gap-3 text-gray-300"><p className="flex items-center gap-2 capitalize"><CalendarIcon className="h-5 w-5 text-violet-400"/>{formatDate(broadcast.fecha)}</p>{age ? <span className="border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-violet-300">{age}</span> : null}</div>
-          <a href={broadcast.transmision} target="_blank" rel="noreferrer" className="server-action-button server-action-violet mt-7 inline-flex items-center gap-3 border border-violet-300 bg-violet-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(139,92,246,0.35)] transition-transform hover:-translate-y-0.5 hover:bg-violet-500 active:scale-95"><PlayCircleIcon className="h-6 w-6"/>Ver en YouTube</a>
+          <a href={broadcast.transmision} target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-violet mt-7 inline-flex items-center gap-3 border border-violet-300 bg-violet-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(139,92,246,0.35)] transition-colors hover:bg-violet-500"><PlayCircleIcon className="h-6 w-6"/>Ver en YouTube</a>
         </div>
         <div key={broadcast.youtubeId} className="race-hero-content w-full max-w-[820px] justify-self-end animate-fade-in overflow-hidden border border-violet-400/25 bg-black shadow-[0_25px_70px_rgba(76,29,149,0.38)]"><div className="aspect-video w-full"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${broadcast.youtubeId}?rel=0`} title={`Última transmisión: ${broadcast.categoria} en ${broadcast.circuito}`} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen/></div></div>
       </div>
       <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-violet-500 to-transparent"/>
+    </section>
+  );
+}
+
+const sponsorLink = value => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (/^(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(normalized)) return `https://${normalized}`;
+  return '';
+};
+
+function SponsorGalleryModal({ sponsor, initialIndex, onClose }) {
+  const [index, setIndex] = useState(initialIndex);
+  const photos = sponsor.fotos || [];
+  const showPrevious = () => setIndex(current => (current - 1 + photos.length) % photos.length);
+  const showNext = () => setIndex(current => (current + 1) % photos.length);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKey = event => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowLeft' && photos.length > 1) setIndex(current => (current - 1 + photos.length) % photos.length);
+      if (event.key === 'ArrowRight' && photos.length > 1) setIndex(current => (current + 1) % photos.length);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose, photos.length]);
+
+  if (!photos[index]) return null;
+  return createPortal(<div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 p-0 sm:p-5" role="dialog" aria-modal="true" aria-label={`Galería de ${sponsor.empresa}`}>
+    <button type="button" className="absolute inset-0" onClick={onClose} aria-label="Cerrar galería"/>
+    <div className="relative z-10 flex h-[100dvh] w-full max-w-7xl flex-col sm:h-[92dvh]">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-black px-4 py-3 sm:px-5"><div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-[#00ffcd]">Sponsor</p><h3 className="truncate font-racing text-xl font-bold uppercase text-white sm:text-2xl">{sponsor.empresa}</h3></div><div className="flex items-center gap-3"><span className="font-racing text-sm text-gray-400">{index + 1}/{photos.length}</span><button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center border border-white/15 text-gray-300 hover:border-[#00ffcd] hover:text-[#00ffcd]" aria-label="Cerrar"><XMarkIcon className="h-5 w-5"/></button></div></header>
+      <div className="relative min-h-0 flex-1 bg-black"><img src={photos[index].imagen} alt={`${sponsor.empresa} · foto ${index + 1}`} className="h-full w-full object-contain"/>{photos.length > 1 ? <><button type="button" onClick={showPrevious} className="absolute left-2 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/20 bg-black/70 text-white backdrop-blur-sm hover:border-[#00ffcd] hover:text-[#00ffcd] sm:left-5 sm:h-14 sm:w-14" aria-label="Foto anterior"><ChevronLeftIcon className="h-7 w-7"/></button><button type="button" onClick={showNext} className="absolute right-2 top-1/2 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center border border-white/20 bg-black/70 text-white backdrop-blur-sm hover:border-[#00ffcd] hover:text-[#00ffcd] sm:right-5 sm:h-14 sm:w-14" aria-label="Foto siguiente"><ChevronRightIcon className="h-7 w-7"/></button></> : null}</div>
+    </div>
+  </div>, document.body);
+}
+
+function AdvertisingSection({ sponsors }) {
+  const [galleryView, setGalleryView] = useState(null);
+  return (
+    <section className="relative overflow-hidden border-t border-cyan-300/15 bg-[#050909] text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(0,255,205,0.14),transparent_32%),radial-gradient(circle_at_88%_75%,rgba(6,182,212,0.1),transparent_30%)]"/>
+      <div className="race-hero-grid absolute inset-0 opacity-10"/>
+      <div className="relative z-10 mx-auto w-full max-w-[1600px] px-5 py-14 sm:px-8 sm:py-18 lg:px-14 lg:py-20 xl:px-20">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(520px,1.15fr)] lg:items-center lg:gap-16">
+          <div>
+            <div className="inline-flex items-center gap-3 border-l-2 border-[#00ffcd] bg-black/55 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-white sm:text-xs"><MegaphoneIcon className="h-5 w-5 text-[#00ffcd]"/>Publicidad en CADPO</div>
+            <h2 className="mt-6 max-w-3xl font-anton text-5xl uppercase leading-[0.9] text-white sm:text-6xl lg:text-7xl">Hacé que tu marca también corra con nosotros</h2>
+            <p className="mt-6 max-w-2xl text-sm leading-relaxed text-gray-300 sm:text-base">Si tenés una empresa o emprendimiento, podés formar parte de la liga y llegar a nuestra comunidad dentro y fuera de la pista. Creamos propuestas de presencia visual adaptadas a cada marca.</p>
+            <a href="https://wa.me/5492604659499" target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-turquoise mt-7 inline-flex min-h-12 w-full items-center justify-center gap-3 border border-[#00ffcd] bg-[#00ffcd] px-6 py-3 font-racing text-sm font-bold uppercase text-black shadow-[0_0_30px_rgba(0,255,205,0.2)] transition-colors hover:bg-[#00d9af] sm:w-auto"><MegaphoneIcon className="h-5 w-5"/>Quiero publicitar</a>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[{
+              icon: PaintBrushIcon, title: 'En los autos', text: 'Tu identidad aplicada en diseños y pinturas de los vehículos de competición.'
+            }, {
+              icon: VideoCameraIcon, title: 'En transmisiones', text: 'Presencia durante las carreras, placas, menciones y contenido audiovisual.'
+            }, {
+              icon: MapIcon, title: 'En los circuitos', text: 'Cartelería de pista y espacios publicitarios visibles durante cada fecha.'
+            }].map(item => { const Icon = item.icon; return <article key={item.title} className="group border border-white/10 bg-black/45 p-5 backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:border-[#00ffcd]/55 hover:bg-[#00ffcd]/[0.06]"><span className="flex h-12 w-12 items-center justify-center border border-[#00ffcd]/35 bg-[#00ffcd]/10 text-[#00ffcd] transition group-hover:bg-[#00ffcd] group-hover:text-black"><Icon className="h-6 w-6"/></span><h3 className="mt-5 font-racing text-xl font-bold uppercase text-white">{item.title}</h3><p className="mt-2 text-sm leading-relaxed text-gray-400">{item.text}</p></article>; })}
+          </div>
+        </div>
+
+        {sponsors.length ? <div className="mt-14 border-t border-white/10 pt-10 sm:mt-16 sm:pt-12">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#00ffcd]">Acompañan a la liga</p><h3 className="mt-2 font-racing text-3xl font-bold uppercase text-white sm:text-4xl">Nuestros sponsors</h3></div><p className="max-w-xl text-sm text-gray-500">Empresas y emprendimientos que impulsan el crecimiento de la comunidad CADPO.</p></div>
+          <div className="mt-7 grid gap-5 lg:grid-cols-2">{sponsors.map(sponsor => {
+            const link = sponsorLink(sponsor.direccion);
+            return <article key={sponsor.id} className="overflow-hidden border border-white/10 bg-black/45 transition hover:border-[#00ffcd]/35">
+              <div className="grid gap-5 p-5 sm:grid-cols-[150px_1fr] sm:items-center sm:p-6">
+                <div className="flex h-28 items-center justify-center bg-white/[0.03] p-4">{sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} loading="lazy" className="h-full w-full object-contain"/> : <BuildingOffice2Icon className="h-12 w-12 text-gray-700"/>}</div>
+                <div className="min-w-0"><h4 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">{sponsor.empresa}</h4>{sponsor.descripcion ? <p className="mt-2 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}{sponsor.direccion ? link ? <a href={link} target="_blank" rel="noreferrer" className="mt-3 inline-flex max-w-full items-center gap-2 break-all text-xs font-semibold text-[#00ffcd] hover:text-white"><MapPinIcon className="h-4 w-4 shrink-0"/>{sponsor.direccion}</a> : <p className="mt-3 flex items-start gap-2 text-xs text-gray-500"><MapPinIcon className="h-4 w-4 shrink-0 text-[#00ffcd]"/><span>{sponsor.direccion}</span></p> : null}</div>
+              </div>
+              {sponsor.fotos?.length ? <div className="grid grid-cols-3 gap-px border-t border-white/10 bg-white/10">{sponsor.fotos.slice(0, 6).map((photo, index) => <button type="button" key={photo.id} onClick={() => setGalleryView({ sponsor, index })} className={`relative overflow-hidden bg-black ${index === 0 && sponsor.fotos.length < 3 ? 'col-span-2' : ''}`} aria-label={`Ver foto ${index + 1} de ${sponsor.empresa}`}><img src={photo.imagen} alt={`${sponsor.empresa} · foto ${index + 1}`} loading="lazy" className="aspect-video h-full w-full object-cover opacity-80 transition duration-500 hover:scale-105 hover:opacity-100"/>{index === 5 && sponsor.fotos.length > 6 ? <span className="absolute inset-0 flex items-center justify-center bg-black/65 font-racing text-xl font-bold text-white">+{sponsor.fotos.length - 6}</span> : null}</button>)}</div> : null}
+            </article>;
+          })}</div>
+        </div> : null}
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#00ffcd] to-transparent"/>
+      {galleryView ? <SponsorGalleryModal sponsor={galleryView.sponsor} initialIndex={galleryView.index} onClose={() => setGalleryView(null)}/> : null}
     </section>
   );
 }
@@ -266,6 +391,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
   const [calendarEvent, setCalendarEvent] = useState(null);
+  const [sponsors, setSponsors] = useState([]);
 
   const upcomingEvents = useMemo(() => getFeaturedUpcomingEvents(events, new Date(now)), [events, now]);
   const liveTimingEventIds = useMemo(() => new Set(getLiveTimingEvents(events, new Date(now)).map(event => `${event.idcampeonato}-${event.ronda}`)), [events, now]);
@@ -287,6 +413,7 @@ export default function Home() {
 
   useEffect(() => {
     Promise.all([eventsApi.getAll(), registrationFormsApi.getAll()]).then(([eventsResponse, formsResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
+    sponsorsApi.getAll().then(response => setSponsors(response.data.data || [])).catch(error => console.error('Error cargando sponsors:', error));
   }, []);
 
   useEffect(() => {
@@ -336,6 +463,7 @@ export default function Home() {
       {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
       {!loading ? registrations.map(registration => <RegistrationSection key={registration.idcampeonato} registration={registration} details={registrationDetails[registration.idcampeonato]} images={registrationImages[registration.idcampeonato] || []} activeImage={activeRegistrationImages[registration.idcampeonato] || 0} now={now} events={events}/>) : null}
       {!loading && championshipBroadcasts.length ? <BroadcastSection key={championshipBroadcasts[0].idcampeonato} broadcasts={championshipBroadcasts} now={now}/> : null}
+      {!loading ? <AdvertisingSection sponsors={sponsors}/> : null}
 
       {calendarEvent ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget) setCalendarEvent(null); }} role="presentation"><section className="max-h-[85vh] w-full max-w-3xl overflow-hidden border border-racing-border bg-racing-gray shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="calendar-title"><header className="flex items-start justify-between gap-4 border-b border-racing-border p-5 sm:p-6"><div><p className="text-xs font-semibold uppercase tracking-widest text-racing-red">{calendarEvent.categoria} · Temporada {calendarEvent.temporada}</p><h2 id="calendar-title" className="mt-1 font-racing text-3xl font-bold">Próximas fechas</h2></div><button type="button" onClick={() => setCalendarEvent(null)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-400 transition hover:border-racing-red hover:text-white" aria-label="Cerrar calendario"><XMarkIcon className="h-5 w-5"/></button></header><div className="max-h-[65vh] space-y-3 overflow-y-auto p-5 sm:p-6">{championshipEvents.map(event => <article key={`${event.idcampeonato}-${event.ronda}`} className="grid gap-4 border border-racing-border bg-racing-dark p-4 sm:grid-cols-[60px_1fr_auto] sm:items-center"><div className="text-center"><p className="text-[10px] font-bold uppercase text-gray-500">Ronda</p><p className="font-racing text-3xl font-bold text-racing-red">{event.ronda}</p></div><div><h3 className="font-racing text-xl font-bold text-white">{event.circuito}{event.variante ? ` · ${event.variante}` : ''}</h3><div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-400"><p className="flex items-center gap-2 capitalize"><CalendarIcon className="h-4 w-4 text-racing-red"/>{formatCalendarDate(event.fecha, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p><p className="flex items-center gap-2"><ClockIcon className="h-4 w-4 text-racing-red"/>{formatCalendarDate(event.fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H</p></div><p className="mt-2 text-xs text-gray-500">{[event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ')}</p></div><div className="flex flex-wrap gap-2 sm:justify-end">{event.especial ? <span className="border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-xs font-bold uppercase text-yellow-300">{event.especialidad || 'Especial'}</span> : null}{event.coronacion ? <span className="border border-racing-red/30 bg-racing-red/10 px-2 py-1 text-xs font-bold uppercase text-racing-red">Coronación</span> : null}</div></article>)}</div></section></div> : null}
     </div>
