@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { eventsApi, mediaApi, registrationFormsApi, sponsorsApi } from '../services/api';
+import { ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, GlobeAltIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PhoneIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { complaintsApi, eventsApi, mediaApi, registrationFormsApi, sponsorsApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import { getCountryName } from '../data/countries';
 import ServerJoinButton from '../components/ServerJoinButton';
 import { getEventPhase, getFeaturedUpcomingEvents, getLiveTimingEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { formatPrice } from '../utils/currency';
+import { formatComplaintCountdown } from '../utils/complaintCountdown';
 
 const shuffle = items => [...items].sort(() => Math.random() - 0.5);
 const formatDate = value => value ? formatCalendarDate(value, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : 'Por confirmar';
@@ -133,6 +134,15 @@ function RegistrationPrompt({ registration, mobile = false }) {
   );
 }
 
+function ComplaintPrompt({ event, now }) {
+  const countdown = formatComplaintCountdown(event?.cierre_denuncias, now);
+  if (!event || !countdown) return null;
+  return <Link to="/denuncias" className="group z-30 flex w-full overflow-hidden border border-orange-400/55 bg-black/90 text-left shadow-[0_16px_45px_rgba(0,0,0,0.65)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 md:w-[22rem]" aria-label="Abrir formulario de denuncias">
+    <span className="w-1.5 shrink-0 bg-orange-500 transition-all duration-300 group-hover:w-2.5" />
+    <span className="flex min-w-0 flex-1 items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-orange-300">Formulario de denuncias habilitado</span><span className="mt-1 block truncate text-[10px] font-semibold uppercase text-gray-400">{event.categoria} · Fecha {event.ronda}</span></span><span className="shrink-0 text-right"><span className="block text-[8px] font-bold uppercase tracking-widest text-gray-500">Cierra en</span><strong className="mt-0.5 block font-racing text-sm font-bold uppercase text-white">{countdown}</strong></span><ArrowRightIcon className="h-5 w-5 shrink-0 text-orange-300 transition-transform group-hover:translate-x-1" /></span>
+  </Link>;
+}
+
 function RulesModal({ event, onClose }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -171,7 +181,7 @@ function RulesModal({ event, onClose }) {
   );
 }
 
-function EventSection({ event, now, onShowCalendar, registrationPrompt, showLiveTiming }) {
+function EventSection({ event, now, onShowCalendar, registrationPrompt, complaintPromptEvent, showLiveTiming }) {
   const [rulesOpen, setRulesOpen] = useState(false);
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
   const countdown = getCountdown(event.fecha, now);
@@ -196,10 +206,12 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, showLive
           <div className="mt-6 flex flex-col gap-3 text-gray-100 sm:flex-row sm:flex-wrap sm:gap-6"><p className="flex items-center gap-2 text-sm font-medium capitalize sm:text-base"><CalendarIcon className="h-5 w-5 text-racing-red"/>{formatDate(event.fecha)}</p><p className="flex items-center gap-2 text-sm font-medium sm:text-base"><ClockIcon className="h-5 w-5 text-racing-red"/>{formatTime(event.fecha)} H</p>{location ? <p className="flex items-center gap-2 text-sm text-gray-300 sm:text-base"><CountryFlag country={event.pais} className="text-lg"/><MapPinIcon className="h-5 w-5 text-racing-red"/>{location}</p> : null}</div>
           <div className="mt-8 max-w-3xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: `repeat(${countdownParts.length}, minmax(0, 1fr))` }}>{countdownParts.map(part => <div key={part.key} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
           <div className="mt-7 flex flex-wrap gap-3 xl:flex-nowrap xl:gap-2"><ServerJoinButton href={event.servidor} variant="green" steady className="event-action-button w-full justify-center sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"/>{event.transmision ? <a href={event.transmision} target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-red inline-flex w-full shrink-0 items-center justify-center gap-3 border border-red-400 bg-racing-red px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-racing transition-colors hover:bg-red-600 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><PlayCircleIcon className="h-5 w-7"/>Ver transmisión</a> : null}{showLiveTiming ? <Link to={`/tiempos-en-vivo?campeonato=${event.idcampeonato}`} className="event-action-button server-action-button server-action-blue inline-flex w-full shrink-0 items-center justify-center gap-3 border border-blue-300 bg-blue-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(37,99,235,0.34)] transition-colors hover:bg-blue-500 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><ClockIcon className="h-5 w-7"/>Ver tiempos en vivo</Link> : null}{event.reglamento ? <button type="button" onClick={() => setRulesOpen(true)} className="event-action-button server-action-button server-action-white inline-flex w-full shrink-0 items-center justify-center gap-3 border border-white bg-white px-5 py-3 font-racing text-sm font-bold uppercase text-black shadow-[0_0_22px_rgba(255,255,255,0.2)] transition-colors hover:bg-gray-200 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><DocumentTextIcon className="h-5 w-5"/>Ver reglamento</button> : null}</div>
+          {complaintPromptEvent ? <div className="mt-4 md:hidden"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
           <RegistrationPrompt registration={registrationPrompt} mobile/>
         </div>
         <div className="order-1 flex min-h-[200px] w-full items-center justify-center lg:order-2 lg:min-h-[500px] lg:justify-end">{event.circuito_trazado_url ? <img src={event.circuito_trazado_url} alt={`Trazado de ${event.circuito}`} className="race-track-float max-h-[28vh] w-full max-w-[520px] object-contain drop-shadow-[0_18px_35px_rgba(0,0,0,0.9)] lg:max-h-[54vh]" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/> : <FlagIcon className="h-28 w-28 text-white/15"/>}</div>
       </div>
+      {complaintPromptEvent ? <div className="absolute right-8 top-12 z-30 hidden md:block lg:right-14 2xl:right-20"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
       <RegistrationPrompt registration={registrationPrompt}/>
       {rulesOpen ? <RulesModal event={event} onClose={() => setRulesOpen(false)}/> : null}
       <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-racing-red to-transparent"/>
@@ -258,13 +270,30 @@ function RegistrationSection({ registration, details, images, activeImage, now, 
 }
 
 function BroadcastSection({ broadcasts, now }) {
+  const championships = useMemo(() => {
+    const unique = new Map();
+    broadcasts.forEach(item => {
+      if (!unique.has(String(item.idcampeonato))) unique.set(String(item.idcampeonato), item);
+    });
+    return [...unique.values()];
+  }, [broadcasts]);
+  const [selectedChampionship, setSelectedChampionship] = useState(() => String(broadcasts[0]?.idcampeonato || ''));
   const [selectedRound, setSelectedRound] = useState(null);
   const [roundMenuOpen, setRoundMenuOpen] = useState(false);
-  const broadcast = broadcasts.find(item => String(item.ronda) === String(selectedRound)) || broadcasts[0];
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const activeBroadcasts = broadcasts.filter(item => String(item.idcampeonato) === selectedChampionship);
+  const broadcast = activeBroadcasts.find(item => String(item.ronda) === String(selectedRound)) || activeBroadcasts[0] || broadcasts[0];
   const age = getDaysAgoLabel(broadcast.fecha, now);
 
   const selectRound = round => {
     setSelectedRound(round);
+    setRoundMenuOpen(false);
+  };
+
+  const selectChampionship = id => {
+    setSelectedChampionship(String(id));
+    setSelectedRound(null);
+    setCategoryMenuOpen(false);
     setRoundMenuOpen(false);
   };
 
@@ -276,14 +305,17 @@ function BroadcastSection({ broadcasts, now }) {
         <div key={`${broadcast.idcampeonato}-${broadcast.ronda}`} className="race-hero-content max-w-xl justify-self-start animate-fade-in">
           <div className="mb-5 inline-flex items-center gap-3 border-l-2 border-violet-400 bg-black/55 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white backdrop-blur-md"><span className="h-2 w-2 animate-pulse rounded-full bg-violet-400"/>Última transmisión</div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200">
-            <span className="bg-violet-600 px-3 py-1.5 text-white">{broadcast.categoria}</span>
+            <div className="relative">
+              <button type="button" onClick={() => { setCategoryMenuOpen(current => !current); setRoundMenuOpen(false); }} className="group inline-flex items-center gap-2 bg-violet-600 px-3 py-1.5 text-white transition hover:bg-violet-500" aria-expanded={categoryMenuOpen} aria-haspopup="listbox"><span>{broadcast.categoria}</span>{championships.length > 1 ? <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform duration-300 ${categoryMenuOpen ? 'rotate-180' : 'group-hover:translate-y-0.5'}`}/> : null}</button>
+              {categoryMenuOpen && championships.length > 1 ? <div className="animate-fade-in absolute left-0 top-full z-40 mt-2 max-h-64 min-w-64 overflow-y-auto border border-violet-400/30 bg-black/95 py-1 shadow-[0_12px_30px_rgba(76,29,149,0.55)] backdrop-blur-md" role="listbox" aria-label="Seleccionar categoría">{championships.map(item => <button key={item.idcampeonato} type="button" onClick={() => selectChampionship(item.idcampeonato)} className={`block w-full whitespace-nowrap px-4 py-2 text-left transition hover:bg-violet-600 hover:text-white ${String(item.idcampeonato) === String(broadcast.idcampeonato) ? 'bg-violet-500/20 text-violet-300' : 'text-gray-300'}`} role="option" aria-selected={String(item.idcampeonato) === String(broadcast.idcampeonato)}>{item.categoria} · TEMPORADA {item.temporada}</button>)}</div> : null}
+            </div>
             <span className="border border-violet-400/25 bg-black/50 px-3 py-1.5">Temporada {broadcast.temporada}</span>
             <div className="relative">
               <button type="button" onClick={() => setRoundMenuOpen(current => !current)} className="group inline-flex items-center gap-2 border border-violet-400/25 bg-black/50 px-3 py-1.5 transition hover:border-violet-300 hover:bg-violet-500/15" aria-expanded={roundMenuOpen} aria-haspopup="listbox">
                 <span>FECHA {broadcast.ronda}</span>
-                {broadcasts.length > 1 ? <ChevronDownIcon className={`h-3.5 w-3.5 text-violet-300 transition-transform duration-300 ${roundMenuOpen ? 'rotate-180' : 'group-hover:translate-y-0.5'}`}/> : null}
+                {activeBroadcasts.length > 1 ? <ChevronDownIcon className={`h-3.5 w-3.5 text-violet-300 transition-transform duration-300 ${roundMenuOpen ? 'rotate-180' : 'group-hover:translate-y-0.5'}`}/> : null}
               </button>
-              {roundMenuOpen && broadcasts.length > 1 ? <div className="animate-fade-in absolute left-0 top-full z-40 mt-2 min-w-full overflow-hidden border border-violet-400/30 bg-black/95 py-1 shadow-[0_12px_30px_rgba(76,29,149,0.55)] backdrop-blur-md" role="listbox" aria-label="Seleccionar fecha transmitida">{broadcasts.map(item => <button key={`${item.idcampeonato}-${item.ronda}`} type="button" onClick={() => selectRound(item.ronda)} className={`block w-full whitespace-nowrap px-4 py-2 text-left transition hover:bg-violet-600 hover:text-white ${String(item.ronda) === String(broadcast.ronda) ? 'bg-violet-500/20 text-violet-300' : 'text-gray-300'}`} role="option" aria-selected={String(item.ronda) === String(broadcast.ronda)}>FECHA {item.ronda}</button>)}</div> : null}
+              {roundMenuOpen && activeBroadcasts.length > 1 ? <div className="animate-fade-in absolute left-0 top-full z-40 mt-2 min-w-full overflow-hidden border border-violet-400/30 bg-black/95 py-1 shadow-[0_12px_30px_rgba(76,29,149,0.55)] backdrop-blur-md" role="listbox" aria-label="Seleccionar fecha transmitida">{activeBroadcasts.map(item => <button key={`${item.idcampeonato}-${item.ronda}`} type="button" onClick={() => selectRound(item.ronda)} className={`block w-full whitespace-nowrap px-4 py-2 text-left transition hover:bg-violet-600 hover:text-white ${String(item.ronda) === String(broadcast.ronda) ? 'bg-violet-500/20 text-violet-300' : 'text-gray-300'}`} role="option" aria-selected={String(item.ronda) === String(broadcast.ronda)}>FECHA {item.ronda}</button>)}</div> : null}
             </div>
           </div>
           <h2 className="mt-5 font-anton text-5xl uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl">{broadcast.circuito}</h2>
@@ -365,11 +397,11 @@ function AdvertisingSection({ sponsors }) {
         {sponsors.length ? <div className="mt-14 border-t border-white/10 pt-10 sm:mt-16 sm:pt-12">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#00ffcd]">Acompañan a la liga</p><h3 className="mt-2 font-racing text-3xl font-bold uppercase text-white sm:text-4xl">Nuestros sponsors</h3></div><p className="max-w-xl text-sm text-gray-500">Empresas y emprendimientos que impulsan el crecimiento de la comunidad CADPO.</p></div>
           <div className="mt-7 grid gap-5 lg:grid-cols-2">{sponsors.map(sponsor => {
-            const link = sponsorLink(sponsor.direccion);
+            const website = sponsorLink(sponsor.sitio);
             return <article key={sponsor.id} className="overflow-hidden border border-white/10 bg-black/45 transition hover:border-[#00ffcd]/35">
-              <div className="grid gap-5 p-5 sm:grid-cols-[150px_1fr] sm:items-center sm:p-6">
-                <div className="flex h-28 items-center justify-center bg-white/[0.03] p-4">{sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} loading="lazy" className="h-full w-full object-contain"/> : <BuildingOffice2Icon className="h-12 w-12 text-gray-700"/>}</div>
-                <div className="min-w-0"><h4 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">{sponsor.empresa}</h4>{sponsor.descripcion ? <p className="mt-2 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}{sponsor.direccion ? link ? <a href={link} target="_blank" rel="noreferrer" className="mt-3 inline-flex max-w-full items-center gap-2 break-all text-xs font-semibold text-[#00ffcd] hover:text-white"><MapPinIcon className="h-4 w-4 shrink-0"/>{sponsor.direccion}</a> : <p className="mt-3 flex items-start gap-2 text-xs text-gray-500"><MapPinIcon className="h-4 w-4 shrink-0 text-[#00ffcd]"/><span>{sponsor.direccion}</span></p> : null}</div>
+              <div className="grid gap-6 p-5 sm:grid-cols-[190px_1fr] sm:items-center sm:p-6">
+                {sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} loading="lazy" className="h-36 w-full object-contain sm:h-44"/> : <BuildingOffice2Icon className="mx-auto h-20 w-20 text-gray-700"/>}
+                <div className="min-w-0"><h4 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">{sponsor.empresa}</h4>{sponsor.descripcion ? <p className="mt-2 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}<div className="mt-4 space-y-2 text-xs">{sponsor.ubicacion ? <p className="flex items-start gap-2 text-gray-300"><MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#00ffcd]"/><span>{sponsor.ubicacion}</span></p> : null}{sponsor.contacto ? <p className="flex items-start gap-2 text-gray-300"><PhoneIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#00ffcd]"/><span>{sponsor.contacto}</span></p> : null}{sponsor.sitio ? website ? <a href={website} target="_blank" rel="noreferrer" className="flex max-w-full items-start gap-2 break-all font-semibold text-[#00ffcd] hover:text-white"><GlobeAltIcon className="mt-0.5 h-4 w-4 shrink-0"/><span>{sponsor.sitio}</span></a> : <p className="flex items-start gap-2 break-all text-gray-300"><GlobeAltIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#00ffcd]"/><span>{sponsor.sitio}</span></p> : null}</div></div>
               </div>
               {sponsor.fotos?.length ? <div className="grid grid-cols-3 gap-px border-t border-white/10 bg-white/10">{sponsor.fotos.slice(0, 6).map((photo, index) => <button type="button" key={photo.id} onClick={() => setGalleryView({ sponsor, index })} className={`relative overflow-hidden bg-black ${index === 0 && sponsor.fotos.length < 3 ? 'col-span-2' : ''}`} aria-label={`Ver foto ${index + 1} de ${sponsor.empresa}`}><img src={photo.imagen} alt={`${sponsor.empresa} · foto ${index + 1}`} loading="lazy" className="aspect-video h-full w-full object-cover opacity-80 transition duration-500 hover:scale-105 hover:opacity-100"/>{index === 5 && sponsor.fotos.length > 6 ? <span className="absolute inset-0 flex items-center justify-center bg-black/65 font-racing text-xl font-bold text-white">+{sponsor.fotos.length - 6}</span> : null}</button>)}</div> : null}
             </article>;
@@ -392,6 +424,7 @@ export default function Home() {
   const [now, setNow] = useState(Date.now());
   const [calendarEvent, setCalendarEvent] = useState(null);
   const [sponsors, setSponsors] = useState([]);
+  const [complaintContext, setComplaintContext] = useState({ eventos: [], proxima: null });
 
   const upcomingEvents = useMemo(() => getFeaturedUpcomingEvents(events, new Date(now)), [events, now]);
   const liveTimingEventIds = useMemo(() => new Set(getLiveTimingEvents(events, new Date(now)).map(event => `${event.idcampeonato}-${event.ronda}`)), [events, now]);
@@ -400,13 +433,13 @@ export default function Home() {
     return order[a.phase] - order[b.phase] || (parseCalendarDate(a.fecha_apertura)?.getTime() || 0) - (parseCalendarDate(b.fecha_apertura)?.getTime() || 0);
   }), [registrationForms, now]);
   const openRegistration = registrations.find(item => item.phase === 'open') || null;
+  const openComplaintEvent = complaintContext.eventos.find(event => (parseCalendarDate(event.cierre_denuncias)?.getTime() || 0) > now) || null;
   const championshipBroadcasts = useMemo(() => {
     const pastBroadcasts = events
       .map(event => ({ ...event, youtubeId: getYouTubeVideoId(event.transmision) }))
       .filter(event => event.youtubeId && (parseCalendarDate(event.fecha)?.getTime() || 0) <= now)
       .sort((a, b) => (parseCalendarDate(b.fecha)?.getTime() || 0) - (parseCalendarDate(a.fecha)?.getTime() || 0));
-    const latest = pastBroadcasts[0];
-    return latest ? pastBroadcasts.filter(event => String(event.idcampeonato) === String(latest.idcampeonato)) : [];
+    return pastBroadcasts;
   }, [events, now]);
   const championshipEvents = useMemo(() => events.filter(event => String(event.idcampeonato) === String(calendarEvent?.idcampeonato)).filter(event => getEventPhase(event, new Date(now)) !== 'expired').sort((a, b) => (parseCalendarDate(a.fecha)?.getTime() || 0) - (parseCalendarDate(b.fecha)?.getTime() || 0)), [calendarEvent?.idcampeonato, events, now]);
   const registrationIds = registrations.map(item => item.idcampeonato).join(',');
@@ -414,6 +447,16 @@ export default function Home() {
   useEffect(() => {
     Promise.all([eventsApi.getAll(), registrationFormsApi.getAll()]).then(([eventsResponse, formsResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
     sponsorsApi.getAll().then(response => setSponsors(response.data.data || [])).catch(error => console.error('Error cargando sponsors:', error));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadComplaintContext = () => complaintsApi.getContext()
+      .then(response => { if (active) setComplaintContext(response.data.data || { eventos: [], proxima: null }); })
+      .catch(error => console.error('Error cargando denuncias habilitadas:', error));
+    loadComplaintContext();
+    const interval = window.setInterval(loadComplaintContext, 60000);
+    return () => { active = false; window.clearInterval(interval); };
   }, []);
 
   useEffect(() => {
@@ -460,7 +503,8 @@ export default function Home() {
 
   return (
     <div className="animate-fade-in">
-      {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
+      {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} complaintPromptEvent={index === Math.max(0, upcomingEvents.findIndex(item => String(item.idcampeonato) === String(openComplaintEvent?.idcampeonato) && String(item.ronda) === String(openComplaintEvent?.ronda))) ? openComplaintEvent : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
+      {!loading && !upcomingEvents.length && openComplaintEvent ? <div className="mx-auto w-full max-w-[1600px] px-5 py-5 sm:px-8 lg:px-14 xl:px-20"><ComplaintPrompt event={openComplaintEvent} now={now}/></div> : null}
       {!loading ? registrations.map(registration => <RegistrationSection key={registration.idcampeonato} registration={registration} details={registrationDetails[registration.idcampeonato]} images={registrationImages[registration.idcampeonato] || []} activeImage={activeRegistrationImages[registration.idcampeonato] || 0} now={now} events={events}/>) : null}
       {!loading && championshipBroadcasts.length ? <BroadcastSection key={championshipBroadcasts[0].idcampeonato} broadcasts={championshipBroadcasts} now={now}/> : null}
       {!loading ? <AdvertisingSection sponsors={sponsors}/> : null}

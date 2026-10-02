@@ -34,6 +34,14 @@ const ensureSchema = () => {
           KEY idx_sponsor_fotos_sponsor (idsponsor)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
+      const additionalColumns = [
+        ['contacto', "VARCHAR(255) NOT NULL DEFAULT '' AFTER direccion"],
+        ['sitio', "VARCHAR(500) NOT NULL DEFAULT '' AFTER contacto"],
+      ];
+      for (const [column, definition] of additionalColumns) {
+        const [columns] = await pool.query(`SHOW COLUMNS FROM sponsors LIKE '${column}'`);
+        if (!columns.length) await pool.query(`ALTER TABLE sponsors ADD COLUMN ${column} ${definition}`);
+      }
     })().catch(error => {
       schemaPromise = null;
       throw error;
@@ -69,7 +77,8 @@ const removePublicImage = async value => {
 const loadSponsors = async ({ includeInactive = false } = {}) => {
   await ensureSchema();
   const [sponsors] = await pool.query(`
-    SELECT id, empresa, logo, descripcion, direccion, activo, creado, actualizado
+    SELECT id, empresa, logo, descripcion, direccion, direccion AS ubicacion,
+           contacto, sitio, activo, creado, actualizado
     FROM sponsors
     ${includeInactive ? '' : 'WHERE activo = 1'}
     ORDER BY empresa ASC, id ASC
@@ -114,11 +123,13 @@ const create = async (req, res, next) => {
     const empresa = normalizeText(req.body.empresa);
     if (!empresa) return res.status(400).json({ error: 'La empresa es requerida' });
     const descripcion = normalizeText(req.body.descripcion);
-    const direccion = normalizeText(req.body.direccion);
+    const ubicacion = normalizeText(req.body.ubicacion ?? req.body.direccion);
+    const contacto = normalizeText(req.body.contacto);
+    const sitio = normalizeText(req.body.sitio);
     const activo = req.body.activo === 'false' || req.body.activo === '0' ? 0 : 1;
     const [result] = await pool.query(
-      'INSERT INTO sponsors (empresa, descripcion, direccion, activo) VALUES (?, ?, ?, ?)',
-      [empresa, descripcion, direccion, activo],
+      'INSERT INTO sponsors (empresa, descripcion, direccion, contacto, sitio, activo) VALUES (?, ?, ?, ?, ?, ?)',
+      [empresa, descripcion, ubicacion, contacto, sitio, activo],
     );
     const id = result.insertId;
     const logoFile = req.files?.logo?.[0];
@@ -142,7 +153,9 @@ const update = async (req, res, next) => {
     const empresa = normalizeText(req.body.empresa);
     if (!empresa) return res.status(400).json({ error: 'La empresa es requerida' });
     const descripcion = normalizeText(req.body.descripcion);
-    const direccion = normalizeText(req.body.direccion);
+    const ubicacion = normalizeText(req.body.ubicacion ?? req.body.direccion);
+    const contacto = normalizeText(req.body.contacto);
+    const sitio = normalizeText(req.body.sitio);
     const activo = req.body.activo === 'true' || req.body.activo === '1' ? 1 : 0;
     const logoFile = req.files?.logo?.[0];
     let logo = current.logo;
@@ -151,8 +164,8 @@ const update = async (req, res, next) => {
       await removePublicImage(current.logo);
     }
     await pool.query(
-      'UPDATE sponsors SET empresa = ?, logo = ?, descripcion = ?, direccion = ?, activo = ? WHERE id = ?',
-      [empresa, logo, descripcion, direccion, activo, req.params.id],
+      'UPDATE sponsors SET empresa = ?, logo = ?, descripcion = ?, direccion = ?, contacto = ?, sitio = ?, activo = ? WHERE id = ?',
+      [empresa, logo, descripcion, ubicacion, contacto, sitio, activo, req.params.id],
     );
     const galleryFiles = req.files?.fotos || [];
     const [[lastOrder]] = await pool.query('SELECT COALESCE(MAX(orden), -1) AS orden FROM sponsor_fotos WHERE idsponsor = ?', [req.params.id]);

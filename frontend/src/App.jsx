@@ -12,6 +12,8 @@ import Results from './pages/Results'
 import Statistics from './pages/Statistics'
 import Replays from './pages/Replays'
 import Templates from './pages/Templates'
+import Complaints from './pages/Complaints'
+import Projects from './pages/Projects'
 import { healthApi } from './services/api'
 
 const Admin = lazy(() => import('./pages/Admin'))
@@ -86,6 +88,8 @@ function App() {
           <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/replays" element={<Replays />} />
           <Route path="/plantillas" element={<Templates />} />
+          <Route path="/denuncias" element={<Complaints />} />
+          <Route path="/proyectos" element={<Projects />} />
           <Route path="/inscripcion" element={<Registration />} />
           <Route path="/categorias" element={<Categories />} />
           <Route

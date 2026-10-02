@@ -13,6 +13,7 @@ import {
   ArchiveBoxIcon,
   PlayCircleIcon,
   TrophyIcon,
+  RectangleStackIcon,
 } from '@heroicons/react/24/outline'
 import { authApi, championshipsApi, eventsApi } from '../services/api'
 import { getLiveTimingEvents } from '../utils/weeklyChampionships'
@@ -62,6 +63,7 @@ const navLinks = [
   { to: '/campeonatos', label: 'CAMPEONATOS', Icon: FlagIcon },
   { to: '/categorias', label: 'CATEGORÍAS', Icon: TagIcon },
   { to: '/estadisticas', label: 'ESTADÍSTICAS', Icon: ChartBarIcon },
+  { to: '/proyectos', label: 'PROYECTOS', Icon: RectangleStackIcon },
 ]
 
 const resourceLinks = [

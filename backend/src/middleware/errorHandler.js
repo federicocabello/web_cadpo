@@ -1,8 +1,9 @@
 const errorHandler = (err, req, res, next) => {
   console.error('Error:', err.message);
 
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Error interno del servidor';
+  const uploadTooLarge = err.code === 'LIMIT_FILE_SIZE';
+  const statusCode = uploadTooLarge ? 413 : err.statusCode || 500;
+  const message = uploadTooLarge ? 'El bloque enviado supera el tamaño permitido' : err.message || 'Error interno del servidor';
 
   res.status(statusCode).json({
     error: message,

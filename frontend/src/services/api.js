@@ -126,6 +126,9 @@ export const resultsApi = {
 export const replaysApi = {
   getAll: params => api.get('/replays', { params }),
   upload: (data, onUploadProgress) => api.post('/replays', data, { timeout: 0, onUploadProgress }),
+  initUpload: data => api.post('/replays/upload/init', data, { timeout: 30000 }),
+  uploadChunk: (uploadId, data, onUploadProgress) => api.post(`/replays/upload/${uploadId}/chunk`, data, { timeout: 0, onUploadProgress }),
+  completeUpload: uploadId => api.post(`/replays/upload/${uploadId}/complete`, {}, { timeout: 120000 }),
   remove: id => api.delete(`/replays/${id}`),
 };
 
@@ -142,6 +145,24 @@ export const sponsorsApi = {
   update: (id, data) => api.put(`/sponsors/admin/${id}`, data, { timeout: 60000 }),
   removePhoto: (id, photoId) => api.delete(`/sponsors/admin/${id}/fotos/${photoId}`),
   remove: id => api.delete(`/sponsors/admin/${id}`),
+};
+
+export const projectsApi = {
+  getAll: () => api.get('/projects'),
+  getAdminAll: () => api.get('/projects/admin'),
+  create: data => api.post('/projects/admin', data, { timeout: 120000 }),
+  update: (id, data) => api.put(`/projects/admin/${id}`, data, { timeout: 120000 }),
+  removePhoto: (id, photoId) => api.delete(`/projects/admin/${id}/fotos/${photoId}`),
+  remove: id => api.delete(`/projects/admin/${id}`),
+};
+
+export const complaintsApi = {
+  getContext: () => api.get('/complaints/context'),
+  create: data => api.post('/complaints', data),
+  getAdminAll: params => api.get('/complaints/admin', { params }),
+  markSeen: (id, visto) => api.patch(`/complaints/admin/${id}/seen`, { visto }),
+  update: (id, data) => api.put(`/complaints/admin/${id}`, data),
+  remove: id => api.delete(`/complaints/admin/${id}`),
 };
 
 export const statisticsApi = {

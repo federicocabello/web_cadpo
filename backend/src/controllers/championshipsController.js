@@ -1,6 +1,26 @@
 const pool = require('../config/db');
 const ensureResultAchievements = require('../utils/ensureResultAchievements');
 
+let percentageRuleColumnPromise;
+const ensurePercentageRuleColumn = () => {
+  if (!percentageRuleColumnPromise) {
+    percentageRuleColumnPromise = (async () => {
+      const [columns] = await pool.query("SHOW COLUMNS FROM campeonatos LIKE 'regla_porcentaje'");
+      if (!columns.length) {
+        try {
+          await pool.query('ALTER TABLE campeonatos ADD COLUMN regla_porcentaje DECIMAL(6,3) UNSIGNED NOT NULL DEFAULT 0 AFTER servidor');
+        } catch (error) {
+          if (error.errno !== 1060) throw error;
+        }
+      }
+    })().catch(error => {
+      percentageRuleColumnPromise = null;
+      throw error;
+    });
+  }
+  return percentageRuleColumnPromise;
+};
+
 const toPublicRulesPath = file => {
   if (!file) return '';
 
@@ -25,6 +45,12 @@ const optionalNumber = value => {
   return Number.isFinite(number) ? number : null;
 };
 
+const normalizePercentageRule = value => {
+  const percentage = Number(value || 0);
+  if (!Number.isFinite(percentage) || percentage < 0 || (percentage > 0 && percentage < 100) || percentage > 999.999) return null;
+  return Math.round(percentage * 1000) / 1000;
+};
+
 const championshipPlatforms = new Set([
   'rFactor',
   'Automobilista',
@@ -39,7 +65,7 @@ const normalizePlatform = value => {
 };
 
 const championshipSelect = `
-  SELECT c.id, c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor,
+  SELECT c.id, c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor, c.regla_porcentaje,
          cat.id AS idcategoria, cat.categoria, cat.logo AS categoria_logo,
          MIN(cal.fecha) AS primera_fecha,
          MAX(cal.fecha) AS ultima_fecha,
@@ -60,6 +86,7 @@ const championshipSelect = `
 
 const getAll = async (req, res, next) => {
   try {
+    await ensurePercentageRuleColumn();
     const { status } = req.query;
     const having = status ? ' HAVING status = ?' : '';
     const params = status ? [status] : [];
@@ -80,6 +107,7 @@ const getAll = async (req, res, next) => {
 
 const getById = async (req, res, next) => {
   try {
+    await ensurePercentageRuleColumn();
     const [[row]] = await pool.query(
       `${championshipSelect}
        WHERE c.id = ?
@@ -301,20 +329,23 @@ const getEnrolled = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
+    await ensurePercentageRuleColumn();
     const { idcategoria, temporada, anio, puerto, n_server, servidor } = req.body;
     const plataforma = normalizePlatform(req.body.plataforma);
     const parsedAnio = Number(anio);
+    const percentageRule = normalizePercentageRule(req.body.regla_porcentaje);
     if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
+    if (percentageRule === null) return res.status(400).json({ error: 'La regla debe ser 0 para desactivarla o un porcentaje igual o mayor a 100' });
 
     const reglamento = toPublicRulesPath(req.file);
     const [result] = await pool.query(
-      'INSERT INTO campeonatos (idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [idcategoria, temporada, parsedAnio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor)]
+      'INSERT INTO campeonatos (idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule]
     );
 
-    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor }, message: 'Campeonato creado' });
+    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule }, message: 'Campeonato creado' });
   } catch (err) {
     next(err);
   }
@@ -322,24 +353,27 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
+    await ensurePercentageRuleColumn();
     const { idcategoria, temporada, anio, puerto, n_server, servidor } = req.body;
     const plataforma = normalizePlatform(req.body.plataforma);
     const parsedAnio = Number(anio);
+    const percentageRule = normalizePercentageRule(req.body.regla_porcentaje);
     if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
+    if (percentageRule === null) return res.status(400).json({ error: 'La regla debe ser 0 para desactivarla o un porcentaje igual o mayor a 100' });
 
     const [[current]] = await pool.query('SELECT reglamento FROM campeonatos WHERE id = ?', [req.params.id]);
     if (!current) return res.status(404).json({ error: 'Campeonato no encontrado' });
 
     const reglamento = req.file ? toPublicRulesPath(req.file) : current.reglamento;
     const [result] = await pool.query(
-      'UPDATE campeonatos SET idcategoria=?, temporada=?, anio=?, plataforma=?, reglamento=?, puerto=?, n_server=?, servidor=? WHERE id=?',
-      [idcategoria, temporada, parsedAnio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), req.params.id]
+      'UPDATE campeonatos SET idcategoria=?, temporada=?, anio=?, plataforma=?, reglamento=?, puerto=?, n_server=?, servidor=?, regla_porcentaje=? WHERE id=?',
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule, req.params.id]
     );
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Campeonato no encontrado' });
-    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor } });
+    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule } });
   } catch (err) {
     next(err);
   }

@@ -170,6 +170,22 @@
     background-image: linear-gradient(to left, rgba(234, 179, 8, 0.2) 0%, rgba(234, 179, 8, 0.05) 16%, transparent 34%);
   }
 
+  .timing-driver-row-disabled {
+    background-image: linear-gradient(to left, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.05) 16%, transparent 34%);
+  }
+
+  @media (min-width: 768px) {
+    .timing-driver-row-compact td {
+      height: 54px;
+      padding-top: 0.35rem;
+      padding-bottom: 0.35rem;
+    }
+
+    .timing-driver-row-compact td img {
+      max-height: 2.25rem;
+    }
+  }
+
   .timing-driver-row:hover {
     background-color: rgba(255, 255, 255, 0.055);
     box-shadow: inset 3px 0 0 #e63946;

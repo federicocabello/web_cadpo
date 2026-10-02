@@ -6,6 +6,7 @@ import {
   ArchiveBoxIcon,
   BellAlertIcon,
   BuildingOffice2Icon,
+  ExclamationTriangleIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -24,8 +25,9 @@ import {
   UsersIcon,
   WrenchScrewdriverIcon,
   WrenchIcon,
+  RectangleStackIcon,
 } from '@heroicons/react/24/outline';
-import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, driversApi, eventsApi, monitorApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
+import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
 import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode } from '../data/countries';
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
@@ -53,6 +55,7 @@ const formatEventDateTime = value => {
 
 const adminSections = [
   { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
+  { id: 'denuncias', label: 'DENUNCIAS', icon: ExclamationTriangleIcon },
   { id: 'replays', label: 'REPETICIONES', icon: ArrowDownTrayIcon },
   { id: 'plantillas', label: 'PLANTILLAS', icon: ArchiveBoxIcon },
   { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
@@ -65,6 +68,7 @@ const adminSections = [
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
   { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
+  { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
 const adminSectionStorageKey = 'cadpo-admin-section';
@@ -189,6 +193,7 @@ const emptyChampionshipForm = {
   puerto: '',
   n_server: '',
   servidor: '',
+  regla_porcentaje: '0',
 };
 const createEmptyPrize = position => ({ posicion: String(position || ''), efectivo: false, inscripcion: false, trofeo: false });
 
@@ -209,7 +214,8 @@ const emptyCarForm = {
 };
 
 const emptyCarBrandForm = { marca: '' };
-const emptySponsorForm = { empresa: '', descripcion: '', direccion: '', activo: true };
+const emptySponsorForm = { empresa: '', descripcion: '', ubicacion: '', contacto: '', sitio: '', activo: true };
+const emptyProjectForm = { tipo: 'categoria', titulo: '', descripcion: '', activo: true };
 const defaultRegistrationPlans = [
   { id: 'extra', titulo: 'Extra sin diseño', descripcion: 'Participás con un auto genérico completamente gris, sin diseño personalizado.', precio_adicional: '0', tipo: 'sin_numero', habilitado: true, autos_habilitados: [] },
   { id: 'personalizado', titulo: 'Personalizado', descripcion: 'Vos mismo diseñás y presentás el diseño de tu auto.', precio_adicional: '0', tipo: 'con_numero', habilitado: true, autos_habilitados: [] },
@@ -601,6 +607,7 @@ export default function Admin() {
   const templateInputRef = useRef(null);
   const sponsorLogoInputRef = useRef(null);
   const sponsorPhotosInputRef = useRef(null);
+  const projectPhotosInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -650,12 +657,24 @@ export default function Admin() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateUploadProgress, setTemplateUploadProgress] = useState(0);
   const [sponsors, setSponsors] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [complaintChampionshipFilter, setComplaintChampionshipFilter] = useState('');
+  const [complaintRoundFilter, setComplaintRoundFilter] = useState('');
+  const [editingComplaint, setEditingComplaint] = useState(null);
+  const [complaintMessage, setComplaintMessage] = useState('');
+  const [savingComplaint, setSavingComplaint] = useState(false);
   const [sponsorForm, setSponsorForm] = useState(emptySponsorForm);
   const [sponsorLogoFile, setSponsorLogoFile] = useState(null);
   const [sponsorPhotoFiles, setSponsorPhotoFiles] = useState([]);
   const [editingSponsorId, setEditingSponsorId] = useState(null);
   const [sponsorMessage, setSponsorMessage] = useState('');
   const [savingSponsor, setSavingSponsor] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [projectForm, setProjectForm] = useState(emptyProjectForm);
+  const [projectPhotoFiles, setProjectPhotoFiles] = useState([]);
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [projectMessage, setProjectMessage] = useState('');
+  const [savingProject, setSavingProject] = useState(false);
   const [resultChampionshipId, setResultChampionshipId] = useState('');
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
@@ -1294,7 +1313,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes, sponsorsRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes, sponsorsRes, complaintsRes, projectsRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -1308,6 +1327,8 @@ export default function Admin() {
           replaysApi.getAll(),
           templatesApi.getAll(),
           sponsorsApi.getAdminAll(),
+          complaintsApi.getAdminAll(),
+          projectsApi.getAdminAll(),
         ]);
 
         const eventRows = eventsRes.data.data ?? [];
@@ -1317,6 +1338,7 @@ export default function Admin() {
         setCategories(categoriesRes.data.data ?? []);
         const championshipRows = championshipsRes.data.data ?? [];
         setChampionships(championshipRows);
+        setComplaintChampionshipFilter(current => current || String(championshipRows.find(item => item.status === 'active')?.id || championshipRows[0]?.id || ''));
         setCarBrands(carBrandsRes.data.data ?? []);
         setCars(carsRes.data.data ?? []);
         setRegistrations(registrationsRes.data.data ?? []);
@@ -1325,6 +1347,8 @@ export default function Admin() {
         setReplays(replaysRes.data.data ?? []);
         setTemplates(templatesRes.data.data ?? []);
         setSponsors(sponsorsRes.data.data ?? []);
+        setComplaints(complaintsRes.data.data ?? []);
+        setProjects(projectsRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
@@ -1336,6 +1360,23 @@ export default function Admin() {
 
     fetchAdminData();
   }, [authorized]);
+
+  useEffect(() => {
+    if (!complaintChampionshipFilter) {
+      setComplaintRoundFilter('');
+      return;
+    }
+    const championshipEvents = events
+      .filter(item => String(item.idcampeonato) === complaintChampionshipFilter)
+      .sort((a, b) => (parseCalendarDate(b.fecha)?.getTime() || 0) - (parseCalendarDate(a.fecha)?.getTime() || 0));
+    if (!championshipEvents.length) {
+      setComplaintRoundFilter('');
+      return;
+    }
+    const latestCompleted = championshipEvents.find(item => (parseCalendarDate(item.fecha)?.getTime() || 0) <= Date.now());
+    const selected = latestCompleted || championshipEvents[championshipEvents.length - 1];
+    setComplaintRoundFilter(current => current && championshipEvents.some(item => String(item.ronda) === current) ? current : String(selected.ronda));
+  }, [complaintChampionshipFilter, events]);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -3259,6 +3300,7 @@ export default function Admin() {
       puerto: championship.puerto ?? '',
       n_server: championship.n_server ?? '',
       servidor: championship.servidor || '',
+      regla_porcentaje: String(championship.regla_porcentaje ?? 0),
     });
     setChampionshipRulesFile(null);
     if (championshipRulesInputRef.current) championshipRulesInputRef.current.value = '';
@@ -3357,23 +3399,52 @@ export default function Admin() {
     setReplayUploadProgress(0);
     setReplayMessage('');
     try {
-      const data = new FormData();
-      data.append('idcampeonato', replayForm.idcampeonato);
-      data.append('ronda', replayForm.ronda);
-      data.append('tanda', replayForm.tanda.trim());
-      data.append('replay', replayFile);
-      const response = await replaysApi.upload(data, progressEvent => {
-        const ratio = progressEvent.progress
-          ?? (progressEvent.total ? progressEvent.loaded / progressEvent.total : 0);
-        setReplayUploadProgress(Math.min(100, Math.max(0, Math.round(ratio * 100))));
+      const chunkSize = 8 * 1024 * 1024;
+      const totalChunks = Math.ceil(replayFile.size / chunkSize);
+      const initResponse = await replaysApi.initUpload({
+        idcampeonato: replayForm.idcampeonato,
+        ronda: replayForm.ronda,
+        tanda: replayForm.tanda.trim(),
+        nombre_original: replayFile.name,
+        tamano: replayFile.size,
+        total_chunks: totalChunks,
+        chunk_size: chunkSize,
       });
+      const uploadId = initResponse.data.data.uploadId;
+      for (let index = 0; index < totalChunks; index += 1) {
+        const start = index * chunkSize;
+        const chunk = replayFile.slice(start, Math.min(replayFile.size, start + chunkSize));
+        const data = new FormData();
+        data.append('index', String(index));
+        data.append('chunk', chunk, `${replayFile.name}.part-${index + 1}`);
+        let attempt = 0;
+        while (attempt < 3) {
+          try {
+            await replaysApi.uploadChunk(uploadId, data, progressEvent => {
+              const loaded = Number(progressEvent.loaded || 0);
+              const uploadedBytes = Math.min(replayFile.size, start + loaded);
+              setReplayUploadProgress(Math.min(99, Math.max(0, Math.round((uploadedBytes / replayFile.size) * 100))));
+            });
+            break;
+          } catch (chunkError) {
+            attempt += 1;
+            if (attempt >= 3 || (chunkError.response?.status && chunkError.response.status < 500)) throw chunkError;
+          }
+        }
+        setReplayUploadProgress(Math.min(99, Math.round(((index + 1) / totalChunks) * 100)));
+      }
+      setReplayUploadProgress(100);
+      const response = await replaysApi.completeUpload(uploadId);
       const refreshed = await replaysApi.getAll();
       setReplays(refreshed.data.data || []);
       setReplayFile(null);
       if (replayInputRef.current) replayInputRef.current.value = '';
       setReplayMessage(response.data.message || 'Repetición publicada correctamente.');
     } catch (error) {
-      setReplayMessage(error.response?.data?.error || 'No se pudo publicar la repetición.');
+      const status = error.response?.status;
+      setReplayMessage(error.response?.data?.error || (status === 413
+        ? 'El servidor rechazó uno de los bloques por su tamaño. Revisá el límite de carga de Hostinger.'
+        : 'La subida se interrumpió. Podés volver a intentarlo; el archivo se envía en bloques para evitar cortes por su tamaño.'));
     } finally {
       setSavingReplay(false);
     }
@@ -3430,6 +3501,62 @@ export default function Admin() {
     }
   };
 
+  const resetProjectForm = () => {
+    setProjectForm(emptyProjectForm);
+    setProjectPhotoFiles([]);
+    setEditingProjectId(null);
+    if (projectPhotosInputRef.current) projectPhotosInputRef.current.value = '';
+  };
+
+  const editProject = project => {
+    setEditingProjectId(project.id);
+    setProjectForm({ tipo: project.tipo || 'categoria', titulo: project.titulo || '', descripcion: project.descripcion || '', activo: Boolean(project.activo) });
+    setProjectPhotoFiles([]);
+    if (projectPhotosInputRef.current) projectPhotosInputRef.current.value = '';
+    setProjectMessage(`Editando ${project.titulo}.`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const saveProject = async event => {
+    event.preventDefault();
+    if (!projectForm.titulo.trim()) return;
+    setSavingProject(true);
+    setProjectMessage('');
+    try {
+      const data = new FormData();
+      data.append('tipo', projectForm.tipo);
+      data.append('titulo', projectForm.titulo.trim());
+      data.append('descripcion', projectForm.descripcion.trim());
+      data.append('activo', String(projectForm.activo));
+      projectPhotoFiles.forEach(file => data.append('fotos', file));
+      const response = editingProjectId ? await projectsApi.update(editingProjectId, data) : await projectsApi.create(data);
+      const refreshed = await projectsApi.getAdminAll();
+      setProjects(refreshed.data.data || []);
+      resetProjectForm();
+      setProjectMessage(response.data.message || 'Proyecto guardado correctamente.');
+    } catch (error) {
+      setProjectMessage(error.response?.data?.error || 'No se pudo guardar el proyecto.');
+    } finally { setSavingProject(false); }
+  };
+
+  const deleteProjectPhoto = async (project, photo) => {
+    if (!window.confirm(`¿Eliminar esta imagen de ${project.titulo}?`)) return;
+    try {
+      await projectsApi.removePhoto(project.id, photo.id);
+      setProjects(current => current.map(item => String(item.id) === String(project.id) ? { ...item, fotos: item.fotos.filter(image => image.id !== photo.id) } : item));
+    } catch (error) { setProjectMessage(error.response?.data?.error || 'No se pudo eliminar la imagen.'); }
+  };
+
+  const deleteProject = async project => {
+    if (!window.confirm(`¿Eliminar el proyecto ${project.titulo} y todas sus imágenes?`)) return;
+    try {
+      const response = await projectsApi.remove(project.id);
+      setProjects(current => current.filter(item => String(item.id) !== String(project.id)));
+      if (String(editingProjectId) === String(project.id)) resetProjectForm();
+      setProjectMessage(response.data.message || 'Proyecto eliminado correctamente.');
+    } catch (error) { setProjectMessage(error.response?.data?.error || 'No se pudo eliminar el proyecto.'); }
+  };
+
   const resetSponsorForm = () => {
     setSponsorForm(emptySponsorForm);
     setSponsorLogoFile(null);
@@ -3444,7 +3571,9 @@ export default function Admin() {
     setSponsorForm({
       empresa: sponsor.empresa || '',
       descripcion: sponsor.descripcion || '',
-      direccion: sponsor.direccion || '',
+      ubicacion: sponsor.ubicacion || sponsor.direccion || '',
+      contacto: sponsor.contacto || '',
+      sitio: sponsor.sitio || '',
       activo: Boolean(sponsor.activo),
     });
     setSponsorLogoFile(null);
@@ -3464,7 +3593,9 @@ export default function Admin() {
       const data = new FormData();
       data.append('empresa', sponsorForm.empresa.trim());
       data.append('descripcion', sponsorForm.descripcion.trim());
-      data.append('direccion', sponsorForm.direccion.trim());
+      data.append('ubicacion', sponsorForm.ubicacion.trim());
+      data.append('contacto', sponsorForm.contacto.trim());
+      data.append('sitio', sponsorForm.sitio.trim());
       data.append('activo', String(sponsorForm.activo));
       if (sponsorLogoFile) data.append('logo', sponsorLogoFile);
       sponsorPhotoFiles.forEach(file => data.append('fotos', file));
@@ -3509,7 +3640,134 @@ export default function Admin() {
     }
   };
 
+  const editComplaint = complaint => {
+    setEditingComplaint({
+      ...complaint,
+      idcampeonato: String(complaint.idcampeonato),
+      ronda: String(complaint.ronda),
+      idpiloto_denunciado: String(complaint.idpiloto_denunciado),
+      descripcion: complaint.descripcion || '',
+    });
+    setComplaintMessage('');
+  };
+
+  const saveComplaint = async event => {
+    event.preventDefault();
+    if (!editingComplaint || savingComplaint) return;
+    setSavingComplaint(true);
+    setComplaintMessage('');
+    try {
+      const response = await complaintsApi.update(editingComplaint.id, editingComplaint);
+      const refreshed = await complaintsApi.getAdminAll();
+      setComplaints(refreshed.data.data || []);
+      setEditingComplaint(null);
+      setComplaintMessage(response.data.message || 'Denuncia actualizada correctamente.');
+    } catch (error) {
+      setComplaintMessage(error.response?.data?.error || 'No se pudo actualizar la denuncia.');
+    } finally {
+      setSavingComplaint(false);
+    }
+  };
+
+  const deleteComplaint = async complaint => {
+    if (!window.confirm(`¿Eliminar la denuncia contra ${complaint.piloto}?`)) return;
+    setComplaintMessage('');
+    try {
+      const response = await complaintsApi.remove(complaint.id);
+      setComplaints(current => current.filter(item => String(item.id) !== String(complaint.id)));
+      if (String(editingComplaint?.id) === String(complaint.id)) setEditingComplaint(null);
+      setComplaintMessage(response.data.message || 'Denuncia eliminada correctamente.');
+    } catch (error) {
+      setComplaintMessage(error.response?.data?.error || 'No se pudo eliminar la denuncia.');
+    }
+  };
+
+  const toggleComplaintSeen = async complaint => {
+    const nextSeen = !complaint.visto;
+    setComplaints(current => current.map(item => String(item.id) === String(complaint.id) ? { ...item, visto: nextSeen } : item));
+    try {
+      await complaintsApi.markSeen(complaint.id, nextSeen);
+    } catch (error) {
+      setComplaints(current => current.map(item => String(item.id) === String(complaint.id) ? { ...item, visto: complaint.visto } : item));
+      setComplaintMessage(error.response?.data?.error || 'No se pudo actualizar el estado de la denuncia.');
+    }
+  };
+
   const renderSection = () => {
+    if (activeSection === 'denuncias') {
+      const filteredComplaints = complaints.filter(item =>
+        !complaintChampionshipFilter || String(item.idcampeonato) === complaintChampionshipFilter
+      ).filter(item => !complaintRoundFilter || String(item.ronda) === complaintRoundFilter);
+      const complaintRounds = events
+        .filter(item => String(item.idcampeonato) === complaintChampionshipFilter)
+        .sort((a, b) => Number(b.ronda) - Number(a.ronda));
+      const complaintMinute = value => {
+        const [minutes = 0, seconds = 0] = String(value || '0').replace(',', '.').replace(':', '.').split('.').map(Number);
+        return (Number(minutes) * 60) + Number(seconds);
+      };
+      const complaintsBySession = ['SPRINT', 'FINAL'].map(session => ({
+        session,
+        items: filteredComplaints.filter(item => item.tanda === session).sort((a, b) => complaintMinute(a.minuto_repeticion) - complaintMinute(b.minuto_repeticion) || Number(a.id) - Number(b.id)),
+      }));
+      const editingRounds = editingComplaint
+        ? events.filter(item => String(item.idcampeonato) === String(editingComplaint.idcampeonato)).sort((a, b) => Number(a.ronda) - Number(b.ronda))
+        : [];
+      const editingDrivers = editingComplaint
+        ? registrations.filter(item => String(item.idcampeonato) === String(editingComplaint.idcampeonato)).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' }))
+        : [];
+      return (
+        <div className="space-y-6">
+          <header className="flex flex-col gap-4 border-b border-racing-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+            <div><p className="text-xs font-bold uppercase tracking-[0.22em] text-racing-red">Revisión deportiva</p><h2 className="mt-1 font-racing text-3xl font-bold uppercase text-white">Denuncias recibidas</h2><p className="mt-1 text-sm text-gray-500">{filteredComplaints.length} denuncia{filteredComplaints.length === 1 ? '' : 's'}.</p></div>
+            <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto"><label className="w-full lg:w-80"><span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Campeonato</span><select value={complaintChampionshipFilter} onChange={event => { setComplaintChampionshipFilter(event.target.value); setComplaintRoundFilter(''); }} className="input-field mt-1.5 py-2.5"><option value="">Todos los campeonatos</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label><label className="w-full lg:w-72"><span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Fecha</span><select value={complaintRoundFilter} onChange={event => setComplaintRoundFilter(event.target.value)} disabled={!complaintChampionshipFilter} className="input-field mt-1.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-40"><option value="">Todas las fechas</option>{complaintRounds.map(item => <option key={`${item.idcampeonato}-${item.ronda}`} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label></div>
+          </header>
+
+          {complaintMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{complaintMessage}</p> : null}
+
+          {editingComplaint ? <section className="border border-racing-red/35 bg-racing-card p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-widest text-racing-red">Modificando denuncia #{editingComplaint.id}</p><h3 className="mt-1 font-racing text-2xl font-bold uppercase text-white">Corregir datos</h3></div><button type="button" onClick={() => setEditingComplaint(null)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-400 hover:border-white hover:text-white" aria-label="Cerrar edición"><XMarkIcon className="h-5 w-5" /></button></div>
+            <form onSubmit={saveComplaint} className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <label><span className="text-sm text-gray-300">Campeonato</span><select value={editingComplaint.idcampeonato} onChange={event => setEditingComplaint(current => ({ ...current, idcampeonato: event.target.value, ronda: '', idpiloto_denunciado: '' }))} className="input-field mt-2" required>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
+              <label><span className="text-sm text-gray-300">Fecha</span><select value={editingComplaint.ronda} onChange={event => setEditingComplaint(current => ({ ...current, ronda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar fecha</option>{editingRounds.map(item => <option key={item.id} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label>
+              <label><span className="text-sm text-gray-300">Piloto denunciado</span><select value={editingComplaint.idpiloto_denunciado} onChange={event => setEditingComplaint(current => ({ ...current, idpiloto_denunciado: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar piloto</option>{editingDrivers.map(item => <option key={item.idpiloto} value={item.idpiloto}>{item.nombre}</option>)}</select></label>
+              <label><span className="text-sm text-gray-300">Tanda</span><select value={editingComplaint.tanda} onChange={event => setEditingComplaint(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="SPRINT">Sprint</option><option value="FINAL">Final</option></select></label>
+              <label><span className="text-sm text-gray-300">Minuto</span><input value={editingComplaint.minuto_repeticion} onChange={event => setEditingComplaint(current => ({ ...current, minuto_repeticion: event.target.value }))} className="input-field mt-2" placeholder="1.24" required /></label>
+              <label className="md:col-span-2 xl:col-span-3"><span className="text-sm text-gray-300">Descripción</span><input value={editingComplaint.descripcion} onChange={event => setEditingComplaint(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2" maxLength={1000} /></label>
+              <div className="flex gap-2 md:col-span-2 xl:col-span-4"><button type="submit" disabled={savingComplaint} className="bg-racing-red px-6 py-3 font-racing text-xs font-bold uppercase text-white hover:bg-racing-red-dark disabled:opacity-50">{savingComplaint ? 'Guardando...' : 'Guardar cambios'}</button><button type="button" onClick={() => setEditingComplaint(null)} className="border border-racing-border px-5 py-3 font-racing text-xs font-bold uppercase text-gray-300 hover:border-white">Cancelar</button></div>
+            </form>
+          </section> : null}
+
+          <section className="space-y-6">
+            {complaintsBySession.map(group => group.items.length ? <div key={group.session} className="overflow-hidden border border-racing-border bg-racing-card"><div className="flex items-center justify-between border-b border-racing-border bg-black/30 px-4 py-3"><h3 className="font-racing text-xl font-bold uppercase text-white">{group.session}</h3><span className="rounded-full bg-racing-red/15 px-3 py-1 text-xs font-bold text-racing-red">{group.items.length}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-racing-border text-[9px] font-bold uppercase tracking-widest text-gray-500"><th className="w-16 px-3 py-2 text-center">Vista</th><th className="w-20 px-3 py-2">Minuto</th><th className="w-56 px-3 py-2">Piloto</th><th className="px-3 py-2">Descripción</th><th className="w-24 px-3 py-2 text-right">Acciones</th></tr></thead><tbody>{group.items.map(complaint => <tr key={complaint.id} className={`border-b border-racing-border/70 last:border-b-0 ${complaint.visto ? 'bg-black/10 text-gray-500' : 'bg-racing-red/[0.06] text-gray-200'}`}><td className="px-3 py-2 text-center"><input type="checkbox" checked={Boolean(complaint.visto)} onChange={() => toggleComplaintSeen(complaint)} className="h-4 w-4 cursor-pointer accent-violet-500" aria-label={`Marcar denuncia contra ${complaint.piloto} como ${complaint.visto ? 'pendiente' : 'vista'}`}/></td><td className="px-3 py-2 font-racing text-lg font-bold text-yellow-200">{complaint.minuto_repeticion}</td><td className="px-3 py-2"><strong className="block whitespace-nowrap text-sm text-white">{complaint.piloto}</strong></td><td className="px-3 py-2"><p className="text-sm leading-relaxed text-gray-300">{complaint.descripcion || <span className="italic text-gray-600">Sin descripción adicional.</span>}</p></td><td className="px-3 py-2"><div className="flex justify-end gap-1.5"><button type="button" onClick={() => editComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white" aria-label="Editar denuncia"><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar denuncia"><TrashIcon className="h-4 w-4"/></button></div></td></tr>)}</tbody></table></div></div> : null)}
+            {!filteredComplaints.length ? <div className="border border-dashed border-racing-border py-20 text-center"><ExclamationTriangleIcon className="mx-auto h-12 w-12 text-gray-700"/><p className="mt-3 text-sm text-gray-500">No hay denuncias registradas para este filtro.</p></div> : null}
+          </section>
+        </div>
+      );
+    }
+
+    if (activeSection === 'proyectos') {
+      return (
+        <div className="grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <section className="card-glass self-start p-5 sm:p-6 xl:sticky xl:top-24">
+            <p className="text-xs font-semibold uppercase tracking-widest text-racing-red">Categorías y circuitos</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">{editingProjectId ? 'Modificar proyecto' : 'Agregar proyecto'}</h2>
+            <form onSubmit={saveProject} className="mt-6 space-y-4">
+              <label className="block"><span className="text-sm text-gray-300">Tipo</span><select value={projectForm.tipo} onChange={event => setProjectForm(current => ({ ...current, tipo: event.target.value }))} className="input-field mt-2"><option value="categoria">Categoría</option><option value="circuito">Circuito</option></select></label>
+              <label className="block"><span className="text-sm text-gray-300">Título</span><input value={projectForm.titulo} onChange={event => setProjectForm(current => ({ ...current, titulo: event.target.value }))} className="input-field mt-2" placeholder="Nombre del proyecto" required/></label>
+              <label className="block"><span className="text-sm text-gray-300">Descripción</span><textarea value={projectForm.descripcion} onChange={event => setProjectForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-36 resize-y" placeholder="Información y estado del proyecto..."/></label>
+              <label className="block"><span className="text-sm text-gray-300">Imágenes</span><input ref={projectPhotosInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setProjectPhotoFiles(Array.from(event.target.files || []).slice(0, 20))} className="input-field mt-2 file:mr-3 file:border-0 file:bg-racing-red file:px-3 file:py-2 file:font-semibold file:text-white"/><small className="mt-1 block text-gray-500">Hasta 20 imágenes nuevas por carga, 8 MB cada una.</small></label>
+              <label className="flex cursor-pointer items-center justify-between gap-4 border border-racing-border bg-black/25 px-4 py-3"><span><strong className="block text-sm text-white">Visible en Proyectos</strong><span className="text-xs text-gray-500">Podés ocultarlo sin eliminarlo.</span></span><input type="checkbox" checked={projectForm.activo} onChange={event => setProjectForm(current => ({ ...current, activo: event.target.checked }))} className="h-5 w-5 accent-red-500"/></label>
+              <div className="grid gap-2 sm:grid-cols-2"><button type="submit" disabled={savingProject} className="min-h-12 bg-racing-red px-5 font-racing text-sm font-bold uppercase text-white hover:bg-racing-red-dark disabled:opacity-50">{savingProject ? 'Guardando...' : editingProjectId ? 'Guardar cambios' : 'Agregar proyecto'}</button>{editingProjectId ? <button type="button" onClick={() => { resetProjectForm(); setProjectMessage(''); }} className="min-h-12 border border-racing-border px-4 font-racing text-xs font-bold uppercase text-gray-300 hover:border-white">Cancelar</button> : null}</div>
+              {projectMessage ? <p className="border border-racing-border bg-black/30 p-3 text-sm text-gray-300">{projectMessage}</p> : null}
+            </form>
+          </section>
+          <section className="space-y-10">
+            {['categoria', 'circuito'].map(type => { const items = projects.filter(project => project.tipo === type); return <div key={type}><div className="mb-4 flex items-center justify-between border-b border-racing-border pb-3"><h2 className="font-racing text-3xl font-bold uppercase text-white">{type === 'categoria' ? 'Categorías' : 'Circuitos'}</h2><span className="text-xs font-bold uppercase text-gray-500">{items.length} proyecto{items.length === 1 ? '' : 's'}</span></div><div className="space-y-5">{items.map(project => <article key={project.id} className={`card-glass overflow-hidden border-l-4 ${project.activo ? 'border-l-racing-red' : 'border-l-gray-700 opacity-70'}`}><div className="p-5"><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{project.titulo}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase ${project.activo ? 'bg-racing-red text-white' : 'bg-gray-700 text-gray-300'}`}>{project.activo ? 'Visible' : 'Oculto'}</span></div>{project.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{project.descripcion}</p> : null}</div><div className="flex shrink-0 gap-2"><button type="button" onClick={() => editProject(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red" aria-label={`Editar ${project.titulo}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteProject(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${project.titulo}`}><TrashIcon className="h-4 w-4"/></button></div></div></div><div className="grid grid-cols-2 gap-2 border-t border-racing-border bg-black/20 p-4 sm:grid-cols-3 2xl:grid-cols-4">{project.fotos?.map(photo => <div key={photo.id} className="group relative aspect-video overflow-hidden bg-black"><img src={photo.imagen} alt="" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteProjectPhoto(project, photo)} className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center bg-black/85 text-white hover:bg-racing-red sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar imagen"><TrashIcon className="h-4 w-4"/></button></div>)}{!project.fotos?.length ? <p className="col-span-full py-5 text-center text-xs text-gray-600">Sin imágenes cargadas.</p> : null}</div></article>)}{!items.length ? <div className="card-glass border border-dashed border-racing-border py-12 text-center text-sm text-gray-600">No hay proyectos de este tipo.</div> : null}</div></div>; })}
+          </section>
+        </div>
+      );
+    }
+
     if (activeSection === 'sponsors') {
       return (
         <div className="grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -3520,7 +3778,8 @@ export default function Admin() {
             <form onSubmit={saveSponsor} className="mt-6 space-y-4">
               <label className="block"><span className="text-sm text-gray-300">Empresa o emprendimiento</span><input value={sponsorForm.empresa} onChange={event => setSponsorForm(current => ({ ...current, empresa: event.target.value }))} className="input-field mt-2" placeholder="Nombre comercial" required/></label>
               <label className="block"><span className="text-sm text-gray-300">Descripción</span><textarea value={sponsorForm.descripcion} onChange={event => setSponsorForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-28 resize-y" placeholder="Contá brevemente a qué se dedica..."/></label>
-              <label className="block"><span className="text-sm text-gray-300">Dirección o enlace</span><input value={sponsorForm.direccion} onChange={event => setSponsorForm(current => ({ ...current, direccion: event.target.value }))} className="input-field mt-2" placeholder="Sitio web, red social o dirección física"/></label>
+              <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="text-sm text-gray-300">Ubicación</span><input value={sponsorForm.ubicacion} onChange={event => setSponsorForm(current => ({ ...current, ubicacion: event.target.value }))} className="input-field mt-2" placeholder="Ciudad, provincia o dirección"/></label><label className="block"><span className="text-sm text-gray-300">Contacto</span><input value={sponsorForm.contacto} onChange={event => setSponsorForm(current => ({ ...current, contacto: event.target.value }))} className="input-field mt-2" placeholder="Teléfono, WhatsApp o correo"/></label></div>
+              <label className="block"><span className="text-sm text-gray-300">Sitio web</span><input value={sponsorForm.sitio} onChange={event => setSponsorForm(current => ({ ...current, sitio: event.target.value }))} className="input-field mt-2" placeholder="www.empresa.com.ar"/></label>
               <label className="block"><span className="text-sm text-gray-300">Logo</span><input ref={sponsorLogoInputRef} type="file" accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setSponsorLogoFile(event.target.files?.[0] || null)} className="input-field mt-2 file:mr-3 file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">PNG transparente, WEBP, JPG o AVIF. Máximo 8 MB.</small></label>
               <label className="block"><span className="text-sm text-gray-300">Fotos de la galería</span><input ref={sponsorPhotosInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setSponsorPhotoFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-3 file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 imágenes nuevas por carga.</small></label>
               <label className="flex cursor-pointer items-center justify-between gap-4 border border-racing-border bg-black/25 px-4 py-3"><span><strong className="block text-sm text-white">Visible en el inicio</strong><span className="text-xs text-gray-500">Podés ocultarlo sin eliminar sus datos.</span></span><input type="checkbox" checked={sponsorForm.activo} onChange={event => setSponsorForm(current => ({ ...current, activo: event.target.checked }))} className="h-5 w-5 accent-cyan-400"/></label>
@@ -3533,8 +3792,8 @@ export default function Admin() {
             <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">Sponsors cargados</p><h2 className="mt-1 font-racing text-3xl font-bold">Empresas y emprendimientos</h2><p className="mt-1 text-sm text-gray-500">{sponsors.length} sponsor{sponsors.length === 1 ? '' : 's'} registrado{sponsors.length === 1 ? '' : 's'}.</p></div>
             {sponsors.length ? sponsors.map(sponsor => <article key={sponsor.id} className={`card-glass overflow-hidden border-l-4 ${sponsor.activo ? 'border-l-cyan-300' : 'border-l-gray-700 opacity-70'}`}>
               <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:p-6">
-                <div className="flex h-28 w-full shrink-0 items-center justify-center bg-black/35 p-4 sm:w-40">{sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} className="h-full w-full object-contain"/> : <BuildingOffice2Icon className="h-12 w-12 text-gray-700"/>}</div>
-                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{sponsor.empresa}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${sponsor.activo ? 'bg-cyan-300 text-black' : 'bg-gray-700 text-gray-300'}`}>{sponsor.activo ? 'Visible' : 'Oculto'}</span></div>{sponsor.direccion ? <p className="mt-1 break-all text-xs text-cyan-300">{sponsor.direccion}</p> : null}</div><div className="flex gap-2"><button type="button" onClick={() => editSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label={`Editar ${sponsor.empresa}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${sponsor.empresa}`}><TrashIcon className="h-4 w-4"/></button></div></div>{sponsor.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}</div>
+                {sponsor.logo ? <img src={sponsor.logo} alt={`Logo de ${sponsor.empresa}`} className="h-32 w-full shrink-0 object-contain sm:w-44"/> : <BuildingOffice2Icon className="h-12 w-12 shrink-0 text-gray-700"/>}
+                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{sponsor.empresa}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${sponsor.activo ? 'bg-cyan-300 text-black' : 'bg-gray-700 text-gray-300'}`}>{sponsor.activo ? 'Visible' : 'Oculto'}</span></div><div className="mt-1 space-y-0.5 text-xs text-cyan-300">{sponsor.ubicacion ? <p>{sponsor.ubicacion}</p> : null}{sponsor.contacto ? <p>{sponsor.contacto}</p> : null}{sponsor.sitio ? <p className="break-all">{sponsor.sitio}</p> : null}</div></div><div className="flex gap-2"><button type="button" onClick={() => editSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label={`Editar ${sponsor.empresa}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteSponsor(sponsor)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${sponsor.empresa}`}><TrashIcon className="h-4 w-4"/></button></div></div>{sponsor.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{sponsor.descripcion}</p> : null}</div>
               </div>
               <div className="border-t border-racing-border bg-black/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Galería · {(sponsor.fotos || []).length} fotos</p><button type="button" onClick={() => editSponsor(sponsor)} className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 hover:text-white">Agregar fotos</button></div>{sponsor.fotos?.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">{sponsor.fotos.map(photo => <div key={photo.id} className="group relative aspect-video overflow-hidden bg-black"><img src={photo.imagen} alt={`${sponsor.empresa}`} className="h-full w-full object-cover"/><button type="button" onClick={() => deleteSponsorPhoto(sponsor, photo)} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center bg-black/85 text-gray-300 transition hover:bg-racing-red hover:text-white sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></div>)}</div> : <div className="border border-dashed border-racing-border py-7 text-center text-xs text-gray-600">Todavía no tiene fotos cargadas.</div>}</div>
             </article>) : <div className="card-glass border border-dashed border-racing-border py-16 text-center"><BuildingOffice2Icon className="mx-auto h-12 w-12 text-gray-700"/><p className="mt-3 text-sm text-gray-500">Todavía no hay sponsors cargados.</p></div>}
@@ -4861,6 +5120,26 @@ export default function Admin() {
               </label>
 
               <label className="block">
+                <span className="text-sm text-gray-300">Regla porcentual para habilitar pilotos</span>
+                <div className="relative mt-2">
+                  <input
+                    name="regla_porcentaje"
+                    type="number"
+                    min="0"
+                    max="999.999"
+                    step="0.1"
+                    value={championshipForm.regla_porcentaje}
+                    onChange={handleChampionshipChange}
+                    className="input-field pr-12"
+                    placeholder="105"
+                    required
+                  />
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-racing text-lg font-bold text-gray-500">%</span>
+                </div>
+                <small className="mt-1.5 block text-xs leading-relaxed text-gray-500">Ejemplo: 105 habilita a quienes estén dentro del 105% de la mejor vuelta. Usá 0 para desactivar esta regla.</small>
+              </label>
+
+              <label className="block">
                 <span className="text-sm text-gray-300">Reglamento PDF</span>
                 <div className="mt-2 rounded-lg border border-dashed border-racing-border bg-racing-dark p-4">
                   <div className="flex items-center gap-3 text-gray-400">
@@ -4967,7 +5246,7 @@ export default function Admin() {
                             'Sin PDF'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-300">:{championship.puerto || '-'} · #{championship.n_server ?? '-'}</td>
+                        <td className="px-4 py-3 text-gray-300"><span className="block">:{championship.puerto || '-'} · #{championship.n_server ?? '-'}</span><span className={`mt-1 block text-[10px] font-bold uppercase ${Number(championship.regla_porcentaje || 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}`}>{Number(championship.regla_porcentaje || 0) > 0 ? `Regla ${Number(championship.regla_porcentaje)}%` : 'Sin regla porcentual'}</span></td>
                         <td className="px-4 py-3 text-gray-400">
                           {championship.servidor ? (
                             <a href={championship.servidor} target="_blank" rel="noreferrer" className="text-racing-red hover:text-white">Abrir</a>
@@ -6266,7 +6545,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7 xl:grid-cols-[repeat(14,minmax(0,1fr))] xl:gap-1.5">
+            <nav className="scrollbar-hidden mb-6 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-2" aria-label="Secciones de administración">
               {adminSections.map(section => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;
@@ -6276,13 +6555,15 @@ export default function Admin() {
                     key={section.id}
                     type="button"
                     onClick={() => setActiveSection(section.id)}
-                    className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 py-2 font-racing text-[10px] font-semibold transition-all 2xl:text-[11px] ${isActive
+                    className={`group inline-flex h-10 min-w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border px-2.5 font-racing text-[10px] font-semibold transition-all duration-300 focus-visible:min-w-max ${isActive
                       ? 'border-racing-red bg-racing-red text-white shadow-racing'
                       : 'border-racing-border bg-racing-card text-gray-300 hover:border-racing-red hover:text-white'
                       }`}
+                    aria-label={section.label}
+                    title={section.label}
                   >
                     <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{section.label}</span>
+                    <span className="max-w-0 -translate-x-1 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-300 group-hover:ml-1.5 group-hover:max-w-32 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:ml-1.5 group-focus-visible:max-w-32 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">{section.label}</span>
                   </button>
                 );
               })}
