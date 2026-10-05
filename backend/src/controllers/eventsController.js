@@ -1,5 +1,63 @@
+const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
 const pool = require('../config/db');
+const publicDir = require('../utils/publicDir');
 const slugify = require('../utils/slugify');
+
+const eventBannerExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
+
+const getEventGallery = async (idcampeonato, ronda, verifyEvent = true) => {
+  const championshipId = Number(idcampeonato);
+  const round = Number(ronda);
+  if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) return null;
+  if (verifyEvent) {
+    const [[event]] = await pool.query('SELECT 1 FROM calendario WHERE idcampeonato = ? AND ronda = ? LIMIT 1', [championshipId, round]);
+    if (!event) return null;
+  }
+  const relativePath = path.posix.join('media', 'fechas', `campeonato-${championshipId}`, `fecha-${round}`);
+  return {
+    directory: path.join(publicDir, ...relativePath.split('/')),
+    publicPath: `/${relativePath}`,
+  };
+};
+
+const listEventBanners = async gallery => {
+  let entries = [];
+  try { entries = await fs.readdir(gallery.directory, { withFileTypes: true }); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  return entries
+    .filter(entry => entry.isFile() && eventBannerExtensions.has(path.extname(entry.name).toLowerCase()))
+    .map(entry => ({ filename: entry.name, url: `${gallery.publicPath}/${entry.name}` }))
+    .sort((a, b) => a.filename.localeCompare(b.filename));
+};
+
+const attachEventBanners = rows => Promise.all(rows.map(async row => {
+  const gallery = await getEventGallery(row.idcampeonato, row.ronda, false);
+  return { ...withMediaFields(row), banners: await listEventBanners(gallery) };
+}));
+
+const moveEventGallery = async (oldChampionshipId, oldRound, newChampionshipId, newRound) => {
+  if (String(oldChampionshipId) === String(newChampionshipId) && String(oldRound) === String(newRound)) return;
+  const oldGallery = await getEventGallery(oldChampionshipId, oldRound, false);
+  const newGallery = await getEventGallery(newChampionshipId, newRound, false);
+  let entries = [];
+  try { entries = await fs.readdir(oldGallery.directory, { withFileTypes: true }); } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  const files = entries.filter(entry => entry.isFile() && eventBannerExtensions.has(path.extname(entry.name).toLowerCase()));
+  if (!files.length) return;
+  await fs.mkdir(newGallery.directory, { recursive: true });
+  await Promise.all(files.map(async entry => {
+    const source = path.join(oldGallery.directory, entry.name);
+    let target = path.join(newGallery.directory, entry.name);
+    try { await fs.access(target); target = path.join(newGallery.directory, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(entry.name)}`); } catch {}
+    await fs.rename(source, target);
+  }));
+  await fs.rm(oldGallery.directory, { recursive: true, force: true });
+};
 
 const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
@@ -36,7 +94,7 @@ const getAll = async (req, res, next) => {
     const order = status === 'completed' ? ' ORDER BY cal.fecha DESC' : ' ORDER BY cal.fecha ASC';
     const [rows] = await pool.query(`${baseSelect}${where}${order}`, params);
 
-    res.json({ data: rows.map(withMediaFields), total: rows.length });
+    res.json({ data: await attachEventBanners(rows), total: rows.length });
   } catch (err) {
     next(err);
   }
@@ -45,7 +103,7 @@ const getAll = async (req, res, next) => {
 const getUpcoming = async (req, res, next) => {
   try {
     const [rows] = await pool.query(`${baseSelect} WHERE cal.fecha >= NOW() ORDER BY cal.fecha ASC LIMIT 10`);
-    res.json({ data: rows.map(withMediaFields), total: rows.length });
+    res.json({ data: await attachEventBanners(rows), total: rows.length });
   } catch (err) {
     next(err);
   }
@@ -168,6 +226,8 @@ const update = async (req, res, next) => {
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
 
+    await moveEventGallery(oldIdcampeonato, oldRonda, idcampeonato, ronda);
+
     res.json({ message: 'Fecha actualizada', data: req.body });
   } catch (err) {
     next(err);
@@ -183,10 +243,54 @@ const remove = async (req, res, next) => {
     );
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+    const gallery = await getEventGallery(idcampeonato, ronda, false);
+    await fs.rm(gallery.directory, { recursive: true, force: true });
     res.json({ message: 'Fecha eliminada del calendario' });
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { getAll, getUpcoming, create, createBatch, update, remove };
+const getBanners = async (req, res, next) => {
+  try {
+    const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
+    if (!gallery) return res.status(404).json({ error: 'Fecha no encontrada' });
+    const banners = await listEventBanners(gallery);
+    res.json({ data: banners, total: banners.length });
+  } catch (error) { next(error); }
+};
+
+const uploadBanners = async (req, res, next) => {
+  try {
+    const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
+    if (!gallery) return res.status(404).json({ error: 'Fecha no encontrada' });
+    if (!req.files?.length) return res.status(400).json({ error: 'Seleccioná al menos una imagen' });
+    await fs.mkdir(gallery.directory, { recursive: true });
+    await Promise.all(req.files.map(file => {
+      const extension = path.extname(file.originalname).toLowerCase();
+      const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${extension}`;
+      return fs.writeFile(path.join(gallery.directory, filename), file.buffer);
+    }));
+    const banners = await listEventBanners(gallery);
+    res.status(201).json({ data: banners, total: banners.length, message: `${req.files.length} banner${req.files.length === 1 ? '' : 's'} cargado${req.files.length === 1 ? '' : 's'}` });
+  } catch (error) { next(error); }
+};
+
+const removeBanner = async (req, res, next) => {
+  try {
+    const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
+    if (!gallery) return res.status(404).json({ error: 'Fecha no encontrada' });
+    const filename = path.basename(String(req.params.filename || ''));
+    if (!filename || filename !== req.params.filename || !eventBannerExtensions.has(path.extname(filename).toLowerCase())) {
+      return res.status(400).json({ error: 'Nombre de imagen inválido' });
+    }
+    try { await fs.unlink(path.join(gallery.directory, filename)); } catch (error) {
+      if (error.code === 'ENOENT') return res.status(404).json({ error: 'Banner no encontrado' });
+      throw error;
+    }
+    const banners = await listEventBanners(gallery);
+    res.json({ data: banners, total: banners.length, message: 'Banner eliminado' });
+  } catch (error) { next(error); }
+};
+
+module.exports = { getAll, getUpcoming, create, createBatch, update, remove, getBanners, uploadBanners, removeBanner };

@@ -28,12 +28,13 @@ export default function EventCard({ event, featured = false, showNearbyActions =
   const cfg = statusConfig[event.status] || statusConfig.upcoming;
   const title = `${event.categoria || 'Categoría'} · Temporada ${event.temporada || '-'}`;
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
+  const backgroundImage = event.banners?.[0]?.url || event.circuito_foto_url;
 
   return (
     <article className={`card-glass group relative flex min-h-[25rem] animate-slide-up flex-col overflow-hidden bg-black ${featured ? 'md:col-span-2 lg:col-span-3 lg:min-h-[28rem]' : ''}`}>
-      {event.circuito_foto_url ? (
+      {backgroundImage ? (
         <img
-          src={event.circuito_foto_url}
+          src={backgroundImage}
           alt=""
           className="absolute inset-0 h-full w-full object-cover opacity-60 transition duration-700 group-hover:scale-[1.025] group-hover:opacity-70"
           onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}

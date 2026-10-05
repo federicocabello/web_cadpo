@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const c = require('../controllers/championshipsController');
 const uploadChampionshipRules = require('../middleware/uploadChampionshipRules');
+const requireAdmin = require('../middleware/requireAdmin');
 
 router.get('/',                         c.getAll);
 router.get('/latest-active-standings',  c.getLatestActiveStandings);
@@ -10,6 +11,9 @@ router.get('/:id/standings',            c.getStandings);
 router.get('/:id/calendario',           c.getCalendar);
 router.get('/:id/premios',              c.getPrizes);
 router.put('/:id/premios',              c.savePrizes);
+router.get('/:id/apercibimientos',       c.getWarnings);
+router.put('/:id/apercibimientos',       requireAdmin, c.saveWarnings);
+router.put('/:id/apercibimientos/cumplimiento', requireAdmin, c.setWarningFulfillment);
 router.get('/:id/inscriptos',           c.getEnrolled);
 router.post('/',                        uploadChampionshipRules.single('reglamento'), c.create);
 router.put('/:id',                      uploadChampionshipRules.single('reglamento'), c.update);

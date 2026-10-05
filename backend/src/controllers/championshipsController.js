@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const ensureResultAchievements = require('../utils/ensureResultAchievements');
+const ensureChampionshipWarnings = require('../utils/ensureChampionshipWarnings');
 
 let percentageRuleColumnPromise;
 const ensurePercentageRuleColumn = () => {
@@ -253,6 +254,165 @@ const getLatestActiveStandings = async (req, res, next) => {
   }
 };
 
+const getWarnings = async (req, res, next) => {
+  try {
+    await Promise.all([ensureResultAchievements(), ensureChampionshipWarnings()]);
+    const championshipId = Number(req.params.id);
+    if (!Number.isInteger(championshipId) || championshipId < 1) {
+      return res.status(400).json({ error: 'Campeonato inválido' });
+    }
+
+    const [[championship]] = await pool.query('SELECT id FROM campeonatos WHERE id = ? LIMIT 1', [championshipId]);
+    if (!championship) return res.status(404).json({ error: 'Campeonato no encontrado' });
+
+    const [levels] = await pool.query(
+      'SELECT cantidad, sancion FROM campeonato_apercibimientos WHERE idcampeonato = ? ORDER BY cantidad ASC',
+      [championshipId]
+    );
+    const [drivers] = await pool.query(
+      `SELECT p.id AS idpiloto, p.nombre,
+              SUM(COALESCE(r.aps_sprint, 0) + COALESCE(r.aps_final, 0)) AS apercibimientos
+       FROM resultados r
+       JOIN pilotos p ON p.id = r.idpiloto
+       WHERE r.idcampeonato = ?
+       GROUP BY p.id, p.nombre
+       HAVING apercibimientos > 0
+       ORDER BY apercibimientos DESC, p.nombre ASC`,
+      [championshipId]
+    );
+    const [fulfillments] = await pool.query(
+      `SELECT idpiloto, cantidad, cumplida
+       FROM campeonato_apercibimientos_cumplimientos
+       WHERE idcampeonato = ?`,
+      [championshipId]
+    );
+    const fulfillmentByDriverAndLevel = new Map(fulfillments.map(item => [
+      `${item.idpiloto}:${item.cantidad}`,
+      Boolean(Number(item.cumplida)),
+    ]));
+
+    res.json({
+      data: {
+        niveles: levels,
+        pilotos: drivers.map(driver => {
+          const warnings = Number(driver.apercibimientos || 0);
+          return {
+            ...driver,
+            apercibimientos: warnings,
+            sanciones_alcanzadas: levels
+              .filter(level => Number(level.cantidad) <= warnings)
+              .map(level => ({
+                cantidad: Number(level.cantidad),
+                sancion: level.sancion,
+                cumplida: fulfillmentByDriverAndLevel.get(`${driver.idpiloto}:${level.cantidad}`) || false,
+              })),
+          };
+        }),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const saveWarnings = async (req, res, next) => {
+  const championshipId = Number(req.params.id);
+  const submittedLevels = Array.isArray(req.body.niveles) ? req.body.niveles : [];
+  const levels = submittedLevels.map(level => ({
+    cantidad: Number(level.cantidad),
+    sancion: String(level.sancion || '').trim(),
+  }));
+
+  if (!Number.isInteger(championshipId) || championshipId < 1) {
+    return res.status(400).json({ error: 'Campeonato inválido' });
+  }
+  if (levels.length > 100) return res.status(400).json({ error: 'No se pueden cargar más de 100 niveles de apercibimientos' });
+  if (levels.some(level => !Number.isInteger(level.cantidad) || level.cantidad < 1 || level.cantidad > 65535)) {
+    return res.status(400).json({ error: 'Cada cantidad de apercibimientos debe ser un número entero mayor que cero' });
+  }
+  if (levels.some(level => !level.sancion || level.sancion.length > 500)) {
+    return res.status(400).json({ error: 'Cada nivel debe tener una sanción de hasta 500 caracteres' });
+  }
+  if (new Set(levels.map(level => level.cantidad)).size !== levels.length) {
+    return res.status(400).json({ error: 'No puede repetirse una cantidad de apercibimientos' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureChampionshipWarnings();
+    await connection.beginTransaction();
+    const [[championship]] = await connection.query('SELECT id FROM campeonatos WHERE id = ? FOR UPDATE', [championshipId]);
+    if (!championship) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Campeonato no encontrado' });
+    }
+    await connection.query('DELETE FROM campeonato_apercibimientos WHERE idcampeonato = ?', [championshipId]);
+    if (levels.length) {
+      const orderedLevels = [...levels].sort((a, b) => a.cantidad - b.cantidad);
+      await connection.query(
+        'INSERT INTO campeonato_apercibimientos (idcampeonato, cantidad, sancion) VALUES ?',
+        [orderedLevels.map(level => [championshipId, level.cantidad, level.sancion])]
+      );
+      await connection.query(
+        'DELETE FROM campeonato_apercibimientos_cumplimientos WHERE idcampeonato = ? AND cantidad NOT IN (?)',
+        [championshipId, orderedLevels.map(level => level.cantidad)]
+      );
+    } else {
+      await connection.query('DELETE FROM campeonato_apercibimientos_cumplimientos WHERE idcampeonato = ?', [championshipId]);
+    }
+    await connection.commit();
+    const [rows] = await pool.query(
+      'SELECT cantidad, sancion FROM campeonato_apercibimientos WHERE idcampeonato = ? ORDER BY cantidad ASC',
+      [championshipId]
+    );
+    res.json({ data: rows, message: 'Escala de apercibimientos guardada correctamente' });
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally {
+    connection.release();
+  }
+};
+
+const setWarningFulfillment = async (req, res, next) => {
+  try {
+    await ensureChampionshipWarnings();
+    const championshipId = Number(req.params.id);
+    const driverId = Number(req.body.idpiloto);
+    const amount = Number(req.body.cantidad);
+    const completed = req.body.cumplida === true || req.body.cumplida === 1 || req.body.cumplida === '1' ? 1 : 0;
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(driverId) || driverId < 1 || !Number.isInteger(amount) || amount < 1) {
+      return res.status(400).json({ error: 'Datos de la sanción inválidos' });
+    }
+
+    const [[reached]] = await pool.query(
+      `SELECT ca.cantidad
+       FROM campeonato_apercibimientos ca
+       JOIN (
+         SELECT idpiloto, SUM(COALESCE(aps_sprint, 0) + COALESCE(aps_final, 0)) AS total
+         FROM resultados
+         WHERE idcampeonato = ? AND idpiloto = ?
+         GROUP BY idpiloto
+       ) acumulado ON acumulado.total >= ca.cantidad
+       WHERE ca.idcampeonato = ? AND ca.cantidad = ?
+       LIMIT 1`,
+      [championshipId, driverId, championshipId, amount]
+    );
+    if (!reached) return res.status(400).json({ error: 'El piloto todavía no alcanzó ese nivel de apercibimientos' });
+
+    await pool.query(
+      `INSERT INTO campeonato_apercibimientos_cumplimientos
+         (idcampeonato, idpiloto, cantidad, cumplida)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE cumplida = VALUES(cumplida), actualizado_en = CURRENT_TIMESTAMP`,
+      [championshipId, driverId, amount, completed]
+    );
+    res.json({ data: { idcampeonato: championshipId, idpiloto: driverId, cantidad: amount, cumplida: Boolean(completed) }, message: completed ? 'Sanción marcada como cumplida' : 'Sanción marcada como pendiente' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const savePrizes = async (req, res, next) => {
   const championshipId = Number(req.params.id);
   const submittedPrizes = Array.isArray(req.body.premios) ? req.body.premios : [];
@@ -397,6 +557,9 @@ module.exports = {
   getCalendar,
   getPrizes,
   savePrizes,
+  getWarnings,
+  saveWarnings,
+  setWarningFulfillment,
   getEnrolled,
   create,
   update,

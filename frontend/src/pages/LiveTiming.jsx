@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ArrowPathIcon,
@@ -169,6 +169,7 @@ export default function LiveTiming() {
   const [calendarError, setCalendarError] = useState(false);
   const [selectedChampionshipId, setSelectedChampionshipId] = useState(null);
   const [driverCountries, setDriverCountries] = useState(new Map());
+  const [registeredDrivers, setRegisteredDrivers] = useState(new Map());
   const [enrolledDrivers, setEnrolledDrivers] = useState(new Map());
   const [percentageRule, setPercentageRule] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -318,11 +319,19 @@ export default function LiveTiming() {
       try {
         const response = await driversApi.getAll();
         const countryMap = new Map();
+        const driverMap = new Map();
         for (const driver of response.data.data || []) {
-          if (driver.steam) countryMap.set(String(driver.steam).trim(), driver.nacionalidad);
-          countryMap.set(driverNameKey(driver.nombre), driver.nacionalidad);
+          const nameKey = driverNameKey(driver.nombre);
+          if (driver.steam) {
+            const steamKey = String(driver.steam).trim();
+            countryMap.set(steamKey, driver.nacionalidad);
+            driverMap.set(steamKey, driver);
+          }
+          countryMap.set(nameKey, driver.nacionalidad);
+          driverMap.set(nameKey, driver);
         }
         setDriverCountries(countryMap);
+        setRegisteredDrivers(driverMap);
       } catch (err) {
         console.error('No se pudieron cargar las nacionalidades de los pilotos:', err);
       }
@@ -362,8 +371,11 @@ export default function LiveTiming() {
 
     return [...byDriver.values()].map(driver => {
       const registration = enrolledDrivers.get(driverNameKey(driver.name));
+      const registeredDriver = registeredDrivers.get(driver.guid)
+        || registeredDrivers.get(driverNameKey(driver.name));
       return {
         ...driver,
+        name: registration?.nombre || registeredDriver?.nombre || driver.name,
         displayCarModel: registration?.modelo || driver.car,
         carBrandLogo: registration?.auto_logo || '',
       };
@@ -372,7 +384,7 @@ export default function LiveTiming() {
       if (!b.bestLap) return -1;
       return a.bestLap - b.bestLap;
     });
-  }, [enrolledDrivers, timing]);
+  }, [enrolledDrivers, registeredDrivers, timing]);
   const connectedDriverCount = useMemo(
     () => drivers.filter(driver => driver.connected).length,
     [drivers],
@@ -385,6 +397,9 @@ export default function LiveTiming() {
   const percentageRuleActive = percentageRule > 0;
   const qualifyingSession = isQualifyingSession(timing?.session);
   const percentageCutoff = percentageRuleActive && bestLap ? bestLap * (percentageRule / 100) : 0;
+  const percentageDividerIndex = percentageRuleActive && percentageCutoff
+    ? drivers.findIndex(driver => !driver.bestLap || driver.bestLap > percentageCutoff)
+    : -1;
   const percentageRuleLabel = Number.isInteger(percentageRule) ? String(percentageRule) : String(Number(percentageRule.toFixed(3)));
   const isPercentageEnabled = driver => Boolean(percentageCutoff && driver.bestLap && driver.bestLap <= percentageCutoff);
   const requirementCountdown = formatRequirementCountdown(raceEvent?.fecha, now);
@@ -819,8 +834,15 @@ export default function LiveTiming() {
                 const eligibility = getDriverEligibility(driver);
 
                 return (
+                  <Fragment key={`mobile-${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}>
+                  {!qualifyingSession && index === percentageDividerIndex ? <div className="my-3 !border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent px-3 py-2 text-center">
+                    <div className="flex items-center gap-3">
+                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-transparent to-red-400/70" />
+                      <div className="shrink-0"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-300">Debajo del requisito porcentual</p><p className="mt-0.5 font-racing text-base font-bold uppercase text-white">Tiempo máximo <span className="text-cyan-300">{formatLapTime(percentageCutoff)}</span></p></div>
+                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-red-400/70 to-transparent" />
+                    </div>
+                  </div> : null}
                   <article
-                    key={`mobile-${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}
                     className={`timing-driver-row relative ${qualifyingSession ? 'timing-driver-row-compact p-2.5' : 'p-3.5'} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                     style={{ '--row-shift': `${positionChange * 150}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                   >
@@ -888,6 +910,7 @@ export default function LiveTiming() {
                       {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-3 py-1 text-xs font-bold uppercase text-green-400">Habilitado · {percentageRuleActive ? 'vueltas y tiempo cumplidos' : 'vueltas cumplidas'}</span> : <span className="inline-flex bg-red-500/15 px-3 py-1 text-xs font-bold uppercase text-red-300">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
                     </div>}
                   </article>
+                  </Fragment>
                 );
               })}
             </div>
@@ -919,8 +942,18 @@ export default function LiveTiming() {
                     const eligibility = getDriverEligibility(driver);
 
                     return (
+                      <Fragment key={`${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}>
+                      {!qualifyingSession && index === percentageDividerIndex ? <tr className="!border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent">
+                        <td colSpan={9} className="!border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent px-5 py-4">
+                          <div className="flex items-center gap-5">
+                            <span className="h-px flex-1 bg-gradient-to-r from-transparent to-red-400/70" />
+                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">Pilotos debajo del requisito</span>
+                            <span className="shrink-0 font-racing text-lg font-bold uppercase text-white">Tiempo máximo <strong className="ml-2 text-cyan-300">{formatLapTime(percentageCutoff)}</strong></span>
+                            <span className="h-px flex-1 bg-gradient-to-r from-red-400/70 to-transparent" />
+                          </div>
+                        </td>
+                      </tr> : null}
                       <tr
-                        key={`${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}
                         className={`timing-driver-row ${qualifyingSession ? 'timing-driver-row-compact' : ''} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                         style={{ '--row-shift': `${positionChange * 54}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                       >
@@ -983,6 +1016,7 @@ export default function LiveTiming() {
                           {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-3 py-1 text-sm font-bold uppercase text-green-400">Habilitado</span> : <span className="inline-flex bg-red-500/15 px-3 py-1 text-xs font-bold uppercase text-red-300">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
                         </td>}
                       </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>

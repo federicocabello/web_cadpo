@@ -15,7 +15,7 @@ import {
   TrophyIcon,
   RectangleStackIcon,
 } from '@heroicons/react/24/outline'
-import { authApi, championshipsApi, eventsApi } from '../services/api'
+import { authApi, championshipsApi, eventsApi, projectsApi } from '../services/api'
 import { getLiveTimingEvents } from '../utils/weeklyChampionships'
 
 const InstagramIcon = ({ className = '' }) => (
@@ -65,6 +65,13 @@ const navLinks = [
   { to: '/estadisticas', label: 'ESTADÍSTICAS', Icon: ChartBarIcon },
   { to: '/proyectos', label: 'PROYECTOS', Icon: RectangleStackIcon },
 ]
+
+const newProjectDurationMs = 15 * 24 * 60 * 60 * 1000
+const parseProjectCreatedAt = value => {
+  if (!value) return Number.NaN
+  const timestamp = new Date(String(value).replace(' ', 'T')).getTime()
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN
+}
 
 const resourceLinks = [
   {
@@ -225,6 +232,7 @@ export default function Navbar() {
   const [calendarEvents, setCalendarEvents] = useState([])
   const [calendarLoaded, setCalendarLoaded] = useState(false)
   const [calendarNow, setCalendarNow] = useState(() => Date.now())
+  const [projects, setProjects] = useState([])
 
   useEffect(() => {
     let active = true
@@ -232,6 +240,14 @@ export default function Navbar() {
     eventsApi.getAll()
       .then(({ data }) => {
         if (active) setCalendarEvents(data?.data || [])
+      })
+
+    projectsApi.getAll()
+      .then(({ data }) => {
+        if (active) setProjects(data?.data || [])
+      })
+      .catch(() => {
+        if (active) setProjects([])
       })
       .catch(() => {
         if (active) setCalendarEvents([])
@@ -260,6 +276,11 @@ export default function Navbar() {
     () => navLinks.filter(link => link.to !== '/tiempos-en-vivo' || showLiveTiming),
     [showLiveTiming],
   )
+  const hasNewProjects = useMemo(() => projects.some(project => {
+    const createdAt = parseProjectCreatedAt(project.creado)
+    const age = calendarNow - createdAt
+    return age >= 0 && age <= newProjectDurationMs
+  }), [calendarNow, projects])
   const followLinks = socialLinks.filter(link => link.group === 'social')
   const communityLinks = socialLinks.filter(link => link.group === 'community')
 
@@ -311,7 +332,7 @@ export default function Navbar() {
                 to={to}
                 end={to === '/'}
                 className={({ isActive }) =>
-                  `group inline-flex h-9 items-center gap-1.5 rounded-md border px-2 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing ${
+                  `group relative inline-flex h-9 items-center gap-1.5 rounded-md border px-2 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing ${
                     isActive
                       ? 'border-racing-red bg-racing-red/12 text-racing-red'
                       : 'border-racing-border bg-racing-card/55 text-gray-300 hover:border-racing-red/60 hover:bg-racing-red/5 hover:text-white'
@@ -320,6 +341,7 @@ export default function Navbar() {
               >
                 <Icon className="h-4 w-4 shrink-0 text-racing-red transition-transform duration-200 group-hover:scale-110" />
                 <span className="leading-none">{label}</span>
+                {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-2 -top-2 animate-pulse rounded-full border border-red-300/70 bg-red-600 px-1.5 py-0.5 text-[8px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.75)]">NEW</span> : null}
               </NavLink>
             ))}
             <div className="ml-1 flex items-center gap-2 border-l border-white/15 pl-3">
@@ -371,7 +393,8 @@ export default function Navbar() {
                 }
               >
                 <Icon className="h-5 w-5 shrink-0 text-racing-red" />
-                {label}
+                <span>{label}</span>
+                {to === '/proyectos' && hasNewProjects ? <span className="ml-auto animate-pulse rounded-full border border-red-300/70 bg-red-600 px-2 py-1 text-[9px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.65)]">NEW</span> : null}
               </NavLink>
             ))}
 

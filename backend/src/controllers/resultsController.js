@@ -35,6 +35,7 @@ const RESULT_FIELDS = [
   'kg_final',
   'kg_sancion_final',
   'desc_sancion_final',
+  'sanciones_detalle',
 ];
 
 const TEXT_FIELDS = new Set([
@@ -51,6 +52,13 @@ const DECIMAL_FIELDS = new Set(['pts_sprint', 'pts_final']);
 const BOOLEAN_FIELDS = new Set(['pole_sprint', 'ganador_sprint', 'pole_final', 'ganador_final', 'campeon']);
 
 const normalizeValue = (field, value) => {
+  if (field === 'sanciones_detalle') {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      try { return JSON.stringify(JSON.parse(value)); } catch { return null; }
+    }
+    return JSON.stringify(value);
+  }
   if (TEXT_FIELDS.has(field)) return String(value ?? '').trim();
   if (field === 'fecha') return value;
   if (BOOLEAN_FIELDS.has(field)) return value === true || value === 1 || value === '1' ? 1 : 0;

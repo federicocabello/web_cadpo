@@ -10,6 +10,7 @@ const columns = {
   desc_sancion_sprint: "VARCHAR(500) NOT NULL DEFAULT ''",
   desc_sancion_qualy_final: "VARCHAR(500) NOT NULL DEFAULT ''",
   desc_sancion_final: "VARCHAR(500) NOT NULL DEFAULT ''",
+  sanciones_detalle: 'LONGTEXT NULL',
 };
 
 let schemaPromise;

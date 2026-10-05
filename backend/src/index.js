@@ -29,6 +29,7 @@ const templatesRouter = require('./routes/templates');
 const sponsorsRouter = require('./routes/sponsors');
 const complaintsRouter = require('./routes/complaints');
 const projectsRouter = require('./routes/projects');
+const importerRouter = require('./routes/importer');
 const liveTimingMonitor = require('./services/liveTimingMonitor');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -88,6 +89,7 @@ app.use('/api/templates', templatesRouter);
 app.use('/api/sponsors', sponsorsRouter);
 app.use('/api/complaints', complaintsRouter);
 app.use('/api/projects', projectsRouter);
+app.use('/api/importer', importerRouter);
 
 // Servir el frontend desde Hostinger, desde el paquete de producción o desde Vite local.
 const hostingerPublicPath = path.join(__dirname, '../../public_html');

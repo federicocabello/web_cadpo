@@ -43,6 +43,9 @@ export const eventsApi = {
   createBatch: events => api.post('/events/batch', { events }),
   update: (idcampeonato, ronda, data) => api.put(`/events/${idcampeonato}/${ronda}`, data),
   remove: (idcampeonato, ronda) => api.delete(`/events/${idcampeonato}/${ronda}`),
+  getBanners: (idcampeonato, ronda) => api.get(`/events/${idcampeonato}/${ronda}/banners`),
+  uploadBanners: (idcampeonato, ronda, data) => api.post(`/events/${idcampeonato}/${ronda}/banners`, data, { timeout: 120000 }),
+  removeBanner: (idcampeonato, ronda, filename) => api.delete(`/events/${idcampeonato}/${ronda}/banners/${encodeURIComponent(filename)}`),
 };
 
 export const championshipsApi = {
@@ -53,6 +56,9 @@ export const championshipsApi = {
   getCalendar: id => api.get(`/championships/${id}/calendario`),
   getPrizes: id => api.get(`/championships/${id}/premios`),
   savePrizes: (id, premios) => api.put(`/championships/${id}/premios`, { premios }),
+  getWarnings: id => api.get(`/championships/${id}/apercibimientos`),
+  saveWarnings: (id, niveles) => api.put(`/championships/${id}/apercibimientos`, { niveles }),
+  setWarningFulfillment: (id, idpiloto, cantidad, cumplida) => api.put(`/championships/${id}/apercibimientos/cumplimiento`, { idpiloto, cantidad, cumplida }),
   getEnrolled: id => api.get(`/championships/${id}/inscriptos`),
   create: data => api.post('/championships', data),
   update: (id, data) => api.put(`/championships/${id}`, data),
@@ -113,6 +119,11 @@ export const circuitsApi = {
 export const mediaApi = {
   getChampionshipImages: params => api.get('/media/championship-images', { params }),
   getRegistrationImages: params => api.get('/media/registration-images', { params }),
+};
+
+export const importerApi = {
+  importDrivers: drivers => api.post('/importer/drivers', { drivers }, { timeout: 60000 }),
+  importRegistrations: (idcampeonato, registrations) => api.post('/importer/registrations', { idcampeonato, registrations }, { timeout: 60000 }),
 };
 
 export const resultsApi = {
