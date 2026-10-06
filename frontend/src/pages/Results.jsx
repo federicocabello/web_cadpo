@@ -27,8 +27,8 @@ const ballastColor = value => {
   return 'text-gray-600';
 };
 const numericPosition = value => {
-  const position = Number.parseInt(value, 10);
-  return Number.isFinite(position) && position > 0 ? position : null;
+  const normalized = String(value ?? '').trim();
+  return /^\d+$/.test(normalized) && Number(normalized) > 0 ? Number(normalized) : null;
 };
 const resultOrder = result => numericPosition(result.pos_final)
   ?? numericPosition(result.pos_sprint)
@@ -40,13 +40,17 @@ const normalizedPositionStatus = value => String(value ?? '')
   .replace(/[\u0300-\u036f]/g, '')
   .trim()
   .toLocaleUpperCase('es-AR');
+const lapPosition = value => {
+  const match = normalizedPositionStatus(value).match(/^\(?\s*(\d+)\s*V(?:UELTAS?)?\s*\)?$/);
+  return match ? Number(match[1]) : null;
+};
 const positionStatusOrder = value => {
   const status = normalizedPositionStatus(value);
-  if (!status) return 3;
-  if (status === 'S/TIEMPO' || status === 'SIN TIEMPO') return 2;
-  if (status === 'DQ' || status.includes('EXCLUSION')) return 4;
-  if (status === 'NO LARGO' || status === 'NO LARGÓ') return 5;
-  return 1;
+  if (lapPosition(value) !== null) return 1;
+  if (status === 'DQ' || status.includes('EXCLUSION')) return 2;
+  if (!status || status === 'S/TIEMPO' || status === 'SIN TIEMPO') return 3;
+  if (status === 'NO LARGO') return 4;
+  return 3;
 };
 const displayPosition = value => {
   const position = numericPosition(value);
@@ -97,8 +101,12 @@ const SessionSection = ({ title, sessionKey, items, positionField, pointsField, 
     if (positionA !== null && positionB !== null) return positionA - positionB;
     if (positionA !== null) return -1;
     if (positionB !== null) return 1;
-    return positionStatusOrder(a[positionField]) - positionStatusOrder(b[positionField])
-      || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' });
+    const statusDifference = positionStatusOrder(a[positionField]) - positionStatusOrder(b[positionField]);
+    if (statusDifference) return statusDifference;
+    const lapsA = lapPosition(a[positionField]);
+    const lapsB = lapPosition(b[positionField]);
+    if (lapsA !== null && lapsB !== null && lapsA !== lapsB) return lapsB - lapsA;
+    return String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' });
   });
 
   return (
@@ -122,7 +130,7 @@ const SessionSection = ({ title, sessionKey, items, positionField, pointsField, 
           const appliedSanctionCount = sanctionItems.length ? structuredSanctions.length : legacyAppliedSanctions.length;
           return <tr key={`${title}-${result.id}`} className={sanctioned ? 'bg-gradient-to-r from-red-500/20 via-red-500/[0.07] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
             {positionField ? <td className="w-20 min-w-20 whitespace-nowrap px-2 py-2 text-center sm:w-24 sm:min-w-24"><strong className={`whitespace-nowrap font-racing text-sm sm:text-base ${sanctioned ? 'text-red-400' : position === 1 ? 'text-yellow-300' : position === 2 ? 'text-gray-200' : position === 3 ? 'text-amber-600' : 'text-white'}`}>{displayPosition(result[positionField])}</strong></td> : null}
-            <td className="p-0"><button type="button" onClick={() => onSelectPilot(result.idpiloto)} aria-pressed={selected} className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left">{result.auto_logo ? <img src={result.auto_logo} alt="" className="mt-0.5 h-6 w-8 shrink-0 object-contain"/> : null}<div className="min-w-0 flex-1"><span className={`block truncate font-semibold ${sanctioned ? 'text-red-400' : 'text-gray-200'}`}>{result.piloto}</span>{selected && hasResolution ? <div className={`mt-2 border-l-2 pl-2 text-[10px] leading-relaxed ${sanctioned ? 'border-red-500' : 'border-racing-border'}`}>{sanctionItems.length ? sanctionItems.map((sanction, index) => <p key={`${result.id}-${sessionKey}-sanction-${index}`} className={`${index ? `mt-2 border-t pt-2 ${sanction.noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${sanction.noSanction ? 'text-gray-300' : 'text-red-200'}`}>{!sanction.noSanction ? <strong className="text-red-400">Sanción {sanctionItems.slice(0, index + 1).filter(item => !item.noSanction).length}: </strong> : null}{buildAssettoSanctionLabel(sanction)}</p>) : legacySanctions.map((sanction, index) => { const noSanction = isNoSanctionText(sanction); const sanctionNumber = legacySanctions.slice(0, index + 1).filter(item => !isNoSanctionText(item)).length; return <p key={`${result.id}-${sessionKey}-legacy-${index}`} className={`${index ? `mt-2 border-t pt-2 ${noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${noSanction ? 'text-gray-300' : 'text-red-200'}`}>{!noSanction ? <strong className="text-red-400">Sanción {sanctionNumber}: </strong> : null}{sanction}</p>; })}</div> : null}</div>{sanctioned ? <span className="shrink-0 border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-red-300">{appliedSanctionCount > 1 ? `${appliedSanctionCount} sanciones` : 'Sanción'}</span> : resolvedWithoutSanction ? <span className="shrink-0 border border-cyan-300/40 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-cyan-200">Sin sanción</span> : null}</button></td>
+            <td className="p-0"><button type="button" onClick={() => onSelectPilot(result.idpiloto)} aria-pressed={selected} className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left">{result.auto_logo ? <img src={result.auto_logo} alt="" className="mt-0.5 h-6 w-8 shrink-0 object-contain"/> : null}<div className="min-w-0 flex-1"><span className={`block truncate font-semibold ${sanctioned ? 'text-red-400' : 'text-gray-200'}`}>{result.piloto}</span>{selected && hasResolution ? <div className={`mt-2 border-l-2 pl-2 text-[10px] leading-relaxed ${sanctioned ? 'border-red-500' : 'border-racing-border'}`}>{sanctionItems.length ? sanctionItems.map((sanction, index) => <p key={`${result.id}-${sessionKey}-sanction-${index}`} className={`${index ? `mt-2 border-t pt-2 ${sanction.noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${sanction.noSanction ? 'text-cyan-200' : 'text-red-200'}`}>{!sanction.noSanction ? <strong className="text-red-400">Sanción {sanctionItems.slice(0, index + 1).filter(item => !item.noSanction).length}: </strong> : null}{buildAssettoSanctionLabel(sanction)}</p>) : legacySanctions.map((sanction, index) => { const noSanction = isNoSanctionText(sanction); const sanctionNumber = legacySanctions.slice(0, index + 1).filter(item => !isNoSanctionText(item)).length; return <p key={`${result.id}-${sessionKey}-legacy-${index}`} className={`${index ? `mt-2 border-t pt-2 ${noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${noSanction ? 'text-cyan-200' : 'text-red-200'}`}>{!noSanction ? <strong className="text-red-400">Sanción {sanctionNumber}: </strong> : null}{sanction}</p>; })}</div> : null}</div>{sanctioned ? <span className="shrink-0 border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-red-300">{appliedSanctionCount > 1 ? `${appliedSanctionCount} sanciones` : 'Sanción'}</span> : resolvedWithoutSanction ? <span className="shrink-0 border border-cyan-300/40 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-cyan-200">Sin sanción</span> : null}</button></td>
             <td className={`px-3 py-2 text-right font-racing text-lg font-bold ${sanctioned ? 'text-red-300' : 'text-white'}`}>{displayPoints(result[pointsField])}</td>
           </tr>;
         })}</tbody>

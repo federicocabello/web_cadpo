@@ -193,7 +193,7 @@ export const orderAssettoResults = (entries, sanctions = {}, sessionKey = '') =>
     active.splice(target, 0, entry);
   });
 
-  const ordered = [...active, ...withoutResult, ...disqualified];
+  const ordered = [...active, ...disqualified, ...withoutResult];
   const leaderLaps = Math.max(0, ...ordered.map(entry => entry.laps));
   return ordered.map((entry, index) => ({
     ...entry,
