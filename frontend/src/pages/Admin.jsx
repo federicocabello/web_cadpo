@@ -77,13 +77,6 @@ const adminSections = [
   { id: 'relaciones-caja', label: 'RELACIONES DE CAJA', icon: WrenchScrewdriverIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
-const adminSectionGroups = [
-  ['importador', 'resultados', 'denuncias', 'replays', 'plantillas'],
-  ['campeonatos', 'fechas', 'categorias', 'marcas', 'autos', 'circuitos'],
-  ['pilotos', 'inscriptos', 'formularios'],
-  ['sponsors', 'proyectos'],
-  ['relaciones-caja', 'monitoreo'],
-];
 const adminSectionStorageKey = 'cadpo-admin-section';
 const resultPointFields = [
   { key: 'presentismo', shortLabel: 'P', label: 'Presentismo' },
@@ -111,7 +104,6 @@ const resultAchievementFields = [
   { key: 'ganador_sprint', label: 'Ganó Sprint' },
   { key: 'pole_final', label: 'Pole Final' },
   { key: 'ganador_final', label: 'Ganó Final' },
-  { key: 'campeon', label: 'Campeón' },
 ];
 const resultSanctionFields = [
   { key: 'desc_sancion_qualy_sprint', label: 'Clasificación Sprint' },
@@ -133,6 +125,14 @@ const resultGridColumns = [
   { key: 'piloto', label: 'Piloto', type: 'pilot' },
   ...resultSpreadsheetColumns,
 ];
+const resultScoringFields = [
+  { positionField: 'pos_qualy_sprint', pointsField: 'pts_qualy_sprint', label: 'Clasificación Sprint', shortLabel: 'QS', integer: true },
+  { positionField: 'pos_sprint', pointsField: 'pts_sprint', label: 'Sprint', shortLabel: 'S' },
+  { positionField: 'pos_qualy_final', pointsField: 'pts_qualy_final', label: 'Clasificación Final', shortLabel: 'QF', integer: true },
+  { positionField: 'pos_final', pointsField: 'pts_final', label: 'Final', shortLabel: 'F' },
+];
+const resultScoringByPosition = Object.fromEntries(resultScoringFields.map(field => [field.positionField, field]));
+const toScoringInputValue = value => Number(value || 0) === 0 ? '' : String(value);
 const parseNumericPosition = value => {
   const normalized = String(value ?? '').trim();
   return /^\d+$/.test(normalized) && Number(normalized) > 0 ? Number(normalized) : null;
@@ -451,6 +451,34 @@ const loadImage = file =>
     image.src = url;
   });
 
+const loadCanvasImage = source => new Promise(resolve => {
+  if (!source) {
+    resolve(null);
+    return;
+  }
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.onload = () => resolve(image);
+  image.onerror = () => resolve(null);
+  image.src = source;
+});
+
+const drawContainedCanvasImage = (context, image, x, y, width, height) => {
+  if (!image?.width || !image?.height) return;
+  const scale = Math.min(width / image.width, height / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+};
+
+const fitCanvasText = (context, value, maxWidth) => {
+  const text = String(value || '');
+  if (context.measureText(text).width <= maxWidth) return text;
+  let fitted = text;
+  while (fitted.length && context.measureText(`${fitted}…`).width > maxWidth) fitted = fitted.slice(0, -1);
+  return fitted ? `${fitted}…` : '';
+};
+
 const createSquarePngFile = async (file, settings, filename) => {
   const image = await loadImage(file);
   const canvas = document.createElement('canvas');
@@ -560,10 +588,10 @@ function SquareCropEditor({ file, settings, onChange, label }) {
   );
 }
 
-function AdminPagination({ page, pageCount, total, onPageChange }) {
+function AdminPagination({ page, pageCount, total, onPageChange, pageSize = adminPageSize }) {
   if (!total) return null;
-  const first = (page - 1) * adminPageSize + 1;
-  const last = Math.min(page * adminPageSize, total);
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, total);
 
   return (
     <div className="flex flex-col gap-3 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -593,6 +621,45 @@ function ClearFiltersButton({ active, onClick }) {
     >
       <XMarkIcon className="h-4 w-4" />
     </button>
+  );
+}
+
+const projectAdminPageSize = 5;
+
+function AdminProjectList({ type, projects, onEdit, onDelete, onDeletePhoto }) {
+  const [page, setPage] = useState(1);
+  const [expandedGalleries, setExpandedGalleries] = useState({});
+  const items = useMemo(() => projects.filter(project => project.tipo === type), [projects, type]);
+  const pageCount = Math.max(1, Math.ceil(items.length / projectAdminPageSize));
+  const safePage = Math.min(page, pageCount);
+  const visibleItems = items.slice((safePage - 1) * projectAdminPageSize, safePage * projectAdminPageSize);
+  const title = type === 'categoria' ? 'Categorías' : 'Circuitos';
+  const Icon = type === 'categoria' ? TagIcon : FlagIcon;
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  return (
+    <section className="overflow-hidden border border-racing-border bg-racing-card/35">
+      <header className="flex items-center justify-between gap-4 border-b border-racing-border bg-black/25 px-5 py-4">
+        <div className="flex items-center gap-3"><span className="inline-flex h-10 w-10 items-center justify-center bg-racing-red/10 text-racing-red"><Icon className="h-5 w-5"/></span><div><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-racing-red">Proyectos de {type}</p><h2 className="font-racing text-2xl font-bold uppercase text-white">{title}</h2></div></div>
+        <span className="text-xs font-bold uppercase text-gray-500">{items.length} proyecto{items.length === 1 ? '' : 's'}</span>
+      </header>
+      <div className="space-y-5 p-4 sm:p-5">
+        {visibleItems.map(project => {
+          const galleryExpanded = Boolean(expandedGalleries[String(project.id)]);
+          const photoCount = project.fotos?.length || 0;
+          return <article key={project.id} className={`card-glass overflow-hidden border-l-4 ${project.activo ? 'border-l-racing-red' : 'border-l-gray-700 opacity-70'}`}>
+            <div className="p-5"><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{project.titulo}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase ${project.activo ? 'bg-racing-red text-white' : 'bg-gray-700 text-gray-300'}`}>{project.activo ? 'Visible' : 'Oculto'}</span></div>{project.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{project.descripcion}</p> : null}</div><div className="flex shrink-0 gap-2"><button type="button" onClick={() => onEdit(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red" aria-label={`Editar ${project.titulo}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => onDelete(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${project.titulo}`}><TrashIcon className="h-4 w-4"/></button></div></div></div>
+            <button type="button" onClick={() => setExpandedGalleries(current => ({ ...current, [String(project.id)]: !galleryExpanded }))} className="flex w-full items-center justify-between gap-3 border-t border-racing-border bg-black/20 px-5 py-3 text-left transition hover:bg-white/[0.03]" aria-expanded={galleryExpanded}><span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400"><PhotoIcon className="h-4 w-4 text-racing-red"/>{galleryExpanded ? 'Ocultar imágenes' : 'Mostrar imágenes'} · {photoCount}</span><ChevronDownIcon className={`h-4 w-4 text-gray-500 transition-transform duration-300 ${galleryExpanded ? 'rotate-180' : ''}`}/></button>
+            <div className={`grid transition-[grid-template-rows,opacity] duration-300 ${galleryExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}><div className="min-h-0 overflow-hidden">{photoCount ? <div className="grid grid-cols-2 gap-2 border-t border-racing-border bg-black/20 p-4 sm:grid-cols-3 2xl:grid-cols-4">{project.fotos.map(photo => <div key={photo.id} className="group relative aspect-video overflow-hidden bg-black"><img src={photo.imagen} alt="" className="h-full w-full object-cover"/><button type="button" onClick={() => onDeletePhoto(project, photo)} className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center bg-black/85 text-white hover:bg-racing-red sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar imagen"><TrashIcon className="h-4 w-4"/></button></div>)}</div> : <p className="border-t border-racing-border bg-black/20 py-5 text-center text-xs text-gray-600">Sin imágenes cargadas.</p>}</div></div>
+          </article>;
+        })}
+        {!items.length ? <div className="border border-dashed border-racing-border py-12 text-center text-sm text-gray-600">No hay proyectos de este tipo.</div> : null}
+      </div>
+      <AdminPagination page={safePage} pageCount={pageCount} total={items.length} pageSize={projectAdminPageSize} onPageChange={setPage}/>
+    </section>
   );
 }
 
@@ -763,6 +830,10 @@ export default function Admin() {
   const [resultRoundId, setResultRoundId] = useState('');
   const [resultSheetSize, setResultSheetSize] = useState(35);
   const [resultAttendancePoints, setResultAttendancePoints] = useState('');
+  const [resultSprintMultiplier, setResultSprintMultiplier] = useState('1');
+  const [resultFinalMultiplier, setResultFinalMultiplier] = useState('1');
+  const [savingResultMultipliers, setSavingResultMultipliers] = useState(false);
+  const [resultMultiplierMessage, setResultMultiplierMessage] = useState('');
   const [resultImportSession, setResultImportSession] = useState('sprint');
   const [resultImportedSessions, setResultImportedSessions] = useState({});
   const [assettoSanctionModal, setAssettoSanctionModal] = useState(null);
@@ -777,6 +848,18 @@ export default function Admin() {
   const [savingChampionshipWarnings, setSavingChampionshipWarnings] = useState(false);
   const [updatingWarningFulfillment, setUpdatingWarningFulfillment] = useState('');
   const [championshipWarningsMessage, setChampionshipWarningsMessage] = useState('');
+  const [championshipScoringRows, setChampionshipScoringRows] = useState([]);
+  const [showChampionshipScoring, setShowChampionshipScoring] = useState(false);
+  const [loadingChampionshipScoring, setLoadingChampionshipScoring] = useState(false);
+  const [savingChampionshipScoring, setSavingChampionshipScoring] = useState(false);
+  const [championshipScoringMessage, setChampionshipScoringMessage] = useState('');
+  const [generatingStandingsImage, setGeneratingStandingsImage] = useState(false);
+  const [standingsImageMessage, setStandingsImageMessage] = useState('');
+  const [savingChampionshipChampion, setSavingChampionshipChampion] = useState(false);
+  const [championshipChampionMessage, setChampionshipChampionMessage] = useState('');
+  const [resultDebutBallasts, setResultDebutBallasts] = useState({});
+  const [savingResultDebutBallasts, setSavingResultDebutBallasts] = useState(false);
+  const [resultDebutBallastMessage, setResultDebutBallastMessage] = useState('');
   const [resultAchievementModal, setResultAchievementModal] = useState(null);
   const [resultAchievementDraft, setResultAchievementDraft] = useState({});
   const [resultSanctionModal, setResultSanctionModal] = useState(null);
@@ -943,10 +1026,16 @@ export default function Admin() {
   useEffect(() => {
     if (!resultRound) {
       setResultAttendancePoints('');
+      setResultSprintMultiplier('1');
+      setResultFinalMultiplier('1');
+      setResultMultiplierMessage('');
       return;
     }
     const savedValues = [...new Set(savedResultRoundResults.map(result => Number(result.presentismo || 0)))];
     setResultAttendancePoints(savedValues.length === 1 ? String(savedValues[0]) : '');
+    setResultSprintMultiplier(String(Number(resultRound.multiplicador_sprint ?? 1)));
+    setResultFinalMultiplier(String(Number(resultRound.multiplicador_final ?? 1)));
+    setResultMultiplierMessage('');
   }, [resultRound, savedResultRoundResults]);
 
   const resultSheetRows = useMemo(() => {
@@ -1040,7 +1129,8 @@ export default function Admin() {
 
   const resultBallastStandings = useMemo(() => resultChampionshipStandings.map(standing => {
     const ballastRounds = new Map();
-    let ballastTotal = 0;
+    const debutBallast = parseResultPoints(resultDebutBallasts[String(standing.idpiloto)]);
+    let ballastTotal = debutBallast;
 
     resultBallastRounds.forEach(round => {
       const result = savedResults.find(item => !item._delete
@@ -1061,8 +1151,8 @@ export default function Admin() {
       });
     });
 
-    return { ...standing, ballastRounds, ballastTotal };
-  }), [resultBallastRounds, resultChampionshipStandings, savedResults]);
+    return { ...standing, ballastRounds, debutBallast, ballastTotal };
+  }).sort((a, b) => String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' })), [resultBallastRounds, resultChampionshipStandings, resultDebutBallasts, savedResults]);
 
   useEffect(() => {
     if (!resultRounds.length) {
@@ -1115,6 +1205,52 @@ export default function Admin() {
         if (active) setLoadingChampionshipWarnings(false);
       });
 
+    return () => { active = false; };
+  }, [resultChampionshipId]);
+
+  useEffect(() => {
+    let active = true;
+    setChampionshipScoringMessage('');
+    if (!resultChampionshipId) {
+      setChampionshipScoringRows([]);
+      setShowChampionshipScoring(false);
+      return undefined;
+    }
+    setLoadingChampionshipScoring(true);
+    championshipsApi.getScoring(resultChampionshipId)
+      .then(response => {
+        if (!active) return;
+        setChampionshipScoringRows((response.data.data || []).map(row => ({
+          posicion: String(row.posicion),
+          ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, toScoringInputValue(row[field.pointsField])])),
+        })));
+      })
+      .catch(error => {
+        if (!active) return;
+        setChampionshipScoringRows([]);
+        setChampionshipScoringMessage(error.response?.data?.error || 'No se pudo cargar la escala de puntajes.');
+      })
+      .finally(() => { if (active) setLoadingChampionshipScoring(false); });
+    return () => { active = false; };
+  }, [resultChampionshipId]);
+
+  useEffect(() => {
+    let active = true;
+    setResultDebutBallastMessage('');
+    if (!resultChampionshipId) {
+      setResultDebutBallasts({});
+      return undefined;
+    }
+    championshipsApi.getDebutBallasts(resultChampionshipId)
+      .then(response => {
+        if (!active) return;
+        setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), toScoringInputValue(row.kilos)])));
+      })
+      .catch(error => {
+        if (!active) return;
+        setResultDebutBallasts({});
+        setResultDebutBallastMessage(error.response?.data?.error || 'No se pudieron cargar los lastres debut.');
+      });
     return () => { active = false; };
   }, [resultChampionshipId]);
 
@@ -2195,10 +2331,76 @@ export default function Admin() {
     return resultRegisteredDrivers.find(driver => normalizeAssettoDriverName(driver.nombre) === normalizedName) || null;
   };
 
+  const buildResultSessionWorkspace = sessionKey => {
+    if (!resultRound) return null;
+    const session = assettoSessionOptions.find(option => option.key === sessionKey);
+    if (!session) return null;
+
+    const qualifying = sessionKey.startsWith('qualy');
+    const sessionRows = resultRoundResults
+      .map((result, index) => ({
+        result,
+        index,
+        driverName: String(result[session.pilotField] || result.piloto || '').trim(),
+      }))
+      .filter(entry => entry.driverName)
+      .sort((a, b) => compareResultPositions(a.result, b.result, session.positionField));
+
+    if (!sessionRows.length) return null;
+
+    const entries = sessionRows.map((entry, index) => {
+      const driver = findRegisteredResultDriver(entry.driverName);
+      const positionLabel = String(entry.result[session.positionField] || (qualifying ? 'S/TIEMPO' : 'NO LARGÓ')).trim();
+      const normalizedPosition = positionLabel
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleUpperCase('es-AR');
+      const lapMatch = positionLabel.match(/^\(\s*(\d+)\s*V\s*\)$/i);
+      const hasTime = normalizedPosition !== 'S/TIEMPO';
+      const started = normalizedPosition !== 'NO LARGO';
+
+      return {
+        key: `planilla:${sessionKey}:${driver?.id || normalizeAssettoDriverName(entry.driverName)}:${index}`,
+        sourcePosition: index + 1,
+        driverName: driver?.nombre || entry.driverName,
+        normalizedName: normalizeAssettoDriverName(driver?.nombre || entry.driverName),
+        driverGuid: '',
+        carId: '',
+        carModel: [driver?.marca, driver?.modelo].filter(Boolean).join(' '),
+        laps: qualifying ? 1 : (started ? (lapMatch ? Number(lapMatch[1]) : 100) : 0),
+        totalTimeMs: started ? (index + 1) * 1000 : null,
+        bestLapMs: hasTime ? (index + 1) * 1000 : null,
+        automaticPenaltyMs: 0,
+        serverDisqualified: normalizedPosition === 'DQ',
+        raw: null,
+      };
+    });
+
+    const sanctions = {};
+    sessionRows.forEach((entry, index) => {
+      const details = sessionKey === 'sprint' || sessionKey === 'final'
+        ? entry.result[`_sanciones_detalle_${sessionKey}`]
+        : parseResultSanctionDetails(entry.result.sanciones_detalle)?.[sessionKey];
+      if (Array.isArray(details) && details.length) {
+        sanctions[entries[index].key] = { items: details };
+        if (aggregateAssettoSanctions({ items: details }).dq) entries[index].serverDisqualified = false;
+      }
+    });
+
+    return {
+      fileName: `Planilla de Fecha ${resultRound.ronda}`,
+      metadata: { source: 'planilla' },
+      entries,
+      sanctions,
+      orderedRows: orderAssettoResults(entries, sanctions, sessionKey),
+    };
+  };
+
   const applyAssettoSessionToGrid = (sessionKey, orderedRows) => {
     if (!resultRound) return;
     const session = assettoSessionOptions.find(option => option.key === sessionKey);
     if (!session) return;
+    const sessionScoringField = resultScoringByPosition[session.positionField];
 
     const roundNumber = Number(resultRound.ronda);
     const outsideRound = results.filter(result => Number(result.ronda) !== roundNumber);
@@ -2208,6 +2410,7 @@ export default function Admin() {
         ...result,
         _key: result._key || (result.id ? `id-${result.id}` : `round-${roundNumber}-${index}`),
         [session.positionField]: '',
+        ...(sessionScoringField ? { [sessionScoringField.pointsField]: '' } : {}),
         ...(session.pilotField !== 'piloto' ? { [session.pilotField]: '' } : {}),
         [session.sanctionField]: '',
       }));
@@ -2249,12 +2452,13 @@ export default function Admin() {
       const currentResult = roundRows[resultIndex];
       const sanction = entry.sanction || emptyAssettoSanction();
       const sanctionDetails = parseResultSanctionDetails(currentResult.sanciones_detalle);
+      const scoringPatch = getScoringPatch(session.positionField, entry.positionLabel);
       roundRows[resultIndex] = {
         ...currentResult,
         idpiloto: currentResult.idpiloto || (driver ? Number(driver.id) : null),
         piloto: currentResult.piloto || driver?.nombre || entry.driverName,
         [session.pilotField]: driver?.nombre || entry.driverName,
-        [session.positionField]: entry.positionLabel,
+        ...scoringPatch,
         [session.sanctionField]: String(entry.sanctionLabel || '').slice(0, 500),
         sanciones_detalle: {
           ...sanctionDetails,
@@ -2279,7 +2483,7 @@ export default function Admin() {
         roundRows[index] = {
           ...result,
           [importedSession.pilotField]: pilotName,
-          [importedSession.positionField]: missingPosition,
+          ...getScoringPatch(importedSession.positionField, missingPosition),
         };
       });
     });
@@ -2330,10 +2534,13 @@ export default function Admin() {
     }
   };
 
-  const openAssettoSanctions = (sessionKey, entryKey = '') => {
-    const imported = resultImportedSessions[sessionKey];
+  const openAssettoSanctions = (sessionKey, entryKey = '', providedWorkspace = null) => {
+    const imported = resultImportedSessions[sessionKey] || providedWorkspace || buildResultSessionWorkspace(sessionKey);
     const selectedEntry = imported?.orderedRows.find(entry => entry.key === entryKey) || imported?.orderedRows[0];
     if (!imported || !selectedEntry) return;
+    if (!resultImportedSessions[sessionKey]) {
+      setResultImportedSessions(current => ({ ...current, [sessionKey]: imported }));
+    }
     setAssettoSanctionModal({ sessionKey, entryKey: selectedEntry.key });
     setAssettoSanctionDraft(emptyAssettoSanction());
     setAssettoSanctionEdit(null);
@@ -2419,18 +2626,38 @@ export default function Admin() {
     if (!imported) return;
     const items = getAssettoSanctionItems(imported.sanctions[entryKey]);
     if (!items[index]) return;
-    items[index] = {
-      ...items[index],
+    const normalizedEdit = {
       type: assettoSanctionEdit.type === 'SANCIÓN DE OFICIO' ? 'SANCIÓN DE OFICIO' : 'DENUNCIA',
+      minute: Math.max(0, Math.trunc(Number(assettoSanctionEdit.minute) || 0)),
+      second: Math.min(59, Math.max(0, Math.trunc(Number(assettoSanctionEdit.second) || 0))),
+      time: Math.max(0, Number(assettoSanctionEdit.time) || 0),
+      positions: Math.max(0, Math.trunc(Number(assettoSanctionEdit.positions) || 0)),
+      warnings: Math.max(0, Math.trunc(Number(assettoSanctionEdit.warnings) || 0)),
+      ballast: Math.max(0, Math.trunc(Number(assettoSanctionEdit.ballast) || 0)),
+      dq: Boolean(assettoSanctionEdit.dq),
+      noSanction: Boolean(assettoSanctionEdit.noSanction),
       description: String(assettoSanctionEdit.description || '').trim(),
     };
+    if (normalizedEdit.minute === 0 && normalizedEdit.second === 0) {
+      setAssettoSanctionMessage('Indicá el minuto y segundo de la maniobra. No puede quedar en 0:00.');
+      return;
+    }
+    const hasSanction = normalizedEdit.dq || normalizedEdit.noSanction
+      || normalizedEdit.time > 0 || normalizedEdit.positions > 0
+      || normalizedEdit.warnings > 0 || normalizedEdit.ballast !== 0
+      || normalizedEdit.description;
+    if (!hasSanction) {
+      setAssettoSanctionMessage('Ingresá al menos una medida o una descripción para guardar los cambios.');
+      return;
+    }
+    items[index] = normalizedEdit;
     const sanctions = { ...imported.sanctions, [entryKey]: { items } };
     const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
     applyAssettoSessionToGrid(sessionKey, orderedRows);
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
-    setResultMessage('Tipo y descripción de la sanción actualizados.');
+    setResultMessage('Sanción actualizada y posiciones recalculadas. Presioná Guardar para confirmar.');
   };
 
   const addChampionshipWarningLevel = () => {
@@ -2471,6 +2698,345 @@ export default function Admin() {
     }
   };
 
+  const getScoringPatch = (positionField, value, multiplierOverride = null) => {
+    const scoringField = resultScoringByPosition[positionField];
+    const normalizedPosition = String(value ?? '').trim().toLocaleUpperCase('es-AR');
+    if (!scoringField) return { [positionField]: normalizedPosition };
+    const numericPosition = parseNumericPosition(normalizedPosition);
+    const configuredRow = numericPosition
+      ? championshipScoringRows.find(row => Number(row.posicion) === numericPosition)
+      : null;
+    const multiplier = scoringField.pointsField === 'pts_sprint'
+      ? Number(multiplierOverride?.sprint ?? resultRound?.multiplicador_sprint ?? 1)
+      : scoringField.pointsField === 'pts_final'
+        ? Number(multiplierOverride?.final ?? resultRound?.multiplicador_final ?? 1)
+        : 1;
+    const basePoints = configuredRow ? parseResultPoints(configuredRow[scoringField.pointsField]) : 0;
+    const multipliedPoints = Math.round((basePoints * (Number.isFinite(multiplier) ? multiplier : 1)) * 1000) / 1000;
+    return {
+      [positionField]: normalizedPosition,
+      [scoringField.pointsField]: configuredRow ? String(multipliedPoints) : '',
+    };
+  };
+
+  const addChampionshipScoringRow = () => {
+    const nextPosition = Math.max(0, ...championshipScoringRows.map(row => Number(row.posicion) || 0)) + 1;
+    setChampionshipScoringRows(current => [...current, {
+      posicion: String(nextPosition),
+      ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, ''])),
+    }]);
+    setChampionshipScoringMessage('');
+  };
+
+  const updateChampionshipScoringRow = (index, field, value) => {
+    setChampionshipScoringRows(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
+    setChampionshipScoringMessage('');
+  };
+
+  const removeChampionshipScoringRow = index => {
+    setChampionshipScoringRows(current => current.filter((_, rowIndex) => rowIndex !== index));
+    setChampionshipScoringMessage('Recordá guardar para confirmar la eliminación.');
+  };
+
+  const handleChampionshipScoringKeyDown = (event, rowIndex, field) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const direction = event.shiftKey ? -1 : 1;
+    const nextRowIndex = rowIndex + direction;
+    if (nextRowIndex < 0) return;
+
+    const focusCell = targetRow => {
+      const input = document.querySelector(`[data-scoring-cell="${targetRow}:${field}"]`);
+      input?.focus();
+      input?.select();
+    };
+    if (nextRowIndex < championshipScoringRows.length) {
+      focusCell(nextRowIndex);
+      return;
+    }
+    addChampionshipScoringRow();
+    window.requestAnimationFrame(() => focusCell(nextRowIndex));
+  };
+
+  const saveChampionshipScoring = async () => {
+    if (!resultChampionshipId) return;
+    setSavingChampionshipScoring(true);
+    setChampionshipScoringMessage('');
+    try {
+      const response = await championshipsApi.saveScoring(resultChampionshipId, championshipScoringRows);
+      setChampionshipScoringRows((response.data.data || []).map(row => ({
+        posicion: String(row.posicion),
+        ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, toScoringInputValue(row[field.pointsField])])),
+      })));
+      setChampionshipScoringMessage(response.data.message || 'Escala guardada correctamente.');
+    } catch (error) {
+      setChampionshipScoringMessage(error.response?.data?.error || 'No se pudo guardar la escala de puntajes.');
+    } finally {
+      setSavingChampionshipScoring(false);
+    }
+  };
+
+  const saveResultDebutBallasts = async () => {
+    if (!resultChampionshipId) return;
+    setSavingResultDebutBallasts(true);
+    setResultDebutBallastMessage('');
+    try {
+      const lastres = Object.entries(resultDebutBallasts).map(([idpiloto, kilos]) => ({ idpiloto: Number(idpiloto), kilos }));
+      const response = await championshipsApi.saveDebutBallasts(resultChampionshipId, lastres);
+      setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), toScoringInputValue(row.kilos)])));
+      setResultDebutBallastMessage(response.data.message || 'Lastres debut guardados correctamente.');
+    } catch (error) {
+      setResultDebutBallastMessage(error.response?.data?.error || 'No se pudieron guardar los lastres debut.');
+    } finally {
+      setSavingResultDebutBallasts(false);
+    }
+  };
+
+  const setChampionshipChampion = async (standing, checked) => {
+    if (!resultChampionshipId || savingChampionshipChampion) return;
+    if (Object.keys(dirtyResults).length) {
+      setChampionshipChampionMessage('Primero guardá los cambios pendientes de la planilla y después marcá al campeón.');
+      return;
+    }
+    const driverResults = savedResults
+      .filter(result => String(result.idpiloto) === String(standing.idpiloto) && result.id)
+      .sort((a, b) => Number(b.ronda) - Number(a.ronda));
+    const targetResult = checked
+      ? driverResults[0]
+      : driverResults.find(result => Boolean(Number(result.campeon)));
+    if (!targetResult) {
+      setChampionshipChampionMessage('El piloto necesita al menos un resultado guardado para marcarlo como campeón.');
+      return;
+    }
+
+    setSavingChampionshipChampion(true);
+    setChampionshipChampionMessage('');
+    try {
+      await resultsApi.saveBulk([{
+        id: targetResult.id,
+        data: {
+          idcampeonato: Number(resultChampionshipId),
+          campeon: checked ? 1 : 0,
+        },
+      }]);
+      const response = await resultsApi.getAll({ idcampeonato: resultChampionshipId });
+      const savedRows = response.data.data ?? [];
+      setResults(buildEditableResultRows(savedRows));
+      setSavedResults(savedRows);
+      setDirtyResults({});
+      setChampionshipChampionMessage(checked
+        ? `${standing.piloto} quedó marcado como campeón del campeonato.`
+        : 'La marca de campeón fue eliminada.');
+    } catch (error) {
+      setChampionshipChampionMessage(error.response?.data?.error || 'No se pudo actualizar el campeón del campeonato.');
+    } finally {
+      setSavingChampionshipChampion(false);
+    }
+  };
+
+  const generateChampionshipStandingsImage = async () => {
+    const standings = resultChampionshipStandings;
+    if (!resultChampionship || !standings.length) {
+      setStandingsImageMessage('Todavía no hay pilotos para generar las imágenes del campeonato.');
+      return;
+    }
+
+    setGeneratingStandingsImage(true);
+    setStandingsImageMessage('');
+    try {
+      await document.fonts?.ready;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1080;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('El navegador no pudo crear la imagen.');
+
+      const completedRounds = resultRounds.filter(round => savedResults.some(result =>
+        !result._delete && String(result.ronda) === String(round.ronda)
+      )).length;
+      const nextRound = resultRounds.find(round => !savedResults.some(result =>
+        !result._delete && String(result.ronda) === String(round.ronda)
+      )) || null;
+      const [categoryLogo, cadpoLogo, ...carLogos] = await Promise.all([
+        loadCanvasImage(resultChampionship.categoria_logo),
+        loadCanvasImage('/logo.png'),
+        ...standings.map(standing => loadCanvasImage(standing.autoLogo)),
+      ]);
+      const pages = Array.from({ length: Math.ceil(standings.length / 10) }, (_, index) => standings.slice(index * 10, (index + 1) * 10));
+      const leaderTotal = Number(standings[0]?.total || 0);
+      const achievementsByDriver = savedResults.reduce((map, result) => {
+        const driverKey = String(result.idpiloto);
+        const current = map.get(driverKey) || { poles: 0, sprints: 0, finals: 0 };
+        current.poles += Number(Boolean(Number(result.pole_sprint))) + Number(Boolean(Number(result.pole_final)));
+        current.sprints += Number(Boolean(Number(result.ganador_sprint)));
+        current.finals += Number(Boolean(Number(result.ganador_final)));
+        map.set(driverKey, current);
+        return map;
+      }, new Map());
+      const safeCategory = String(resultChampionship.categoria || 'campeonato')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .toLocaleLowerCase('es-AR');
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        const pageStandings = pages[pageIndex];
+        context.clearRect(0, 0, 1920, 1080);
+        context.globalAlpha = 1;
+        context.textAlign = 'left';
+        context.textBaseline = 'alphabetic';
+        context.font = '400 16px Arial, sans-serif';
+
+      const background = context.createLinearGradient(0, 0, 1920, 1080);
+      background.addColorStop(0, '#05070a');
+      background.addColorStop(0.55, '#11151b');
+      background.addColorStop(1, '#07090d');
+      context.fillStyle = background;
+      context.fillRect(0, 0, 1920, 1080);
+
+      const redGlow = context.createRadialGradient(1550, 100, 20, 1550, 100, 850);
+      redGlow.addColorStop(0, 'rgba(220, 38, 38, 0.27)');
+      redGlow.addColorStop(1, 'rgba(220, 38, 38, 0)');
+      context.fillStyle = redGlow;
+      context.fillRect(0, 0, 1920, 1080);
+      context.fillStyle = '#dc2626';
+      context.fillRect(0, 0, 18, 1080);
+      context.fillStyle = 'rgba(220, 38, 38, 0.15)';
+      context.beginPath();
+      context.moveTo(1420, 0);
+      context.lineTo(1920, 0);
+      context.lineTo(1920, 210);
+      context.closePath();
+      context.fill();
+
+      drawContainedCanvasImage(context, categoryLogo, 70, 45, 150, 150);
+      context.fillStyle = '#ef4444';
+      context.font = '700 26px Arial, sans-serif';
+      context.fillText('TABLA DEL CAMPEONATO', 250, 82);
+      context.fillStyle = '#ffffff';
+      context.font = '900 66px Arial Black, Arial, sans-serif';
+      context.fillText(fitCanvasText(context, String(resultChampionship.categoria || '').toLocaleUpperCase('es-AR'), 1120), 250, 151);
+      context.fillStyle = '#9ca3af';
+      context.font = '700 26px Arial, sans-serif';
+      context.fillText(`TEMPORADA ${resultChampionship.temporada} · ${resultChampionship.anio}`, 252, 191);
+
+      context.textAlign = 'right';
+      context.fillStyle = '#ffffff';
+      context.font = '900 42px Arial Black, Arial, sans-serif';
+      context.fillText(`${completedRounds} FECHA${completedRounds === 1 ? '' : 'S'} CUMPLIDA${completedRounds === 1 ? '' : 'S'}`, 1815, 115);
+      context.fillStyle = '#ffffff';
+      context.font = '700 20px Arial, sans-serif';
+      const nextRoundLabel = nextRound ? `PRÓXIMA FECHA: ${nextRound.circuito}` : 'CAMPEONATO FINALIZADO';
+      context.fillText(fitCanvasText(context, nextRoundLabel, 670), 1815, 151);
+      if (nextRound) {
+        const nextRoundLocation = [nextRound.localidad, nextRound.provincia, getCountryName(nextRound.pais)].filter(Boolean).join(', ');
+        context.fillStyle = '#9ca3af';
+        context.font = '600 17px Arial, sans-serif';
+        context.fillText(fitCanvasText(context, nextRoundLocation, 670), 1815, 179);
+      }
+      drawContainedCanvasImage(context, cadpoLogo, 1670, 25, 145, 65);
+      context.textAlign = 'left';
+
+      const tableX = 70;
+      const tableWidth = 1780;
+      const headerY = 230;
+      const headerHeight = 54;
+      context.fillStyle = '#dc2626';
+      context.beginPath();
+      context.roundRect(tableX, headerY, tableWidth, headerHeight, 8);
+      context.fill();
+      context.fillStyle = '#ffffff';
+      context.font = '800 21px Arial, sans-serif';
+      context.fillText('POS.', 100, 265);
+      context.fillText('PILOTO', 310, 265);
+      context.textAlign = 'right';
+      context.fillText('PUNTOS', 1260, 265);
+      context.fillText('DIFERENCIA', 1480, 265);
+      context.font = '800 17px Arial, sans-serif';
+      context.fillText('TRAYECTORIA', 1810, 265);
+      context.textAlign = 'left';
+
+      const rowStart = 296;
+      const rowHeight = 70;
+      pageStandings.forEach((standing, index) => {
+        const y = rowStart + index * rowHeight;
+        context.fillStyle = index % 2 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.075)';
+        context.beginPath();
+        context.roundRect(tableX, y, tableWidth, rowHeight - 7, 7);
+        context.fill();
+        if (standing.position <= 3) {
+          context.fillStyle = standing.position === 1 ? '#facc15' : standing.position === 2 ? '#d1d5db' : '#c56a30';
+          context.fillRect(tableX, y, 8, rowHeight - 7);
+        }
+
+        context.fillStyle = standing.position === 1 ? '#facc15' : standing.position === 2 ? '#e5e7eb' : standing.position === 3 ? '#fb923c' : '#9ca3af';
+        context.font = '900 38px Arial Black, Arial, sans-serif';
+        context.fillText(`${standing.position}°`, 105, y + 45);
+        drawContainedCanvasImage(context, carLogos[(pageIndex * 10) + index], 190, y + 8, 90, 47);
+
+        context.fillStyle = '#ffffff';
+        context.font = '800 27px Arial, sans-serif';
+        context.fillText(fitCanvasText(context, standing.piloto, standing.campeon ? 560 : 700), 310, y + 30);
+        if (standing.campeon) {
+          context.fillStyle = '#facc15';
+          context.font = '900 16px Arial, sans-serif';
+          context.fillText('CAMPEÓN', 900, y + 29);
+        }
+        context.fillStyle = '#7f8794';
+        context.font = '600 17px Arial, sans-serif';
+        context.fillText(fitCanvasText(context, [standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar', 700), 310, y + 53);
+
+        context.textAlign = 'right';
+        context.fillStyle = '#22d3ee';
+        context.font = '900 34px Arial Black, Arial, sans-serif';
+        context.fillText(formatResultPoints(standing.total), 1260, y + 44);
+        const difference = Math.max(0, Math.round((leaderTotal - Number(standing.total || 0)) * 100) / 100);
+        context.fillStyle = '#d1d5db';
+        context.font = '800 21px Arial, sans-serif';
+        context.fillText(standing.position === 1 ? '' : formatResultPoints(difference), 1480, y + 43);
+        const achievements = achievementsByDriver.get(String(standing.idpiloto)) || { poles: 0, sprints: 0, finals: 0 };
+        const achievementLabel = [
+          achievements.poles ? `${achievements.poles} POLE${achievements.poles === 1 ? '' : 'S'}` : '',
+          achievements.sprints ? `${achievements.sprints} SPRINT` : '',
+          achievements.finals ? `${achievements.finals} FINAL${achievements.finals === 1 ? '' : 'ES'}` : '',
+        ].filter(Boolean).join(' • ');
+        context.fillStyle = '#ffffff';
+        context.font = '700 14px Arial, sans-serif';
+        context.fillText(achievementLabel, 1810, y + 42);
+        context.textAlign = 'left';
+      });
+
+      context.fillStyle = '#59616d';
+      context.font = '600 18px Arial, sans-serif';
+      context.fillText('CADPO TORNEOS · Comunidad Argentina de Pilotos Online', 72, 1040);
+      context.textAlign = 'right';
+      context.fillText('www.cadpotorneos.com', 1848, 1040);
+
+      const blob = await new Promise((resolve, reject) => {
+        try {
+          canvas.toBlob(value => value ? resolve(value) : reject(new Error('No se pudo generar el archivo PNG.')), 'image/png');
+        } catch (error) {
+          reject(error);
+        }
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `posiciones-${safeCategory}-temporada-${resultChampionship.temporada}-pagina-${pageIndex + 1}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      setStandingsImageMessage(`${pages.length} imagen${pages.length === 1 ? '' : 'es'} 16:9 generada${pages.length === 1 ? '' : 's'} correctamente.`);
+    } catch (error) {
+      setStandingsImageMessage(error.message || 'No se pudo generar la imagen del campeonato.');
+    } finally {
+      setGeneratingStandingsImage(false);
+    }
+  };
+
   const toggleWarningFulfillment = async (driverId, amount, completed) => {
     if (!resultChampionshipId) return;
     const key = `${driverId}:${amount}`;
@@ -2498,6 +3064,9 @@ export default function Admin() {
     const resultKey = currentResult?._key
       || (currentResult?.id ? `id-${currentResult.id}` : `new-${standing.idpiloto}-${round.ronda}`);
     const normalizedValue = field.startsWith('pos_') ? value.toLocaleUpperCase('es-AR') : value;
+    const fieldPatch = resultScoringByPosition[field]
+      ? getScoringPatch(field, normalizedValue)
+      : { [field]: normalizedValue };
 
     setResults(current => {
       const index = current.findIndex(result =>
@@ -2508,7 +3077,7 @@ export default function Admin() {
       if (index >= 0) {
         return current.map((result, resultIndex) =>
           resultIndex === index
-            ? { ...result, _key: resultKey, [field]: normalizedValue }
+            ? { ...result, _key: resultKey, ...fieldPatch }
             : result
         );
       }
@@ -2526,7 +3095,7 @@ export default function Admin() {
           piloto: standing.piloto,
           circuito: round.circuito,
           _sheetPosition: null,
-          [field]: normalizedValue,
+          ...fieldPatch,
         },
       ];
     });
@@ -2559,6 +3128,57 @@ export default function Admin() {
     }));
     setResultCellErrors(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.endsWith(':presentismo'))));
     setResultMessage(`Se aplicaron ${attendance} puntos de presentismo a ${targetKeys.size} piloto${targetKeys.size === 1 ? '' : 's'} de la Fecha ${resultRound.ronda}. Presioná Guardar para confirmar.`);
+  };
+
+  const saveResultRoundMultipliers = async () => {
+    if (!resultRound || savingResultMultipliers) return;
+    const sprint = Number(String(resultSprintMultiplier).replace(',', '.'));
+    const final = Number(String(resultFinalMultiplier).replace(',', '.'));
+    if (!Number.isFinite(sprint) || sprint < 0 || sprint > 10 || !Number.isFinite(final) || final < 0 || final > 10) {
+      setResultMultiplierMessage('Los multiplicadores deben ser números entre 0 y 10.');
+      return;
+    }
+
+    setSavingResultMultipliers(true);
+    setResultMultiplierMessage('');
+    try {
+      await eventsApi.updateMultipliers(resultChampionshipId, resultRound.ronda, {
+        multiplicador_sprint: sprint,
+        multiplicador_final: final,
+      });
+      setEvents(current => current.map(event => (
+        String(event.idcampeonato) === String(resultChampionshipId) && String(event.ronda) === String(resultRound.ronda)
+          ? { ...event, multiplicador_sprint: sprint, multiplicador_final: final }
+          : event
+      )));
+
+      const targetKeys = new Set(resultRoundResults
+        .filter(result => String(result.piloto || '').trim())
+        .map(result => result._key || `id-${result.id}`));
+      setResults(current => current.map(result => {
+        const resultKey = result._key || `id-${result.id}`;
+        if (!targetKeys.has(resultKey)) return result;
+        return {
+          ...result,
+          _key: resultKey,
+          ...getScoringPatch('pos_sprint', result.pos_sprint, { sprint, final }),
+          ...getScoringPatch('pos_final', result.pos_final, { sprint, final }),
+        };
+      }));
+      if (targetKeys.size) {
+        setDirtyResults(current => ({
+          ...current,
+          ...Object.fromEntries([...targetKeys].map(key => [key, true])),
+        }));
+      }
+      setResultMessage(targetKeys.size
+        ? `Fecha ${resultRound.ronda}: Sprint x${formatResultPoints(sprint)} y Final x${formatResultPoints(final)}. Se recalcularon ${targetKeys.size} piloto${targetKeys.size === 1 ? '' : 's'}; presioná Guardar para confirmar los puntos.`
+        : `Multiplicadores guardados para la Fecha ${resultRound.ronda}. Se aplicarán cuando cargues los resultados.`);
+    } catch (error) {
+      setResultMultiplierMessage(error.response?.data?.error || 'No se pudieron guardar los multiplicadores de la fecha.');
+    } finally {
+      setSavingResultMultipliers(false);
+    }
   };
 
   const openResultSanctionModal = result => {
@@ -2784,8 +3404,10 @@ export default function Admin() {
         rowChanged = true;
       }
 
+      const pastedColumnKeys = new Set();
       for (let sourceColumnIndex = 0; sourceColumnIndex < Math.min(sourceCells.length, maxColumns); sourceColumnIndex += 1) {
         const column = resultGridColumns[startColumn + sourceColumnIndex];
+        pastedColumnKeys.add(column.key);
         const rawValue = String(sourceCells[sourceColumnIndex] ?? '').trim();
         if (column.type === 'pilot') {
           const currentValue = nextResult[column.key] ?? (column.key === 'piloto' ? '' : nextResult.piloto) ?? '';
@@ -2810,6 +3432,16 @@ export default function Admin() {
           rowChanged = true;
         }
       }
+
+      resultScoringFields.forEach(scoringField => {
+        if (!pastedColumnKeys.has(scoringField.positionField) || pastedColumnKeys.has(scoringField.pointsField)) return;
+        const scoringPatch = getScoringPatch(scoringField.positionField, nextResult[scoringField.positionField]);
+        const nextPoints = scoringPatch[scoringField.pointsField];
+        if (String(nextResult[scoringField.pointsField] ?? '') !== String(nextPoints ?? '')) {
+          nextResult[scoringField.pointsField] = nextPoints;
+          rowChanged = true;
+        }
+      });
 
       if (!rowChanged) continue;
       const resultKey = nextResult._key || `id-${nextResult.id}`;
@@ -2958,6 +3590,14 @@ export default function Admin() {
         if (/^-?\d*[.,]?\d*$/.test(String(result[field] ?? '').trim())) return;
         const message = `${label} debe ser un número y puede ser negativo.`;
         validationErrors[`${resultKey}:${field}`] = message;
+        validationMessages.push(message);
+      });
+      resultScoringFields.forEach(scoringField => {
+        const position = String(result[scoringField.positionField] ?? '').trim();
+        const points = parseResultPoints(result[scoringField.pointsField]);
+        if (!position || parseNumericPosition(position) || points === 0) return;
+        const message = `${scoringField.label}: no se pueden asignar puntos a una posición no numérica (${position}).`;
+        validationErrors[`${resultKey}:${scoringField.pointsField}`] = message;
         validationMessages.push(message);
       });
     }
@@ -4384,9 +5024,10 @@ export default function Admin() {
               {projectMessage ? <p className="border border-racing-border bg-black/30 p-3 text-sm text-gray-300">{projectMessage}</p> : null}
             </form>
           </section>
-          <section className="space-y-10">
-            {['categoria', 'circuito'].map(type => { const items = projects.filter(project => project.tipo === type); return <div key={type}><div className="mb-4 flex items-center justify-between border-b border-racing-border pb-3"><h2 className="font-racing text-3xl font-bold uppercase text-white">{type === 'categoria' ? 'Categorías' : 'Circuitos'}</h2><span className="text-xs font-bold uppercase text-gray-500">{items.length} proyecto{items.length === 1 ? '' : 's'}</span></div><div className="space-y-5">{items.map(project => <article key={project.id} className={`card-glass overflow-hidden border-l-4 ${project.activo ? 'border-l-racing-red' : 'border-l-gray-700 opacity-70'}`}><div className="p-5"><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-racing text-2xl font-bold uppercase text-white">{project.titulo}</h3><span className={`px-2 py-1 text-[9px] font-bold uppercase ${project.activo ? 'bg-racing-red text-white' : 'bg-gray-700 text-gray-300'}`}>{project.activo ? 'Visible' : 'Oculto'}</span></div>{project.descripcion ? <p className="mt-3 text-sm leading-relaxed text-gray-400">{project.descripcion}</p> : null}</div><div className="flex shrink-0 gap-2"><button type="button" onClick={() => editProject(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red" aria-label={`Editar ${project.titulo}`}><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteProject(project)} className="flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${project.titulo}`}><TrashIcon className="h-4 w-4"/></button></div></div></div><div className="grid grid-cols-2 gap-2 border-t border-racing-border bg-black/20 p-4 sm:grid-cols-3 2xl:grid-cols-4">{project.fotos?.map(photo => <div key={photo.id} className="group relative aspect-video overflow-hidden bg-black"><img src={photo.imagen} alt="" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteProjectPhoto(project, photo)} className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center bg-black/85 text-white hover:bg-racing-red sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar imagen"><TrashIcon className="h-4 w-4"/></button></div>)}{!project.fotos?.length ? <p className="col-span-full py-5 text-center text-xs text-gray-600">Sin imágenes cargadas.</p> : null}</div></article>)}{!items.length ? <div className="card-glass border border-dashed border-racing-border py-12 text-center text-sm text-gray-600">No hay proyectos de este tipo.</div> : null}</div></div>; })}
-          </section>
+          <div className="space-y-10">
+            <AdminProjectList type="categoria" projects={projects} onEdit={editProject} onDelete={deleteProject} onDeletePhoto={deleteProjectPhoto}/>
+            <AdminProjectList type="circuito" projects={projects} onEdit={editProject} onDelete={deleteProject} onDeletePhoto={deleteProjectPhoto}/>
+          </div>
         </div>
       );
     }
@@ -4702,6 +5343,8 @@ export default function Admin() {
                       setResultRoundId('');
                       setResultSheetSize(35);
                       setResultGridSelection(null);
+                      setStandingsImageMessage('');
+                      setChampionshipChampionMessage('');
                     }}
                     className="input-field mt-2"
                     disabled={savingResults}
@@ -4756,6 +5399,15 @@ export default function Admin() {
                   {resultChampionshipId ? (
                     <button
                       type="button"
+                      onClick={() => setShowChampionshipScoring(true)}
+                      className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-cyan-400/50 bg-cyan-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400 hover:text-black"
+                    >
+                      <TrophyIcon className="h-4 w-4" /> Puntajes
+                    </button>
+                  ) : null}
+                  {resultChampionshipId ? (
+                    <button
+                      type="button"
                       onClick={() => setShowChampionshipWarnings(true)}
                       className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-amber-400/50 bg-amber-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400 hover:text-black"
                     >
@@ -4790,31 +5442,36 @@ export default function Admin() {
                     <ArrowUpTrayIcon className="h-4 w-4" /> Cargar archivo
                   </button>
                 </div>
-                <p className="max-w-xl text-xs leading-relaxed text-gray-500">El archivo se muestra en la grilla y sigue siendo editable. Las sanciones recalculan las posiciones antes de guardar.</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Multiplicadores de la Fecha {resultRound.ronda}</p>
+                  <div className="mt-1 flex flex-wrap items-end gap-2">
+                    <label className="w-24"><span className="text-[8px] font-bold uppercase text-gray-500">Sprint</span><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-violet-300">×</span><input type="number" min="0" max="10" step="0.1" value={resultSprintMultiplier} onChange={event => { setResultSprintMultiplier(event.target.value); setResultMultiplierMessage(''); }} className="input-field h-10 py-0 pl-6 text-center font-racing text-sm"/></div></label>
+                    <label className="w-24"><span className="text-[8px] font-bold uppercase text-gray-500">Final</span><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-violet-300">×</span><input type="number" min="0" max="10" step="0.1" value={resultFinalMultiplier} onChange={event => { setResultFinalMultiplier(event.target.value); setResultMultiplierMessage(''); }} className="input-field h-10 py-0 pl-6 text-center font-racing text-sm"/></div></label>
+                    <button type="button" onClick={saveResultRoundMultipliers} disabled={savingResultMultipliers} className="h-10 border border-violet-400/50 bg-violet-400/[0.07] px-3 text-[9px] font-bold uppercase tracking-wider text-violet-300 transition hover:bg-violet-400 hover:text-black disabled:opacity-40">{savingResultMultipliers ? 'Aplicando...' : 'Aplicar'}</button>
+                  </div>
+                  {resultMultiplierMessage ? <p className="mt-1 text-[9px] font-semibold text-red-300">{resultMultiplierMessage}</p> : null}
+                </div>
               </div>
 
-              {Object.keys(resultImportedSessions).length ? (
-                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                   {assettoSessionOptions.map(option => {
-                    const imported = resultImportedSessions[option.key];
-                    if (!imported) return null;
-                    const sanctioned = Object.values(imported.sanctions).filter(sanction => getAssettoSanctionItems(sanction).length > 0).length;
-                    const unmatched = imported.orderedRows.filter(entry => !findRegisteredResultDriver(entry.driverName)).length;
+                    const imported = resultImportedSessions[option.key] || buildResultSessionWorkspace(option.key);
+                    const sanctioned = Object.values(imported?.sanctions || {}).filter(sanction => getAssettoSanctionItems(sanction).length > 0).length;
+                    const unmatched = (imported?.orderedRows || []).filter(entry => !findRegisteredResultDriver(entry.driverName)).length;
                     return (
                       <div key={option.key} className="flex items-center justify-between gap-3 border border-racing-border bg-racing-dark px-3 py-2">
                         <div className="min-w-0">
                           <p className="truncate text-[10px] font-bold uppercase text-white">{option.label}</p>
-                          <p className="truncate text-[10px] text-gray-500" title={imported.fileName}>{imported.fileName} · {imported.orderedRows.length} pilotos</p>
+                          <p className="truncate text-[10px] text-gray-500" title={imported?.fileName}>{imported ? `${imported.fileName} · ${imported.orderedRows.length} pilotos` : 'Sin pilotos cargados'}</p>
                           {unmatched ? <p className="text-[9px] font-bold uppercase text-amber-400">{unmatched} sin vincular</p> : null}
                         </div>
-                        <button type="button" onClick={() => openAssettoSanctions(option.key)} className={`inline-flex h-8 shrink-0 items-center gap-1.5 border px-2 text-[9px] font-bold uppercase transition ${sanctioned ? 'border-red-400/70 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-400 hover:border-red-400 hover:text-red-300'}`}>
+                        <button type="button" onClick={() => openAssettoSanctions(option.key, '', imported)} disabled={!imported?.orderedRows.length} className={`inline-flex h-8 shrink-0 items-center gap-1.5 border px-2 text-[9px] font-bold uppercase transition disabled:cursor-not-allowed disabled:opacity-35 ${sanctioned ? 'border-red-400/70 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-400 hover:border-red-400 hover:text-red-300'}`}>
                           <ExclamationTriangleIcon className="h-3.5 w-3.5" /> Sanciones{sanctioned ? ` (${sanctioned})` : ''}
                         </button>
                       </div>
                     );
                   })}
                 </div>
-              ) : null}
             </div>
           ) : null}
 
@@ -4880,7 +5537,7 @@ export default function Admin() {
                                   ? 'border-amber-300/70 bg-amber-400/20 text-amber-300'
                                   : 'border-racing-border bg-racing-dark text-gray-500 hover:border-amber-300 hover:text-amber-300'
                                   }`}
-                                title="Marcar pole, victorias o campeón"
+                                title="Marcar poles y victorias"
                                 aria-label={`Marcas oficiales de ${result.piloto}`}
                               >
                                 <TrophyIcon className="h-4 w-4" />
@@ -4962,7 +5619,16 @@ export default function Admin() {
                   <p className="text-xs font-semibold uppercase text-amber-400">Actualización al guardar</p>
                   <h3 className="mt-1 font-racing text-xl font-bold text-white">Tabla completa del campeonato</h3>
                 </div>
-                <p className="text-xs text-gray-500">Incluye presentismo, clasificaciones, sprint y final de todas las fechas.</p>
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <p className="text-xs text-gray-500">Incluye presentismo, clasificaciones, sprint y final de todas las fechas.</p>
+                  <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                    {championshipChampionMessage ? <span className="text-[10px] font-semibold text-yellow-300">{championshipChampionMessage}</span> : null}
+                    {standingsImageMessage ? <span className="text-[10px] font-semibold text-cyan-300">{standingsImageMessage}</span> : null}
+                    <button type="button" onClick={generateChampionshipStandingsImage} disabled={generatingStandingsImage || !resultChampionshipStandings.length} className="inline-flex h-9 items-center justify-center gap-2 border border-cyan-400/50 bg-cyan-400/[0.07] px-3 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-35">
+                      <PhotoIcon className="h-4 w-4" /> {generatingStandingsImage ? 'Generando...' : 'Generar imágenes PNG'}
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-max min-w-full table-auto border-collapse text-xs">
@@ -5000,8 +5666,9 @@ export default function Admin() {
                           <div className="flex min-w-60 items-center gap-3">
                             {standing.autoLogo ? <img src={standing.autoLogo} alt={`Logo ${standing.marca || ''}`} className="h-9 w-12 shrink-0 object-contain" /> : <div className="h-9 w-12 shrink-0" />}
                             <div className="min-w-0">
-                              <p className="flex items-center gap-2 truncate font-semibold" title={standing.piloto}><span className="truncate">{standing.piloto}</span>{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[9px] font-bold uppercase text-black">Campeón</span> : null}</p>
+                              <p className="flex items-center gap-2 truncate font-semibold" title={standing.piloto}><span className="truncate">{standing.piloto}</span></p>
                               <p className="truncate text-[11px] font-normal text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p>
+                              <label className={`mt-1 inline-flex cursor-pointer items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide ${standing.campeon ? 'text-yellow-300' : 'text-gray-600 hover:text-yellow-200'}`}><input type="checkbox" checked={Boolean(standing.campeon)} disabled={savingChampionshipChampion} onChange={event => setChampionshipChampion(standing, event.target.checked)} className="h-3.5 w-3.5 accent-yellow-400 disabled:opacity-40"/><span>Campeón</span></label>
                             </div>
                           </div>
                         </td>
@@ -5031,18 +5698,19 @@ export default function Admin() {
               </div>
             </div>
             <div className="mt-10 border-y-4 border-black bg-racing-gray shadow-2xl">
-              <div className="flex flex-col gap-1 border-b border-racing-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
+              <div className="flex flex-col gap-3 border-b border-racing-border px-4 py-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
                 <div>
                   <p className="text-xs font-semibold uppercase text-orange-300">Control por campeonato</p>
                   <h3 className="mt-1 font-racing text-xl font-bold text-white">Tabla de lastres</h3>
                 </div>
-                <p className="max-w-2xl text-xs text-gray-500">Suma el lastre de Sprint, Final y sus sanciones. La última fecha queda excluida y los valores negativos descuentan kilos del total.</p>
+                <div className="flex flex-col items-start gap-2 sm:items-end"><p className="max-w-2xl text-xs text-gray-500">Suma el lastre debut, Sprint, Final y sus sanciones. La última fecha queda excluida y los valores negativos descuentan kilos del total.</p><div className="flex flex-wrap items-center justify-end gap-3">{resultDebutBallastMessage ? <span className="text-[10px] font-bold text-violet-300">{resultDebutBallastMessage}</span> : null}<button type="button" onClick={saveResultDebutBallasts} disabled={savingResultDebutBallasts} className="border border-violet-400/50 bg-violet-400/10 px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-violet-300 transition hover:bg-violet-400 hover:text-black disabled:opacity-40">{savingResultDebutBallasts ? 'Guardando...' : 'Guardar lastres debut'}</button></div></div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-max min-w-full table-auto border-collapse text-xs">
                   <thead>
                     <tr className="bg-black/45">
                       <th rowSpan={2} className="min-w-64 border border-racing-border px-3 py-2.5 text-left uppercase text-gray-400">Piloto / Auto</th>
+                      <th rowSpan={2} className="whitespace-nowrap border border-violet-400/30 bg-violet-400/10 px-3 py-2.5 text-center font-racing text-sm uppercase text-violet-200">Lastre debut</th>
                       <th rowSpan={2} className="whitespace-nowrap border border-orange-400/30 bg-orange-400/10 px-4 py-2.5 text-center font-racing text-sm uppercase text-orange-200">Total de lastre</th>
                       {resultBallastRounds.map(round => (
                         <th key={round.id} colSpan={4} className="whitespace-nowrap border border-racing-border px-3 py-3 text-center font-racing text-sm uppercase text-gray-300" title={`Fecha ${round.ronda}: ${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}>
@@ -5068,6 +5736,7 @@ export default function Admin() {
                             <div className="min-w-0"><p className="truncate font-semibold">{standing.piloto}</p><p className="truncate text-[11px] text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p></div>
                           </div>
                         </td>
+                        <td className="border border-violet-400/30 bg-violet-400/[0.06] p-1.5 text-center"><input type="number" min="0" step="5" value={resultDebutBallasts[String(standing.idpiloto)] ?? ''} onChange={event => setResultDebutBallasts(current => ({ ...current, [String(standing.idpiloto)]: event.target.value }))} className="h-9 w-24 border border-violet-400/25 bg-black/25 px-2 text-center font-racing text-base font-bold text-violet-300 outline-none focus:border-violet-300" placeholder="—" aria-label={`Lastre debut de ${standing.piloto}`}/></td>
                         <td className={`whitespace-nowrap border border-orange-400/30 bg-orange-400/[0.09] px-4 py-2 text-center font-racing text-xl font-bold ${getResultBallastClass(standing.ballastTotal)}`}>{formatResultBallast(standing.ballastTotal)}</td>
                         {resultBallastRounds.flatMap(round => {
                           const detail = standing.ballastRounds.get(String(round.ronda));
@@ -5080,12 +5749,28 @@ export default function Admin() {
                         })}
                       </tr>
                     ))}
-                    {!resultBallastStandings.length ? <tr><td colSpan={(resultBallastRounds.length * 4) + 2} className="border border-racing-border px-6 py-10 text-center text-gray-500">No hay pilotos para calcular los lastres.</td></tr> : null}
+                    {!resultBallastStandings.length ? <tr><td colSpan={(resultBallastRounds.length * 4) + 3} className="border border-racing-border px-6 py-10 text-center text-gray-500">No hay pilotos para calcular los lastres.</td></tr> : null}
                   </tbody>
                 </table>
               </div>
             </div>
             </>
+          ) : null}
+
+          {showChampionshipScoring && resultChampionshipId ? (
+            <div className="fixed inset-0 z-[116] flex items-start justify-center overflow-hidden bg-black/90 px-3 py-3 sm:px-4 sm:py-6" onMouseDown={event => { if (event.target === event.currentTarget) setShowChampionshipScoring(false); }}>
+              <section role="dialog" aria-modal="true" aria-labelledby="championship-scoring-title" className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden border border-cyan-400/40 bg-racing-dark shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-3rem)]">
+                <div className="flex items-start justify-between gap-4 border-b border-racing-border px-4 py-4 sm:px-5">
+                  <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300">Configuración por campeonato</p><h3 id="championship-scoring-title" className="mt-1 font-racing text-2xl font-bold text-white">Escala de posiciones y puntajes</h3><p className="mt-1 text-xs leading-relaxed text-gray-500">{resultChampionship?.categoria} · Temporada {resultChampionship?.temporada}. Solo las posiciones enteras reciben puntaje automático.</p></div>
+                  <button type="button" onClick={() => setShowChampionshipScoring(false)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-400 transition hover:border-cyan-300 hover:text-white" aria-label="Cerrar configuración de puntajes"><XMarkIcon className="h-5 w-5"/></button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-racing text-xl font-bold text-white">Puntaje automático</h4><p className="mt-1 text-xs text-gray-500">Al importar o modificar una posición, la planilla completa el valor configurado. Después podés editarlo manualmente.</p></div><button type="button" onClick={addChampionshipScoringRow} className="border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black">Agregar posición</button></div>
+                  {loadingChampionshipScoring ? <p className="py-14 text-center text-sm text-gray-500">Cargando escala...</p> : <div className="mt-3 max-h-[58vh] overflow-auto border border-racing-border"><table className="w-full min-w-[620px] border-collapse text-xs"><thead className="sticky top-0 z-10"><tr className="bg-racing-gray text-[9px] uppercase tracking-wider text-gray-500"><th className="w-24 border border-racing-border px-2 py-2 text-center">Posición</th>{resultScoringFields.map(field => <th key={field.pointsField} className="border border-racing-border px-2 py-2 text-center" title={field.label}>{field.shortLabel}</th>)}<th className="w-10 border border-racing-border"/></tr></thead><tbody>{championshipScoringRows.map((row, index) => <tr key={index} className={index % 2 ? 'bg-black/10' : 'bg-transparent'}><td className="h-8 border border-racing-border p-0"><input type="number" min="1" max="999" step="1" value={row.posicion} data-scoring-cell={`${index}:posicion`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, 'posicion')} onChange={event => updateChampionshipScoringRow(index, 'posicion', event.target.value)} className="h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base font-bold text-white outline-none focus:bg-cyan-400/10 focus:ring-1 focus:ring-inset focus:ring-cyan-400"/></td>{resultScoringFields.map(field => <td key={field.pointsField} className="h-8 border border-racing-border p-0"><input type="number" min="0" step={field.integer ? '1' : '0.01'} value={row[field.pointsField]} data-scoring-cell={`${index}:${field.pointsField}`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, field.pointsField)} onChange={event => updateChampionshipScoringRow(index, field.pointsField, event.target.value)} className="h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base text-cyan-300 outline-none focus:bg-cyan-400/10 focus:ring-1 focus:ring-inset focus:ring-cyan-400" placeholder="" aria-label={`${field.label}, posición ${row.posicion}`}/></td>)}<td className="h-8 border border-racing-border p-0 text-center"><button type="button" onClick={() => removeChampionshipScoringRow(index)} className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar posición ${row.posicion}`}><TrashIcon className="h-3.5 w-3.5"/></button></td></tr>)}{!championshipScoringRows.length ? <tr><td colSpan={resultScoringFields.length + 2} className="border border-dashed border-racing-border px-5 py-10 text-center text-sm text-gray-500">Todavía no configuraste posiciones. Agregá la primera para comenzar.</td></tr> : null}</tbody></table></div>}
+                  <div className="mt-5 flex flex-col-reverse gap-3 border-t border-racing-border pt-4 sm:flex-row sm:items-center sm:justify-between"><p className={`text-sm ${championshipScoringMessage.toLocaleLowerCase('es-AR').includes('correctamente') ? 'text-emerald-300' : 'text-amber-300'}`}>{championshipScoringMessage}</p><button type="button" onClick={saveChampionshipScoring} disabled={savingChampionshipScoring || loadingChampionshipScoring} className="bg-cyan-400 px-6 py-3 text-xs font-bold uppercase text-black transition hover:bg-cyan-300 disabled:opacity-40">{savingChampionshipScoring ? 'Guardando...' : 'Guardar escala'}</button></div>
+                </div>
+              </section>
+            </div>
           ) : null}
 
           {showChampionshipWarnings && resultChampionshipId ? (
@@ -5201,13 +5886,13 @@ export default function Admin() {
               }));
             };
             return (
-              <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/90 px-4 py-6" onMouseDown={event => { if (event.target === event.currentTarget) setAssettoSanctionModal(null); }}>
+              <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/90 px-4 py-6">
                 <section role="dialog" aria-modal="true" aria-labelledby="assetto-sanction-title" className="w-full max-w-[1400px] border border-red-500/40 bg-racing-dark shadow-2xl shadow-black/70">
                   <div className="flex items-start justify-between gap-4 border-b border-racing-border px-5 py-4">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-red-400">Sanciones · {sessionLabel}</p>
                       <h3 id="assetto-sanction-title" className="mt-1 font-racing text-2xl font-bold text-white">Recalcular resultado de la tanda</h3>
-                      <p className="mt-1 text-xs text-gray-500">Los recargos modifican inmediatamente el orden importado del JSON.</p>
+                      <p className="mt-1 text-xs text-gray-500">Los recargos modifican inmediatamente el orden cargado de la tanda.</p>
                     </div>
                     <button type="button" onClick={() => setAssettoSanctionModal(null)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-400 transition hover:border-red-400 hover:text-white" aria-label="Cerrar sanciones importadas"><XMarkIcon className="h-5 w-5" /></button>
                   </div>
@@ -5234,10 +5919,24 @@ export default function Admin() {
                           return <article key={`${assettoSanctionModal.entryKey}-sanction-${index}`} className="border-l-2 border-red-500/60 bg-black/25 px-2.5 py-2">
                             {editing ? <div className="space-y-2">
                               <div className="grid grid-cols-2 gap-1"><button type="button" onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'DENUNCIA' }))} className={`h-7 border text-[8px] font-bold uppercase ${assettoSanctionEdit.type === 'DENUNCIA' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>Denuncia</button><button type="button" onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'SANCIÓN DE OFICIO' }))} className={`h-7 border text-[8px] font-bold uppercase ${assettoSanctionEdit.type === 'SANCIÓN DE OFICIO' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>De oficio</button></div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {[
+                                  ['minute', 'Minuto', 1],
+                                  ['second', 'Segundo', 1],
+                                  ['time', 'Tiempo seg.', 0.1],
+                                  ['positions', 'Puestos', 1],
+                                  ['warnings', 'AP', 1],
+                                  ['ballast', 'Lastre KG', 5],
+                                ].map(([field, label, step]) => <label key={field}><span className={`text-[7px] font-bold uppercase ${field === 'minute' || field === 'second' ? 'text-red-300' : 'text-gray-500'}`}>{label}</span><input type="number" min="0" max={field === 'second' ? 59 : undefined} step={step} value={assettoSanctionEdit[field]} onChange={event => { setAssettoSanctionEdit(current => ({ ...current, [field]: event.target.value })); setAssettoSanctionMessage(''); }} disabled={assettoSanctionEdit.noSanction && field !== 'minute' && field !== 'second'} className="input-field mt-0.5 h-8 px-1 text-center text-[10px] disabled:opacity-30"/></label>)}
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <label className={`flex cursor-pointer items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.dq ? 'border-red-400 bg-red-500/10 text-red-300' : 'border-racing-border text-gray-500'}`}><span>DQ</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.dq)} onChange={event => setAssettoSanctionEdit(current => ({ ...current, dq: event.target.checked, noSanction: event.target.checked ? false : current.noSanction }))} className="h-4 w-4 accent-red-500"/></label>
+                                <label className={`flex cursor-pointer items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.noSanction ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300' : 'border-racing-border text-gray-500'}`}><span>Sin sanción</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.noSanction)} onChange={event => setAssettoSanctionEdit(current => ({ ...current, noSanction: event.target.checked, dq: event.target.checked ? false : current.dq }))} className="h-4 w-4 accent-emerald-400"/></label>
+                              </div>
                               <textarea value={assettoSanctionEdit.description} onChange={event => setAssettoSanctionEdit(current => ({ ...current, description: event.target.value }))} maxLength={500} rows={3} className="input-field min-h-20 resize-y text-xs" placeholder="Descripción de la sanción"/>
-                              <p className="text-[8px] leading-relaxed text-gray-600">Las medidas, el minuto y los recargos no se pueden modificar. Si están mal, eliminá esta sanción y cargá una nueva.</p>
-                              <div className="flex justify-end gap-1"><button type="button" onClick={() => setAssettoSanctionEdit(null)} className="border border-racing-border px-2 py-1 text-[8px] font-bold uppercase text-gray-400">Cancelar</button><button type="button" onClick={saveAssettoSanctionEdit} className="bg-red-600 px-2 py-1 text-[8px] font-bold uppercase text-white">Guardar texto</button></div>
-                            </div> : <div className="flex items-start gap-2"><p className="min-w-0 flex-1 text-[9px] leading-relaxed text-gray-300">{buildAssettoSanctionLabel(sanction)}</p><div className="flex shrink-0 gap-1"><button type="button" onClick={() => setAssettoSanctionEdit({ entryKey: assettoSanctionModal.entryKey, index, type: sanction.type || 'DENUNCIA', description: sanction.description || '' })} className="inline-flex h-7 w-7 items-center justify-center border border-sky-500/30 text-sky-300 transition hover:bg-sky-600 hover:text-white" aria-label={`Editar sanción ${index + 1}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeAssettoSanction(assettoSanctionModal.entryKey, index)} className="inline-flex h-7 w-7 items-center justify-center border border-red-500/30 text-red-400 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar sanción ${index + 1}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></div>}
+                              {assettoSanctionMessage ? <p className="text-[8px] font-semibold leading-relaxed text-red-300">{assettoSanctionMessage}</p> : null}
+                              <div className="flex justify-end gap-1"><button type="button" onClick={() => { setAssettoSanctionEdit(null); setAssettoSanctionMessage(''); }} className="border border-racing-border px-2 py-1 text-[8px] font-bold uppercase text-gray-400">Cancelar</button><button type="button" onClick={saveAssettoSanctionEdit} className="bg-red-600 px-2 py-1 text-[8px] font-bold uppercase text-white">Guardar cambios</button></div>
+                            </div> : <div className="flex items-start gap-2"><p className="min-w-0 flex-1 text-[9px] leading-relaxed text-gray-300">{buildAssettoSanctionLabel(sanction)}</p><div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setAssettoSanctionEdit({ entryKey: assettoSanctionModal.entryKey, index, ...emptyAssettoSanction(), ...sanction }); setAssettoSanctionMessage(''); }} className="inline-flex h-7 w-7 items-center justify-center border border-sky-500/30 text-sky-300 transition hover:bg-sky-600 hover:text-white" aria-label={`Editar sanción ${index + 1}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeAssettoSanction(assettoSanctionModal.entryKey, index)} className="inline-flex h-7 w-7 items-center justify-center border border-red-500/30 text-red-400 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar sanción ${index + 1}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></div>}
                           </article>;
                         })}</div> : null}
                       </div>
@@ -5339,7 +6038,6 @@ export default function Admin() {
                   <div className="flex flex-col-reverse gap-2 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <button type="button" onClick={() => setAssettoSanctionDraft(emptyAssettoSanction())} className="btn-secondary justify-center">Limpiar sanción</button>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => setAssettoSanctionModal(null)} className="btn-secondary justify-center">Cerrar</button>
                       <button type="button" onClick={applyAssettoSanction} className="btn-primary justify-center">Aplicar y recalcular</button>
                     </div>
                   </div>
@@ -7690,32 +8388,28 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="scrollbar-hidden mb-5 flex flex-nowrap items-center overflow-x-auto pb-1" aria-label="Secciones de administración">
-              {adminSectionGroups.map((group, groupIndex) => (
-                <div key={group.join('-')} className={`inline-flex shrink-0 items-center gap-1 ${groupIndex ? 'ml-2 border-l border-racing-border pl-2' : ''}`}>
-                  {group.map(sectionId => {
-                    const section = adminSections.find(item => item.id === sectionId);
-                    if (!section) return null;
-                    const Icon = section.icon;
-                    const isActive = activeSection === section.id;
-                    return (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => setActiveSection(section.id)}
-                        className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap border px-2.5 font-racing text-[9px] font-semibold transition-colors ${isActive
-                          ? 'border-racing-red bg-racing-red text-white'
-                          : 'border-transparent bg-racing-card/70 text-gray-400 hover:border-racing-border hover:bg-racing-card hover:text-white'
-                          }`}
-                        aria-current={isActive ? 'page' : undefined}
-                      >
-                        <Icon className="h-3.5 w-3.5 shrink-0" />
-                        <span>{section.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+            <nav className="scrollbar-hidden mb-5 overflow-x-auto pb-1" aria-label="Secciones de administración">
+              <div className="flex w-full min-w-max flex-nowrap items-center justify-between gap-1">
+                {adminSections.map(section => {
+                  const Icon = section.icon;
+                  const isActive = activeSection === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setActiveSection(section.id)}
+                      className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap border px-2.5 font-racing text-[9px] font-semibold transition-colors ${isActive
+                        ? 'border-racing-red bg-racing-red text-white'
+                        : 'border-transparent bg-racing-card/70 text-gray-400 hover:border-racing-border hover:bg-racing-card hover:text-white'
+                        }`}
+                      aria-current={isActive ? 'page' : undefined}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span>{section.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </nav>
 
             <div key={activeSection} className="min-w-0">

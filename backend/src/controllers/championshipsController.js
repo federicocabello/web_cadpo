@@ -1,6 +1,8 @@
 const pool = require('../config/db');
 const ensureResultAchievements = require('../utils/ensureResultAchievements');
 const ensureChampionshipWarnings = require('../utils/ensureChampionshipWarnings');
+const ensureChampionshipScoring = require('../utils/ensureChampionshipScoring');
+const ensureChampionshipDebutBallast = require('../utils/ensureChampionshipDebutBallast');
 
 let percentageRuleColumnPromise;
 const ensurePercentageRuleColumn = () => {
@@ -50,6 +52,121 @@ const normalizePercentageRule = value => {
   const percentage = Number(value || 0);
   if (!Number.isFinite(percentage) || percentage < 0 || (percentage > 0 && percentage < 100) || percentage > 999.999) return null;
   return Math.round(percentage * 1000) / 1000;
+};
+
+const scoringFields = ['pts_qualy_sprint', 'pts_sprint', 'pts_qualy_final', 'pts_final'];
+
+const getScoring = async (req, res, next) => {
+  try {
+    await ensureChampionshipScoring();
+    const [rows] = await pool.query(
+      `SELECT posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final
+       FROM campeonato_puntajes WHERE idcampeonato = ? ORDER BY posicion ASC`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (error) { next(error); }
+};
+
+const saveScoring = async (req, res, next) => {
+  const championshipId = Number(req.params.id);
+  const submittedRows = Array.isArray(req.body.puntajes) ? req.body.puntajes : [];
+  if (!Number.isInteger(championshipId) || championshipId < 1) return res.status(400).json({ error: 'Campeonato inválido' });
+
+  const rows = submittedRows.map(row => ({
+    posicion: Number(row.posicion),
+    ...Object.fromEntries(scoringFields.map(field => [field, Number(String(row[field] ?? 0).replace(',', '.'))])),
+  }));
+  if (rows.some(row => !Number.isInteger(row.posicion) || row.posicion < 1 || row.posicion > 999)) {
+    return res.status(400).json({ error: 'Cada posición debe ser un número entero entre 1 y 999' });
+  }
+  if (new Set(rows.map(row => row.posicion)).size !== rows.length) {
+    return res.status(400).json({ error: 'No puede repetirse una posición en la escala de puntos' });
+  }
+  if (rows.some(row => scoringFields.some(field => !Number.isFinite(row[field]) || row[field] < 0))) {
+    return res.status(400).json({ error: 'Los puntajes deben ser números iguales o mayores que cero' });
+  }
+
+  let connection;
+  try {
+    await ensureChampionshipScoring();
+    const [[championship]] = await pool.query('SELECT id FROM campeonatos WHERE id = ?', [championshipId]);
+    if (!championship) return res.status(404).json({ error: 'Campeonato no encontrado' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM campeonato_puntajes WHERE idcampeonato = ?', [championshipId]);
+    for (const row of rows) {
+      await connection.query(
+        `INSERT INTO campeonato_puntajes
+          (idcampeonato, posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [championshipId, row.posicion, row.pts_qualy_sprint, row.pts_sprint, row.pts_qualy_final, row.pts_final]
+      );
+    }
+    await connection.commit();
+    const [savedRows] = await pool.query(
+      `SELECT posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final
+       FROM campeonato_puntajes WHERE idcampeonato = ? ORDER BY posicion ASC`,
+      [championshipId]
+    );
+    res.json({ data: savedRows, message: 'Escala de puntajes guardada correctamente' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    next(error);
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+const getDebutBallasts = async (req, res, next) => {
+  try {
+    await ensureChampionshipDebutBallast();
+    const [rows] = await pool.query(
+      `SELECT ld.idpiloto, p.nombre AS piloto, ld.kilos
+       FROM campeonato_lastres_debut ld
+       JOIN pilotos p ON p.id = ld.idpiloto
+       WHERE ld.idcampeonato = ?
+       ORDER BY p.nombre ASC`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (error) { next(error); }
+};
+
+const saveDebutBallasts = async (req, res, next) => {
+  const championshipId = Number(req.params.id);
+  const submittedRows = Array.isArray(req.body.lastres) ? req.body.lastres : [];
+  if (!Number.isInteger(championshipId) || championshipId < 1) return res.status(400).json({ error: 'Campeonato inválido' });
+  const rows = submittedRows.map(row => ({ idpiloto: Number(row.idpiloto), kilos: Number(String(row.kilos ?? 0).replace(',', '.')) }));
+  if (rows.some(row => !Number.isInteger(row.idpiloto) || row.idpiloto < 1 || !Number.isFinite(row.kilos) || row.kilos < 0)) {
+    return res.status(400).json({ error: 'El lastre debut debe ser un número igual o mayor que cero' });
+  }
+  if (new Set(rows.map(row => row.idpiloto)).size !== rows.length) return res.status(400).json({ error: 'No puede repetirse un piloto' });
+
+  let connection;
+  try {
+    await ensureChampionshipDebutBallast();
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM campeonato_lastres_debut WHERE idcampeonato = ?', [championshipId]);
+    for (const row of rows.filter(item => item.kilos !== 0)) {
+      await connection.query(
+        'INSERT INTO campeonato_lastres_debut (idcampeonato, idpiloto, kilos) VALUES (?, ?, ?)',
+        [championshipId, row.idpiloto, row.kilos]
+      );
+    }
+    await connection.commit();
+    const [savedRows] = await pool.query(
+      'SELECT idpiloto, kilos FROM campeonato_lastres_debut WHERE idcampeonato = ? ORDER BY idpiloto ASC',
+      [championshipId]
+    );
+    res.json({ data: savedRows, message: 'Lastres debut guardados correctamente' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    next(error);
+  } finally {
+    if (connection) connection.release();
+  }
 };
 
 const championshipPlatforms = new Set([
@@ -557,6 +674,10 @@ module.exports = {
   getCalendar,
   getPrizes,
   savePrizes,
+  getScoring,
+  saveScoring,
+  getDebutBallasts,
+  saveDebutBallasts,
   getWarnings,
   saveWarnings,
   setWarningFulfillment,

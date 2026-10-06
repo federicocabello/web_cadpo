@@ -4,6 +4,7 @@ const path = require('path');
 const pool = require('../config/db');
 const publicDir = require('../utils/publicDir');
 const slugify = require('../utils/slugify');
+const ensureEventMultipliers = require('../utils/ensureEventMultipliers');
 
 const eventBannerExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
@@ -62,6 +63,7 @@ const moveEventGallery = async (oldChampionshipId, oldRound, newChampionshipId, 
 const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
          cal.especialidad, cal.coronacion, cal.transmision,
+         cal.multiplicador_sprint, cal.multiplicador_final,
          CONCAT(cal.idcampeonato, '-', cal.ronda) AS id,
          CASE
            WHEN cal.fecha >= NOW() THEN 'upcoming'
@@ -79,6 +81,7 @@ const baseSelect = `
 
 const getAll = async (req, res, next) => {
   try {
+    await ensureEventMultipliers();
     const { idcampeonato, status } = req.query;
     const params = [];
     const conditions = [];
@@ -102,6 +105,7 @@ const getAll = async (req, res, next) => {
 
 const getUpcoming = async (req, res, next) => {
   try {
+    await ensureEventMultipliers();
     const [rows] = await pool.query(`${baseSelect} WHERE cal.fecha >= NOW() ORDER BY cal.fecha ASC LIMIT 10`);
     res.json({ data: await attachEventBanners(rows), total: rows.length });
   } catch (err) {
@@ -251,6 +255,34 @@ const remove = async (req, res, next) => {
   }
 };
 
+const updateMultipliers = async (req, res, next) => {
+  try {
+    await ensureEventMultipliers();
+    const championshipId = Number(req.params.idcampeonato);
+    const round = Number(req.params.ronda);
+    const sprint = Number(req.body.multiplicador_sprint);
+    const final = Number(req.body.multiplicador_final);
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+      return res.status(400).json({ error: 'Campeonato o fecha inválidos' });
+    }
+    if (!Number.isFinite(sprint) || sprint < 0 || sprint > 10 || !Number.isFinite(final) || final < 0 || final > 10) {
+      return res.status(400).json({ error: 'Los multiplicadores deben estar entre 0 y 10' });
+    }
+    const [result] = await pool.query(
+      `UPDATE calendario SET multiplicador_sprint = ?, multiplicador_final = ?
+       WHERE idcampeonato = ? AND ronda = ?`,
+      [sprint, final, championshipId, round]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+    res.json({
+      message: 'Multiplicadores guardados para la fecha',
+      data: { idcampeonato: championshipId, ronda: round, multiplicador_sprint: sprint, multiplicador_final: final },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getBanners = async (req, res, next) => {
   try {
     const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
@@ -293,4 +325,4 @@ const removeBanner = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { getAll, getUpcoming, create, createBatch, update, remove, getBanners, uploadBanners, removeBanner };
+module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, remove, getBanners, uploadBanners, removeBanner };

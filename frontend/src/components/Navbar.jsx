@@ -341,7 +341,7 @@ export default function Navbar() {
               >
                 <Icon className="h-4 w-4 shrink-0 text-racing-red transition-transform duration-200 group-hover:scale-110" />
                 <span className="leading-none">{label}</span>
-                {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-2 -top-2 animate-pulse rounded-full border border-red-300/70 bg-red-600 px-1.5 py-0.5 text-[8px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.75)]">NEW</span> : null}
+                {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-2 -top-2 rounded-full border border-red-300/70 bg-red-600 px-1.5 py-0.5 text-[8px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.75)]">NEW</span> : null}
               </NavLink>
             ))}
             <div className="ml-1 flex items-center gap-2 border-l border-white/15 pl-3">
@@ -394,7 +394,7 @@ export default function Navbar() {
               >
                 <Icon className="h-5 w-5 shrink-0 text-racing-red" />
                 <span>{label}</span>
-                {to === '/proyectos' && hasNewProjects ? <span className="ml-auto animate-pulse rounded-full border border-red-300/70 bg-red-600 px-2 py-1 text-[9px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.65)]">NEW</span> : null}
+                {to === '/proyectos' && hasNewProjects ? <span className="ml-auto rounded-full border border-red-300/70 bg-red-600 px-2 py-1 text-[9px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.65)]">NEW</span> : null}
               </NavLink>
             ))}
 

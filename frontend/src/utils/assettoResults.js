@@ -55,8 +55,18 @@ const hasAssettoSanctionValue = sanction => Boolean(sanction?.dq || sanction?.no
   || toFiniteNumber(sanction?.ballast) !== 0
   || String(sanction?.description || '').trim());
 
+const sanctionReplayTime = sanction => (
+  Math.max(0, Math.trunc(toFiniteNumber(sanction?.minute))) * 60
+  + Math.min(59, Math.max(0, Math.trunc(toFiniteNumber(sanction?.second))))
+);
+
+const sortAssettoSanctionsByReplayTime = items => items
+  .map((item, index) => ({ item, index }))
+  .sort((a, b) => sanctionReplayTime(a.item) - sanctionReplayTime(b.item) || a.index - b.index)
+  .map(entry => entry.item);
+
 export const getAssettoSanctionItems = sanction => {
-  if (Array.isArray(sanction?.items)) return sanction.items.filter(hasAssettoSanctionValue);
+  if (Array.isArray(sanction?.items)) return sortAssettoSanctionsByReplayTime(sanction.items.filter(hasAssettoSanctionValue));
   return hasAssettoSanctionValue(sanction) ? [{ ...emptyAssettoSanction(), ...sanction, items: undefined }] : [];
 };
 
@@ -130,7 +140,10 @@ const getFinalTime = (entry, sanction, qualifying) => {
 const buildSingleAssettoSanctionLabel = sanction => {
   if (!sanction) return '';
   const description = String(sanction.description || '').trim();
-  if (sanction.noSanction) return description ? `NO HAY SANCIÓN · ${description}` : 'NO HAY SANCIÓN';
+  const moment = `${Math.max(0, Math.trunc(toFiniteNumber(sanction.minute)))}:${String(Math.min(59, Math.max(0, Math.trunc(toFiniteNumber(sanction.second))))).padStart(2, '0')}`;
+  if (sanction.noSanction) {
+    return [sanction.type || 'DENUNCIA', `MINUTO ${moment}`, 'NO HAY SANCIÓN', description].filter(Boolean).join(' · ');
+  }
 
   const measures = [];
   if (sanction.dq) measures.push('EXCLUSIÓN PARCIAL');
@@ -138,7 +151,6 @@ const buildSingleAssettoSanctionLabel = sanction => {
   if (toFiniteNumber(sanction.ballast) > 0) measures.push(`${Math.trunc(toFiniteNumber(sanction.ballast))} KG DE LASTRE`);
   if (toFiniteNumber(sanction.time) > 0) measures.push(`${toFiniteNumber(sanction.time)} SEG. DE RECARGO`);
   if (toFiniteNumber(sanction.positions) > 0) measures.push(`${Math.trunc(toFiniteNumber(sanction.positions))} PUESTO${Math.trunc(toFiniteNumber(sanction.positions)) === 1 ? '' : 'S'} DE RECARGO`);
-  const moment = `${Math.max(0, Math.trunc(toFiniteNumber(sanction.minute)))}:${String(Math.min(59, Math.max(0, Math.trunc(toFiniteNumber(sanction.second))))).padStart(2, '0')}`;
   return [sanction.type || 'DENUNCIA', `MINUTO ${moment}`, ...measures, description].filter(Boolean).join(' · ');
 };
 
