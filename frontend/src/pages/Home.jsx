@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, GlobeAltIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PhoneIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { complaintsApi, eventsApi, mediaApi, registrationFormsApi, sponsorsApi } from '../services/api';
+import { ArrowDownTrayIcon, ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, GlobeAltIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PhoneIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { complaintsApi, eventsApi, mediaApi, registrationFormsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import { getCountryName } from '../data/countries';
 import ServerJoinButton from '../components/ServerJoinButton';
@@ -219,7 +219,7 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, complain
   );
 }
 
-function RegistrationSection({ registration, details, images, activeImage, now, events }) {
+function RegistrationSection({ registration, details, images, activeImage, now, events, template }) {
   const open = registration.phase === 'open';
   const full = registration.phase === 'full';
   const closed = registration.phase === 'closed';
@@ -250,7 +250,7 @@ function RegistrationSection({ registration, details, images, activeImage, now, 
       <div className="home-race-height relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-start justify-center px-5 pb-8 pt-12 sm:px-8 sm:pb-48 lg:px-14 xl:px-20">
         <div className="race-hero-content w-full max-w-3xl xl:max-w-4xl">
           <div className={`mb-5 inline-flex items-center gap-3 border-l-2 bg-black/55 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white backdrop-blur-md ${theme.border}`}><span className={`h-2 w-2 animate-pulse rounded-full ${theme.dot}`}/>{full ? 'Inscripciones cerradas • Cupos completos' : closed ? 'Inscripciones cerradas' : open ? 'Inscripciones abiertas' : 'Próximo campeonato'}</div>
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm"><span className={`px-3 py-1.5 ${theme.chip}`}>Temporada {registration.temporada}</span><span className={`border bg-black/45 px-3 py-1.5 ${theme.borderSoft}`}>{registration.plataforma}</span></div>
+          <div className="mb-3 flex flex-wrap items-stretch gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm"><span className={`flex items-center px-3 py-1.5 ${theme.chip}`}>Temporada {registration.temporada}</span><span className={`flex items-center border bg-black/45 px-3 py-1.5 ${theme.borderSoft}`}>{registration.plataforma}</span>{template ? <a href={`/api/templates/${template.id}/download`} className="group inline-flex items-center gap-2 border border-cyan-300/60 bg-cyan-300/15 px-3 py-1.5 font-racing text-[10px] font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.12)] transition-colors hover:bg-cyan-300 hover:text-black sm:text-xs" title={`Descargar plantilla de ${registration.categoria}`}><ArrowDownTrayIcon className="h-4 w-4 shrink-0 transition-transform group-hover:translate-y-0.5"/><span>Descargar plantilla</span></a> : null}</div>
           <h2 className="font-anton text-5xl uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl xl:text-8xl">
             <span className="block">Nuevo</span>
             <span className="block">Campeonato</span>
@@ -424,11 +424,12 @@ export default function Home() {
   const [now, setNow] = useState(Date.now());
   const [calendarEvent, setCalendarEvent] = useState(null);
   const [sponsors, setSponsors] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [complaintContext, setComplaintContext] = useState({ eventos: [], proxima: null });
 
   const upcomingEvents = useMemo(() => getFeaturedUpcomingEvents(events, new Date(now)), [events, now]);
   const liveTimingEventIds = useMemo(() => new Set(getLiveTimingEvents(events, new Date(now)).map(event => `${event.idcampeonato}-${event.ronda}`)), [events, now]);
-  const registrations = useMemo(() => registrationForms.map(item => ({ ...item, phase: getRegistrationPhase(item, now) })).filter(item => item.phase === 'open' || item.phase === 'full' || item.phase === 'upcoming' || (item.phase === 'closed' && (parseCalendarDate(item.primera_fecha)?.getTime() || 0) > now)).sort((a, b) => {
+  const registrations = useMemo(() => registrationForms.filter(item => item.visible !== false).map(item => ({ ...item, phase: getRegistrationPhase(item, now) })).filter(item => item.phase === 'open' || item.phase === 'full' || item.phase === 'upcoming' || (item.phase === 'closed' && (parseCalendarDate(item.primera_fecha)?.getTime() || 0) > now)).sort((a, b) => {
     const order = { open: 0, full: 1, closed: 2, upcoming: 3 };
     return order[a.phase] - order[b.phase] || (parseCalendarDate(a.fecha_apertura)?.getTime() || 0) - (parseCalendarDate(b.fecha_apertura)?.getTime() || 0);
   }), [registrationForms, now]);
@@ -445,7 +446,7 @@ export default function Home() {
   const registrationIds = registrations.map(item => item.idcampeonato).join(',');
 
   useEffect(() => {
-    Promise.all([eventsApi.getAll(), registrationFormsApi.getAll()]).then(([eventsResponse, formsResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
+    Promise.all([eventsApi.getAll(), registrationFormsApi.getAll(), templatesApi.getAll()]).then(([eventsResponse, formsResponse, templatesResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); setTemplates(templatesResponse.data.data || []); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
     sponsorsApi.getAll().then(response => setSponsors(response.data.data || [])).catch(error => console.error('Error cargando sponsors:', error));
   }, []);
 
@@ -505,7 +506,7 @@ export default function Home() {
     <div className="animate-fade-in">
       {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} complaintPromptEvent={index === Math.max(0, upcomingEvents.findIndex(item => String(item.idcampeonato) === String(openComplaintEvent?.idcampeonato) && String(item.ronda) === String(openComplaintEvent?.ronda))) ? openComplaintEvent : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
       {!loading && !upcomingEvents.length && openComplaintEvent ? <div className="mx-auto w-full max-w-[1600px] px-5 py-5 sm:px-8 lg:px-14 xl:px-20"><ComplaintPrompt event={openComplaintEvent} now={now}/></div> : null}
-      {!loading ? registrations.map(registration => <RegistrationSection key={registration.idcampeonato} registration={registration} details={registrationDetails[registration.idcampeonato]} images={registrationImages[registration.idcampeonato] || []} activeImage={activeRegistrationImages[registration.idcampeonato] || 0} now={now} events={events}/>) : null}
+      {!loading ? registrations.map(registration => <RegistrationSection key={registration.idcampeonato} registration={registration} details={registrationDetails[registration.idcampeonato]} images={registrationImages[registration.idcampeonato] || []} activeImage={activeRegistrationImages[registration.idcampeonato] || 0} now={now} events={events} template={templates.find(item => String(item.idcampeonato) === String(registration.idcampeonato)) || null}/>) : null}
       {!loading && championshipBroadcasts.length ? <BroadcastSection key={championshipBroadcasts[0].idcampeonato} broadcasts={championshipBroadcasts} now={now}/> : null}
       {!loading ? <AdvertisingSection sponsors={sponsors}/> : null}
 

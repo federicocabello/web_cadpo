@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, ChevronDownIcon, ChevronUpIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { championshipsApi, eventsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -26,6 +26,7 @@ const ballastColor = value => {
   if (ballast > 0) return 'text-orange-300';
   return 'text-gray-600';
 };
+const roundBallastColor = value => parseBallast(value) !== 0 ? 'text-emerald-300' : 'text-gray-600';
 const numericPosition = value => {
   const normalized = String(value ?? '').trim();
   return /^\d+$/.test(normalized) && Number(normalized) > 0 ? Number(normalized) : null;
@@ -139,22 +140,12 @@ const SessionSection = ({ title, sessionKey, items, positionField, pointsField, 
   );
 };
 
-const EventBannerCarousel = ({ banners = [], round }) => {
-  const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [round, banners.length]);
-  useEffect(() => {
-    if (banners.length < 2) return undefined;
-    const interval = window.setInterval(() => setIndex(current => (current + 1) % banners.length), 8000);
-    return () => window.clearInterval(interval);
-  }, [banners.length]);
+const EventBannerGallery = ({ banners = [], round }) => {
   if (!banners.length) return null;
-  const move = direction => setIndex(current => (current + direction + banners.length) % banners.length);
-  return <div className="relative aspect-[16/7] max-h-[620px] min-h-56 overflow-hidden border-b border-racing-border bg-black sm:min-h-72">
-    {banners.map((banner, bannerIndex) => <img key={banner.filename || banner.url} src={banner.url} alt={`Banner de la fecha ${round}`} className={`absolute inset-0 h-full w-full object-cover transition-all duration-1000 ${bannerIndex === index ? 'scale-100 opacity-100' : 'pointer-events-none scale-[1.03] opacity-0'}`}/>)}
-    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20"/>
-    <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2">{banners.map((banner, bannerIndex) => <button key={`dot-${banner.filename || banner.url}`} type="button" onClick={() => setIndex(bannerIndex)} className={`h-1.5 transition-all ${bannerIndex === index ? 'w-8 bg-racing-red' : 'w-3 bg-white/50 hover:bg-white'}`} aria-label={`Mostrar banner ${bannerIndex + 1}`}/>)}</div>
-    {banners.length > 1 ? <><button type="button" onClick={() => move(-1)} className="absolute left-3 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center border border-white/30 bg-black/60 text-white backdrop-blur-sm transition hover:border-racing-red hover:bg-racing-red" aria-label="Banner anterior"><ChevronLeftIcon className="h-6 w-6"/></button><button type="button" onClick={() => move(1)} className="absolute right-3 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center border border-white/30 bg-black/60 text-white backdrop-blur-sm transition hover:border-racing-red hover:bg-racing-red" aria-label="Banner siguiente"><ChevronRightIcon className="h-6 w-6"/></button></> : null}
-    <span className="absolute left-4 top-4 border border-white/20 bg-black/65 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white backdrop-blur-sm">Fecha {round}</span>
+  return <div className="space-y-4 border-b border-racing-border bg-black/35 p-3 sm:p-5">
+    {banners.map((banner, index) => <figure key={banner.filename || banner.url} className="relative mx-auto w-full overflow-hidden border border-racing-border bg-black">
+      <img src={banner.url} alt={`Banner ${index + 1} del resultado de la fecha ${round}`} className="block h-auto max-h-[760px] w-full object-contain"/>
+    </figure>)}
   </div>;
 };
 
@@ -418,7 +409,7 @@ export default function Results() {
               {selectedRoundData.items[0].circuito_trazado ? <img src={selectedRoundData.items[0].circuito_trazado} alt={`Trazado de ${selectedRoundData.items[0].circuito}`} className="h-24 w-28 shrink-0 object-contain drop-shadow-[0_12px_25px_rgba(0,0,0,0.95)] sm:h-32 sm:w-44" onError={event => { event.currentTarget.style.display = 'none'; }}/> : null}
             </div>
           </header>
-          <EventBannerCarousel banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
+          <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
           <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
             <SessionSection title="Clasificación Sprint" sessionKey="qualy_sprint" items={selectedRoundData.items} positionField="pos_qualy_sprint" pointsField="pts_qualy_sprint" sanctionField="desc_sancion_qualy_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
             <SessionSection title="Sprint" sessionKey="sprint" items={selectedRoundData.items} positionField="pos_sprint" pointsField="pts_sprint" sanctionField="desc_sancion_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
@@ -485,8 +476,8 @@ export default function Results() {
             <table className="w-max min-w-full border-collapse text-xs">
               <thead>
                 <tr className="bg-black/35 text-[10px] uppercase tracking-wider text-gray-500">
-                  <th rowSpan={2} className="min-w-60 border border-racing-border px-4 py-3 text-left">Piloto</th>
-                  <th rowSpan={2} className="min-w-28 border border-orange-400/30 bg-orange-400/10 px-4 py-3 text-center text-orange-200">Total de lastre</th>
+                  <th rowSpan={2} className="min-w-52 border border-racing-border px-3 py-3 text-left">Piloto</th>
+                  <th rowSpan={2} className="w-20 min-w-20 max-w-20 border border-orange-400/30 bg-orange-400/10 px-1 py-3 text-center text-[9px] leading-tight text-orange-200">Total de lastre</th>
                   <th rowSpan={2} className="w-16 min-w-16 border border-racing-border px-2 py-3 text-center text-[9px] font-normal text-gray-600">Debut</th>
                   {ballastRounds.map(round => <th key={`ballast-${round.round}`} colSpan={4} className="border border-racing-border px-3 py-3 text-center text-gray-300">Fecha {round.round}</th>)}
                 </tr>
@@ -501,15 +492,15 @@ export default function Results() {
               </thead>
               <tbody>
                 {ballastStandings.map((standing, index) => <tr key={`ballast-${standing.idpiloto}`} className={index % 2 ? 'bg-black/10' : ''}>
-                  <td className="border border-racing-border px-4 py-3"><div className="flex min-w-0 items-center gap-3">{standing.auto_logo ? <img src={standing.auto_logo} alt="" className="h-8 w-11 shrink-0 object-contain"/> : null}<div className="min-w-0"><strong className="block truncate text-white">{standing.piloto}</strong><span className="block truncate text-[10px] uppercase text-gray-500">{standing.modelo || '—'}</span></div></div></td>
-                  <td className={`border border-orange-400/30 bg-orange-400/[0.09] px-4 py-3 text-center font-racing text-xl font-bold ${ballastColor(standing.ballastTotal)}`}>{formatBallast(standing.ballastTotal)}</td>
+                  <td className="border border-racing-border px-3 py-3"><div className="flex min-w-0 items-center gap-2">{standing.auto_logo ? <img src={standing.auto_logo} alt="" className="h-8 w-10 shrink-0 object-contain"/> : null}<div className="min-w-0"><strong className="block truncate text-white">{standing.piloto}</strong><span className="block truncate text-[10px] uppercase text-gray-500">{standing.modelo || '—'}</span></div></div></td>
+                  <td className={`w-20 min-w-20 max-w-20 whitespace-nowrap border border-orange-400/30 bg-orange-400/[0.09] px-1 py-3 text-center font-racing text-lg font-bold ${ballastColor(standing.ballastTotal)}`}>{formatBallast(standing.ballastTotal)}</td>
                   <td className={`w-16 min-w-16 border border-racing-border px-2 py-3 text-center font-racing text-xs ${parseBallast(standing.debutBallast) ? 'text-gray-400' : 'text-gray-700'}`}>{formatBallast(standing.debutBallast)}</td>
                   {ballastRounds.flatMap(round => {
                     const detail = standing.ballastByRound[String(round.round)];
                     return [
-                      <td key={`${standing.idpiloto}-${round.round}-s`} className={`border border-racing-border px-2 py-3 text-center font-racing text-sm ${ballastColor(detail?.sprint)}`}>{formatBallast(detail?.sprint)}</td>,
+                      <td key={`${standing.idpiloto}-${round.round}-s`} className={`border border-racing-border px-2 py-3 text-center font-racing text-sm ${roundBallastColor(detail?.sprint)}`}>{formatBallast(detail?.sprint)}</td>,
                       <td key={`${standing.idpiloto}-${round.round}-ss`} className={`border px-2 py-3 text-center font-racing text-sm ${parseBallast(detail?.sprintSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatBallast(detail?.sprintSanction)}</td>,
-                      <td key={`${standing.idpiloto}-${round.round}-f`} className={`border border-racing-border px-2 py-3 text-center font-racing text-sm ${ballastColor(detail?.final)}`}>{formatBallast(detail?.final)}</td>,
+                      <td key={`${standing.idpiloto}-${round.round}-f`} className={`border border-racing-border px-2 py-3 text-center font-racing text-sm ${roundBallastColor(detail?.final)}`}>{formatBallast(detail?.final)}</td>,
                       <td key={`${standing.idpiloto}-${round.round}-fs`} className={`border px-2 py-3 text-center font-racing text-sm ${parseBallast(detail?.finalSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatBallast(detail?.finalSanction)}</td>,
                     ];
                   })}

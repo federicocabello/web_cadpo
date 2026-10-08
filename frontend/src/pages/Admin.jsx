@@ -36,6 +36,9 @@ import { formatPrice } from '../utils/currency';
 import { aggregateAssettoSanctions, assettoSessionOptions, buildAssettoSanctionLabel, emptyAssettoSanction, getAssettoSanctionItems, normalizeAssettoDriverName, orderAssettoResults, parseAssettoResultJson } from '../utils/assettoResults';
 import GearRatioCalculator from '../components/GearRatioCalculator';
 import EnginePowerCalculator from '../components/EnginePowerCalculator';
+import BrakesCalculator from '../components/BrakesCalculator';
+import SuspensionCalculator from '../components/SuspensionCalculator';
+import TyresCalculator from '../components/TyresCalculator';
 import CadpoImporter from '../components/CadpoImporter';
 
 const toMySqlDateTime = value => {
@@ -359,6 +362,7 @@ const normalizeAdminRegistrationPlans = plans => defaultRegistrationPlans.map(de
 const emptyOfficialCarForm = { id: '', idmarca: '', idauto: '', numero: '', descripcion: '', foto: null };
 
 const emptyRegistrationConfig = {
+  visible: true,
   fecha_apertura: '',
   fecha_cierre: '',
   precio: '0',
@@ -395,6 +399,9 @@ const emptyEventBatch = {
   hora: '21',
   minuto: '00',
 };
+const pendingCircuitValue = 'pending';
+const isPendingCircuitName = value => String(value || '').trim().toLocaleUpperCase('es-AR') === 'A CONFIRMAR';
+const serializeEventCircuit = value => value === pendingCircuitValue ? pendingCircuitValue : Number(value);
 
 const emptyDriverForm = {
   nombre: '',
@@ -782,6 +789,7 @@ export default function Admin() {
   const [registrationConfig, setRegistrationConfig] = useState(emptyRegistrationConfig);
   const [registrationConfigMessage, setRegistrationConfigMessage] = useState('');
   const [savingRegistrationConfig, setSavingRegistrationConfig] = useState(false);
+  const [savingRegistrationVisibilityId, setSavingRegistrationVisibilityId] = useState('');
   const [registrationGallery, setRegistrationGallery] = useState([]);
   const [registrationGalleryPath, setRegistrationGalleryPath] = useState('');
   const [registrationImageFiles, setRegistrationImageFiles] = useState([]);
@@ -872,6 +880,7 @@ export default function Admin() {
   const [savingChampionshipChampion, setSavingChampionshipChampion] = useState(false);
   const [championshipChampionMessage, setChampionshipChampionMessage] = useState('');
   const [resultDebutBallasts, setResultDebutBallasts] = useState({});
+  const [resultBallastSort, setResultBallastSort] = useState('name');
   const [savingResultDebutBallasts, setSavingResultDebutBallasts] = useState(false);
   const [resultDebutBallastMessage, setResultDebutBallastMessage] = useState('');
   const [resultAchievementModal, setResultAchievementModal] = useState(null);
@@ -1008,6 +1017,21 @@ export default function Admin() {
     () => resultRounds.find(round => String(round.id) === String(resultRoundId)) || null,
     [resultRoundId, resultRounds]
   );
+
+  useEffect(() => {
+    setEventBannerFiles([]);
+    if (eventBannerInputRef.current) eventBannerInputRef.current.value = '';
+
+    if (!resultChampionshipId || !resultRound?.ronda) {
+      setEventBanners([]);
+      return;
+    }
+
+    setEventBanners([]);
+    eventsApi.getBanners(resultChampionshipId, resultRound.ronda)
+      .then(response => setEventBanners(response.data.data || []))
+      .catch(error => setResultMessage(error.response?.data?.error || 'No se pudieron cargar los banners del resultado.'));
+  }, [resultChampionshipId, resultRound?.ronda]);
 
   const resultRegisteredDrivers = useMemo(() => {
     const byDriver = new Map();
@@ -1165,7 +1189,12 @@ export default function Admin() {
     });
 
     return { ...standing, ballastRounds, debutBallast, ballastTotal };
-  }).sort((a, b) => String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' })), [resultBallastRounds, resultChampionshipStandings, resultDebutBallasts, savedResults]);
+  }).sort((a, b) => {
+    const nameOrder = String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' });
+    if (resultBallastSort === 'total_desc') return b.ballastTotal - a.ballastTotal || nameOrder;
+    if (resultBallastSort === 'total_asc') return a.ballastTotal - b.ballastTotal || nameOrder;
+    return nameOrder;
+  }), [resultBallastRounds, resultBallastSort, resultChampionshipStandings, resultDebutBallasts, savedResults]);
 
   useEffect(() => {
     if (!resultRounds.length) {
@@ -1812,6 +1841,7 @@ export default function Admin() {
       setOfficialCars([]);
     }
     setRegistrationConfig(existing ? {
+      visible: existing.visible !== false,
       fecha_apertura: toDateTimeInputValue(existing.fecha_apertura),
       fecha_cierre: toDateTimeInputValue(existing.fecha_cierre),
       precio: String(existing.precio ?? 0),
@@ -2029,6 +2059,26 @@ export default function Admin() {
     }
   };
 
+  const toggleRegistrationConfigVisibility = async config => {
+    const id = String(config.idcampeonato);
+    const nextVisible = !config.visible;
+    setSavingRegistrationVisibilityId(id);
+    setRegistrationConfigMessage('');
+    try {
+      const response = await registrationFormsApi.updateVisibility(id, nextVisible);
+      const saved = response.data.data;
+      setRegistrationConfigs(current => current.map(item => String(item.idcampeonato) === id ? saved : item));
+      if (String(registrationConfigChampionshipId) === id) {
+        setRegistrationConfig(current => ({ ...current, visible: saved.visible }));
+      }
+      setRegistrationConfigMessage(response.data.message);
+    } catch (error) {
+      setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo cambiar la visibilidad del formulario.');
+    } finally {
+      setSavingRegistrationVisibilityId('');
+    }
+  };
+
   const handleMonitorTest = async () => {
     setSavingMonitor(true);
     setMonitorMessage('Enviando correo de prueba...');
@@ -2152,41 +2202,41 @@ export default function Admin() {
   };
 
   const uploadEventBanners = async () => {
-    if (!editingEventKey || !eventBannerFiles.length) return;
+    if (!resultChampionshipId || !resultRound?.ronda || !eventBannerFiles.length) return;
     setSavingEventBanners(true);
-    setEventMessage('');
+    setResultMessage('');
     try {
       const data = new FormData();
       eventBannerFiles.forEach(file => data.append('banners', file));
-      const response = await eventsApi.uploadBanners(editingEventKey.idcampeonato, editingEventKey.ronda, data);
+      const response = await eventsApi.uploadBanners(resultChampionshipId, resultRound.ronda, data);
       const banners = response.data.data || [];
       setEventBanners(banners);
       setEventBannerFiles([]);
       if (eventBannerInputRef.current) eventBannerInputRef.current.value = '';
-      setEvents(current => current.map(item => String(item.idcampeonato) === String(editingEventKey.idcampeonato) && String(item.ronda) === String(editingEventKey.ronda)
+      setEvents(current => current.map(item => String(item.idcampeonato) === String(resultChampionshipId) && String(item.ronda) === String(resultRound.ronda)
         ? { ...item, banners }
         : item));
-      setEventMessage(response.data.message || 'Banners cargados correctamente.');
+      setResultMessage(response.data.message || 'Banners del resultado cargados correctamente.');
     } catch (error) {
-      setEventMessage(error.response?.data?.error || 'No se pudieron cargar los banners.');
+      setResultMessage(error.response?.data?.error || 'No se pudieron cargar los banners del resultado.');
     } finally {
       setSavingEventBanners(false);
     }
   };
 
   const removeEventBanner = async banner => {
-    if (!editingEventKey || !window.confirm('¿Eliminar este banner de la fecha?')) return;
-    setEventMessage('');
+    if (!resultChampionshipId || !resultRound?.ronda || !window.confirm('¿Eliminar este banner del resultado?')) return;
+    setResultMessage('');
     try {
-      const response = await eventsApi.removeBanner(editingEventKey.idcampeonato, editingEventKey.ronda, banner.filename);
+      const response = await eventsApi.removeBanner(resultChampionshipId, resultRound.ronda, banner.filename);
       const banners = response.data.data || [];
       setEventBanners(banners);
-      setEvents(current => current.map(item => String(item.idcampeonato) === String(editingEventKey.idcampeonato) && String(item.ronda) === String(editingEventKey.ronda)
+      setEvents(current => current.map(item => String(item.idcampeonato) === String(resultChampionshipId) && String(item.ronda) === String(resultRound.ronda)
         ? { ...item, banners }
         : item));
-      setEventMessage(response.data.message || 'Banner eliminado.');
+      setResultMessage(response.data.message || 'Banner del resultado eliminado.');
     } catch (error) {
-      setEventMessage(error.response?.data?.error || 'No se pudo eliminar el banner.');
+      setResultMessage(error.response?.data?.error || 'No se pudo eliminar el banner del resultado.');
     }
   };
 
@@ -2325,9 +2375,6 @@ export default function Admin() {
   const resetEventForm = () => {
     setEventForm(emptyEventForm);
     setEditingEventKey(null);
-    setEventBanners([]);
-    setEventBannerFiles([]);
-    if (eventBannerInputRef.current) eventBannerInputRef.current.value = '';
   };
 
   const resetEventBatch = () => {
@@ -4337,7 +4384,7 @@ export default function Admin() {
         idcampeonato: Number(eventForm.idcampeonato),
         fecha: toMySqlDateTime(eventForm.fecha),
         ronda: Number(eventForm.ronda),
-        idcircuito: Number(eventForm.idcircuito),
+        idcircuito: serializeEventCircuit(eventForm.idcircuito),
         especial: eventForm.especial ? 1 : 0,
         especialidad: eventForm.especial ? eventForm.especialidad.toLocaleUpperCase('es-AR') : '',
         coronacion: eventForm.coronacion ? 1 : 0,
@@ -4377,7 +4424,7 @@ export default function Admin() {
         idcampeonato: Number(eventBatch.idcampeonato),
         fecha: toMySqlDateTime(row.fecha),
         ronda: Number(row.ronda),
-        idcircuito: Number(row.idcircuito),
+        idcircuito: serializeEventCircuit(row.idcircuito),
         especial: row.especial ? 1 : 0,
         especialidad: row.especial ? row.especialidad.toLocaleUpperCase('es-AR') : '',
         coronacion: row.coronacion ? 1 : 0,
@@ -4889,19 +4936,13 @@ export default function Admin() {
       idcampeonato: event.idcampeonato || '',
       fecha: toDateTimeInputValue(event.fecha),
       ronda: event.ronda || '',
-      idcircuito: event.idcircuito || '',
+      idcircuito: isPendingCircuitName(event.circuito) ? pendingCircuitValue : event.idcircuito || '',
       especial: Boolean(event.especial),
       especialidad: event.especialidad || '',
       coronacion: Boolean(event.coronacion),
       transmision: event.transmision || '',
     });
-    setEventBanners(event.banners || []);
-    setEventBannerFiles([]);
-    if (eventBannerInputRef.current) eventBannerInputRef.current.value = '';
     setEventMessage('');
-    eventsApi.getBanners(event.idcampeonato, event.ronda)
-      .then(response => setEventBanners(response.data.data || []))
-      .catch(error => setEventMessage(error.response?.data?.error || 'No se pudieron cargar los banners de la fecha.'));
   };
 
   const handleEditDriver = driver => {
@@ -5234,7 +5275,7 @@ export default function Admin() {
   };
 
   const renderSection = () => {
-    if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/></div>;
+    if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><SuspensionCalculator/><TyresCalculator/></div>;
 
     if (activeSection === 'denuncias') {
       const filteredComplaints = complaints.filter(item =>
@@ -5441,14 +5482,14 @@ export default function Admin() {
             <label className="mt-6 block"><span className="text-sm font-semibold text-gray-300">Agregar formulario</span><select value={editingRegistrationConfig ? '' : registrationConfigChampionshipId} onChange={event => selectRegistrationConfigChampionship(event.target.value)} className="input-field mt-2"><option value="">Seleccionar campeonato sin formulario</option>{championships.filter(item => !registrationConfigs.some(config => String(config.idcampeonato) === String(item.id))).map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
             <div className="mt-6 space-y-2">
               <p className="text-sm font-semibold text-gray-300">Formularios guardados</p>
-              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500"><span className="font-semibold text-gray-400">Pilotos:</span> Manuales {Number(item.preinscriptos || 0)} · Reales {Number(item.inscriptos_actuales || 0)} · Límite {Number(item.limite_inscriptos || 0)}</p></button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
+              {registrationConfigs.map(item => <div key={item.idcampeonato} className={`flex items-center gap-2 border p-2 ${String(item.idcampeonato) === String(registrationConfigChampionshipId) ? 'border-racing-red bg-racing-red/10' : 'border-racing-border bg-racing-dark'}`}><button type="button" onClick={() => selectRegistrationConfigChampionship(String(item.idcampeonato))} className="min-w-0 flex-1 px-2 py-1 text-left"><div className="flex items-center justify-between gap-3"><span className="truncate font-semibold">{item.categoria} · T{item.temporada}</span><span className={`text-xs font-bold uppercase ${item.phase === 'open' ? 'text-green-400' : item.phase === 'full' ? 'text-yellow-300' : 'text-gray-500'}`}>{item.phase === 'open' ? 'Abierto' : item.phase === 'upcoming' ? 'Próximo' : item.phase === 'full' ? 'Completo' : 'Cerrado'}</span></div><p className="mt-1 text-xs text-gray-500"><span className="font-semibold text-gray-400">Pilotos:</span> Manuales {Number(item.preinscriptos || 0)} · Reales {Number(item.inscriptos_actuales || 0)} · Límite {Number(item.limite_inscriptos || 0)}</p></button><button type="button" onClick={() => toggleRegistrationConfigVisibility(item)} disabled={savingRegistrationVisibilityId === String(item.idcampeonato)} className={`inline-flex h-9 shrink-0 items-center justify-center border px-3 text-[9px] font-bold uppercase transition disabled:opacity-40 ${item.visible ? 'border-green-400/40 bg-green-500/10 text-green-300 hover:bg-green-500 hover:text-black' : 'border-gray-600 bg-black/20 text-gray-500 hover:border-gray-400 hover:text-gray-200'}`} aria-label={`${item.visible ? 'Ocultar' : 'Mostrar'} formulario en el inicio`}>{savingRegistrationVisibilityId === String(item.idcampeonato) ? '...' : item.visible ? 'Visible' : 'Oculto'}</button><button type="button" onClick={() => deleteRegistrationConfig(item.idcampeonato)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar formulario"><TrashIcon className="h-4 w-4"/></button></div>)}
               {!registrationConfigs.length ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-500">Todavía no hay formularios guardados.</p> : null}
             </div>
           </section>
 
           <section className="card-glass p-6">
             {!championship ? <div className="py-20 text-center text-gray-500"><ClipboardDocumentListIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná un campeonato para configurar su formulario.</p></div> : <form onSubmit={saveRegistrationConfig} className="space-y-6">
-              <div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div>
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div><label className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-xs font-bold uppercase transition ${registrationConfig.visible ? 'border-green-400/40 bg-green-500/10 text-green-300' : 'border-racing-border bg-black/20 text-gray-500'}`}><input name="visible" type="checkbox" checked={registrationConfig.visible} onChange={handleRegistrationConfigChange} className="h-4 w-4 accent-green-500"/>Mostrar en el inicio</label></div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
@@ -5708,6 +5749,26 @@ export default function Admin() {
 
           {resultRound ? (
             <div className="border-b border-racing-border bg-black/20 px-4 py-3 lg:px-6">
+              <section className="mb-4 border border-racing-border bg-racing-dark/70 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <PhotoIcon className="mt-0.5 h-6 w-6 shrink-0 text-racing-red"/>
+                    <div>
+                      <h3 className="font-racing text-lg font-bold uppercase text-white">Banners del resultado · Fecha {resultRound.ronda}</h3>
+                      <p className="mt-1 text-xs text-gray-500">Cargá las imágenes del ganador, el podio o el campeón. En la vista pública aparecerán una debajo de la otra.</p>
+                    </div>
+                  </div>
+                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(260px,1fr)_auto] sm:items-end lg:w-[560px]">
+                    <label>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Seleccionar imágenes</span>
+                      <input ref={eventBannerInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setEventBannerFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-1 file:mr-3 file:border-0 file:bg-racing-red file:px-3 file:py-2 file:font-semibold file:text-white"/>
+                    </label>
+                    <button type="button" onClick={uploadEventBanners} disabled={!eventBannerFiles.length || savingEventBanners} className="btn-primary min-h-11 justify-center disabled:cursor-not-allowed disabled:opacity-40"><ArrowUpTrayIcon className="h-5 w-5"/>{savingEventBanners ? 'Subiendo...' : `Subir ${eventBannerFiles.length || ''}`}</button>
+                  </div>
+                </div>
+                {eventBanners.length ? <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{eventBanners.map(banner => <article key={banner.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={banner.url} alt="Banner del resultado" className="h-full w-full object-cover"/><button type="button" onClick={() => removeEventBanner(banner)} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center border border-red-400/60 bg-black/80 text-red-300 opacity-100 transition hover:bg-red-600 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar banner"><TrashIcon className="h-4 w-4"/></button></article>)}</div> : <p className="mt-4 border border-dashed border-racing-border px-4 py-4 text-center text-xs text-gray-600">Esta fecha todavía no tiene banners de resultados.</p>}
+              </section>
+
               <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                   <label className="sm:w-64">
@@ -6001,15 +6062,29 @@ export default function Admin() {
                   <p className="text-xs font-semibold uppercase text-orange-300">Control por campeonato</p>
                   <h3 className="mt-1 font-racing text-xl font-bold text-white">Tabla de lastres</h3>
                 </div>
-                <div className="flex flex-col items-start gap-2 sm:items-end"><p className="max-w-2xl text-xs text-gray-500">Suma el lastre debut, Sprint, Final y sus sanciones. La última fecha queda excluida y los valores negativos descuentan kilos del total.</p><div className="flex flex-wrap items-center justify-end gap-3">{resultDebutBallastMessage ? <span className="text-[10px] font-bold text-violet-300">{resultDebutBallastMessage}</span> : null}<button type="button" onClick={saveResultDebutBallasts} disabled={savingResultDebutBallasts} className="border border-violet-400/50 bg-violet-400/10 px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-violet-300 transition hover:bg-violet-400 hover:text-black disabled:opacity-40">{savingResultDebutBallasts ? 'Guardando...' : 'Guardar lastres debut'}</button></div></div>
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <p className="max-w-2xl text-xs text-gray-500">Suma el lastre debut, Sprint, Final y sus sanciones. La última fecha queda excluida y los valores negativos descuentan kilos del total.</p>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <label className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                      Ordenar por
+                      <select value={resultBallastSort} onChange={event => setResultBallastSort(event.target.value)} className="h-9 border border-racing-border bg-black/30 px-3 text-[10px] font-bold uppercase text-gray-200 outline-none focus:border-orange-400">
+                        <option value="name">Piloto A-Z</option>
+                        <option value="total_desc">Mayor lastre</option>
+                        <option value="total_asc">Menor lastre</option>
+                      </select>
+                    </label>
+                    {resultDebutBallastMessage ? <span className="text-[10px] font-bold text-violet-300">{resultDebutBallastMessage}</span> : null}
+                    <button type="button" onClick={saveResultDebutBallasts} disabled={savingResultDebutBallasts} className="border border-violet-400/50 bg-violet-400/10 px-4 py-2 text-[9px] font-bold uppercase tracking-wider text-violet-300 transition hover:bg-violet-400 hover:text-black disabled:opacity-40">{savingResultDebutBallasts ? 'Guardando...' : 'Guardar lastres debut'}</button>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-max min-w-full table-auto border-collapse text-xs">
                   <thead>
                     <tr className="bg-black/45">
                       <th rowSpan={2} className="min-w-64 border border-racing-border px-3 py-2.5 text-left uppercase text-gray-400">Piloto / Auto</th>
-                      <th rowSpan={2} className="whitespace-nowrap border border-violet-400/30 bg-violet-400/10 px-3 py-2.5 text-center font-racing text-sm uppercase text-violet-200">Lastre debut</th>
                       <th rowSpan={2} className="whitespace-nowrap border border-orange-400/30 bg-orange-400/10 px-4 py-2.5 text-center font-racing text-sm uppercase text-orange-200">Total de lastre</th>
+                      <th rowSpan={2} className="w-24 min-w-24 whitespace-nowrap border border-racing-border bg-black/15 px-2 py-2.5 text-center text-[9px] font-normal uppercase text-gray-600">Lastre debut</th>
                       {resultBallastRounds.map(round => (
                         <th key={round.id} colSpan={4} className="whitespace-nowrap border border-racing-border px-3 py-3 text-center font-racing text-sm uppercase text-gray-300" title={`Fecha ${round.ronda}: ${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}>
                           Fecha {round.ronda} · {round.circuito}
@@ -6034,8 +6109,8 @@ export default function Admin() {
                             <div className="min-w-0"><p className="truncate font-semibold">{standing.piloto}</p><p className="truncate text-[11px] text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p></div>
                           </div>
                         </td>
-                        <td className="border border-violet-400/30 bg-violet-400/[0.06] p-1.5 text-center"><input type="number" min="0" step="5" value={resultDebutBallasts[String(standing.idpiloto)] ?? ''} onChange={event => setResultDebutBallasts(current => ({ ...current, [String(standing.idpiloto)]: event.target.value }))} className="h-9 w-24 border border-violet-400/25 bg-black/25 px-2 text-center font-racing text-base font-bold text-violet-300 outline-none focus:border-violet-300" placeholder="—" aria-label={`Lastre debut de ${standing.piloto}`}/></td>
                         <td className={`whitespace-nowrap border border-orange-400/30 bg-orange-400/[0.09] px-4 py-2 text-center font-racing text-xl font-bold ${getResultBallastClass(standing.ballastTotal)}`}>{formatResultBallast(standing.ballastTotal)}</td>
+                        <td className="w-24 min-w-24 border border-racing-border bg-black/[0.08] p-1 text-center"><input type="number" min="0" step="5" value={resultDebutBallasts[String(standing.idpiloto)] ?? ''} onChange={event => setResultDebutBallasts(current => ({ ...current, [String(standing.idpiloto)]: event.target.value }))} className="h-8 w-20 border border-racing-border bg-black/20 px-1 text-center font-racing text-sm text-gray-500 outline-none transition focus:border-violet-400 focus:text-violet-300" placeholder="—" aria-label={`Lastre debut de ${standing.piloto}`}/></td>
                         {resultBallastRounds.flatMap(round => {
                           const detail = standing.ballastRounds.get(String(round.ronda));
                           return [
@@ -6613,6 +6688,7 @@ export default function Admin() {
                   <label className="block">
                     <span className="text-sm text-gray-300">Circuito</span>
                     <select name="idcircuito" value={eventForm.idcircuito} onChange={handleEventChange} className="input-field mt-2" required>
+                      <option value={pendingCircuitValue}>A CONFIRMAR</option>
                       {circuits.map(circuit => (
                         <option key={circuit.id} value={circuit.id}>{circuit.nombre}{circuit.variante ? ` (${circuit.variante})` : ''}</option>
                       ))}
@@ -8136,6 +8212,7 @@ export default function Admin() {
                           <span className="text-xs uppercase text-gray-500">Circuito</span>
                           <select value={row.idcircuito} onChange={event => handleEventBatchRowChange(index, 'idcircuito', event.target.value)} className="input-field mt-2" required>
                             <option value="">Seleccionar circuito</option>
+                            <option value={pendingCircuitValue}>A CONFIRMAR</option>
                             {circuits.map(circuit => (
                               <option key={circuit.id} value={circuit.id}>
                                 {circuit.nombre}{circuit.variante ? ` (${circuit.variante})` : ''} - {[circuit.localidad, circuit.provincia].filter(Boolean).join(', ')}
@@ -8382,6 +8459,7 @@ export default function Admin() {
                   <label className="block">
                     <span className="text-sm text-gray-300">Circuito</span>
                     <select name="idcircuito" value={eventForm.idcircuito} onChange={handleEventChange} className="input-field mt-2" required>
+                      <option value={pendingCircuitValue}>A CONFIRMAR</option>
                       {circuits.map(circuit => <option key={circuit.id} value={circuit.id}>{circuit.nombre}{circuit.variante ? ` (${circuit.variante})` : ''}</option>)}
                     </select>
                   </label>
@@ -8391,14 +8469,6 @@ export default function Admin() {
                   </div>
                   {eventForm.especial ? <label className="block"><span className="text-sm text-gray-300">Especialidad</span><input name="especialidad" value={eventForm.especialidad} onChange={handleEventChange} className="input-field mt-2 uppercase" required /></label> : null}
                   <label className="block"><span className="text-sm text-gray-300">Enlace de la transmisión</span><input name="transmision" type="url" value={eventForm.transmision} onChange={handleEventChange} className="input-field mt-2" placeholder="https://www.youtube.com/watch?v=..." /></label>
-                  <section className="border border-racing-border bg-racing-dark/70 p-4">
-                    <div className="flex items-start gap-3"><PhotoIcon className="mt-0.5 h-6 w-6 shrink-0 text-racing-red"/><div><h3 className="font-racing text-lg font-bold uppercase text-white">Banners de la fecha</h3><p className="mt-1 text-xs text-gray-500">Podés cargar fotos del ganador, el podio o el campeón. Se mostrarán como carrusel en los resultados.</p></div></div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                      <label><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Seleccionar imágenes</span><input ref={eventBannerInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setEventBannerFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-3 file:border-0 file:bg-racing-red file:px-3 file:py-2 file:font-semibold file:text-white"/><small className="mt-1 block text-gray-600">Hasta 10 imágenes por carga, 8 MB cada una.</small></label>
-                      <button type="button" onClick={uploadEventBanners} disabled={!eventBannerFiles.length || savingEventBanners} className="btn-primary min-h-11 justify-center disabled:cursor-not-allowed disabled:opacity-40"><ArrowUpTrayIcon className="h-5 w-5"/>{savingEventBanners ? 'Subiendo...' : `Subir ${eventBannerFiles.length || ''}`}</button>
-                    </div>
-                    {eventBanners.length ? <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{eventBanners.map(banner => <article key={banner.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={banner.url} alt="Banner de la fecha" className="h-full w-full object-cover"/><button type="button" onClick={() => removeEventBanner(banner)} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center border border-red-400/60 bg-black/80 text-red-300 opacity-100 transition hover:bg-red-600 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar banner"><TrashIcon className="h-4 w-4"/></button></article>)}</div> : <p className="mt-4 border border-dashed border-racing-border px-4 py-5 text-center text-xs text-gray-600">Esta fecha todavía no tiene banners.</p>}
-                  </section>
                   {eventMessage ? <div className="border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">{eventMessage}</div> : null}
                   <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                     <button type="button" onClick={resetEventForm} className="btn-secondary justify-center">Cancelar</button>

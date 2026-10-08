@@ -7,8 +7,15 @@ const TRANSIENT_FAILURE_GRACE_MS = 30000;
 
 const timingCaches = new Map();
 const timingActivity = new Map();
-const isAdminDriver = driver =>
-  String(driver?.CarInfo?.DriverName || '').trim().toLocaleLowerCase() === 'admin';
+const isAdminDriver = driver => {
+  const driverName = String(driver?.CarInfo?.DriverName || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('es-AR');
+  return driverName === 'admin' || driverName === 'admin cadpo';
+};
 
 const timingSignature = source => {
   const connectedDrivers = (Array.isArray(source.ConnectedDrivers) ? source.ConnectedDrivers : [])

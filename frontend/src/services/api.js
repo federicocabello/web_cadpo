@@ -219,6 +219,7 @@ export const registrationFormsApi = {
   createOfficialCar: (id, data) => api.post(`/registration-forms/admin/${id}/official-cars`, data, { timeout: 60000 }),
   updateOfficialCar: (id, officialCarId, data) => api.put(`/registration-forms/admin/${id}/official-cars/${officialCarId}`, data, { timeout: 60000 }),
   removeOfficialCar: (id, officialCarId) => api.delete(`/registration-forms/admin/${id}/official-cars/${officialCarId}`),
+  updateVisibility: (id, visible) => api.patch(`/registration-forms/admin/${id}/visibility`, { visible }),
   saveConfig: (id, data) => api.put(`/registration-forms/admin/${id}`, data),
   removeConfig: id => api.delete(`/registration-forms/admin/${id}`),
 };

@@ -63,7 +63,10 @@ const normalizeCircuitFields = body => ({
 const getAll = async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, nombre, localidad, provincia, pais, imagen, trazado, variante FROM circuitos ORDER BY nombre ASC'
+      `SELECT id, nombre, localidad, provincia, pais, imagen, trazado, variante
+       FROM circuitos
+       WHERE UPPER(TRIM(nombre)) <> 'A CONFIRMAR'
+       ORDER BY nombre ASC`
     );
     res.json({ data: rows, total: rows.length });
   } catch (err) {

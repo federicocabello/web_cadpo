@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowDownTrayIcon,
   ArrowPathIcon,
   BoltIcon,
-  PlusIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 const numberValue = (value, fallback = 0) => {
@@ -113,17 +110,6 @@ const formatNumber = (value, digits = 0) => Number(value || 0).toLocaleString('e
 const calculateCv = point => (positiveNumber(point.rpm) * numberValue(point.torque)) / 7023.5;
 const calculateHp = point => (positiveNumber(point.rpm) * numberValue(point.torque)) / 7127;
 
-const downloadTextFile = (filename, content) => {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
 function EngineChart({ points, referencePoints, maxRpm, maxValue }) {
   const width = 920;
   const height = 430;
@@ -176,11 +162,16 @@ export default function EnginePowerCalculator() {
   const [originalLimiter, setOriginalLimiter] = useState(0);
   const [inertia, setInertia] = useState(0);
   const [originalInertia, setOriginalInertia] = useState(0);
+  const [minimumRpm, setMinimumRpm] = useState(0);
+  const [originalMinimumRpm, setOriginalMinimumRpm] = useState(0);
+  const [limiterHz, setLimiterHz] = useState(0);
+  const [originalLimiterHz, setOriginalLimiterHz] = useState(0);
   const [damageRpmThreshold, setDamageRpmThreshold] = useState(0);
   const [originalDamageRpmThreshold, setOriginalDamageRpmThreshold] = useState(0);
   const [damageRpmK, setDamageRpmK] = useState(0);
   const [originalDamageRpmK, setOriginalDamageRpmK] = useState(0);
   const [targetCv, setTargetCv] = useState('');
+  const [targetTorque, setTargetTorque] = useState('');
   const [graphMaxRpm, setGraphMaxRpm] = useState(9000);
   const [graphMaxValue, setGraphMaxValue] = useState(400);
   const [turboInfo, setTurboInfo] = useState([]);
@@ -214,6 +205,8 @@ export default function EnginePowerCalculator() {
   const engineSettingsChanged = Boolean(loaded && (
     positiveNumber(limiter) !== positiveNumber(originalLimiter)
     || positiveNumber(inertia) !== positiveNumber(originalInertia)
+    || positiveNumber(minimumRpm) !== positiveNumber(originalMinimumRpm)
+    || nonNegativeNumber(limiterHz) !== nonNegativeNumber(originalLimiterHz)
     || positiveNumber(damageRpmThreshold) !== positiveNumber(originalDamageRpmThreshold)
     || nonNegativeNumber(damageRpmK) !== nonNegativeNumber(originalDamageRpmK)
   ));
@@ -242,6 +235,8 @@ export default function EnginePowerCalculator() {
     }
     const importedLimiter = positiveNumber(findIniValue(sections, ['LIMITER'], ['ENGINE_DATA']), Math.max(...parsedPoints.map(point => point.rpm)));
     const importedInertia = positiveNumber(findIniValue(sections, ['INERTIA'], ['ENGINE_DATA']));
+    const importedMinimumRpm = positiveNumber(findIniValue(sections, ['MINIMUM'], ['ENGINE_DATA']), 800);
+    const importedLimiterHz = nonNegativeNumber(findIniValue(sections, ['LIMITER_HZ'], ['ENGINE_DATA']), 30);
     const importedDamageThreshold = positiveNumber(findIniValue(sections, ['RPM_THRESHOLD'], ['DAMAGE']), importedLimiter);
     const importedDamageK = nonNegativeNumber(findIniValue(sections, ['RPM_DAMAGE_K'], ['DAMAGE']), 1);
     const turboFileSections = contents.get('turbo.ini') ? parseIniSections(contents.get('turbo.ini')) : new Map();
@@ -258,6 +253,10 @@ export default function EnginePowerCalculator() {
     setOriginalLimiter(importedLimiter);
     setInertia(importedInertia);
     setOriginalInertia(importedInertia);
+    setMinimumRpm(importedMinimumRpm);
+    setOriginalMinimumRpm(importedMinimumRpm);
+    setLimiterHz(importedLimiterHz);
+    setOriginalLimiterHz(importedLimiterHz);
     setDamageRpmThreshold(importedDamageThreshold);
     setOriginalDamageRpmThreshold(importedDamageThreshold);
     setDamageRpmK(importedDamageK);
@@ -266,6 +265,7 @@ export default function EnginePowerCalculator() {
     setGraphMaxValue(Math.ceil(maxCurveValue / 50) * 50 || 400);
     setTurboInfo(turboSections);
     setTargetCv('');
+    setTargetTorque('');
     setError('');
     setMessage(`Se cargaron ${parsedPoints.length} puntos desde ${referencedCurve}.`);
     setLoaded(true);
@@ -286,13 +286,6 @@ export default function EnginePowerCalculator() {
     return () => window.removeEventListener('cadpo:gear-limiter-change', syncGearLimiter);
   }, []);
 
-  const updatePoint = (id, field, value) => setPoints(current => current.map(point => point.id === id ? { ...point, [field]: value } : point));
-  const addPoint = () => setPoints(current => {
-    const last = current.at(-1) || { rpm: 1000, torque: 100 };
-    return [...current, { id: `${Date.now()}-new`, rpm: positiveNumber(last.rpm) + 500, torque: numberValue(last.torque) }];
-  });
-  const removePoint = id => setPoints(current => current.filter(point => point.id !== id));
-
   const updateLimiter = value => {
     setLimiter(value);
     window.dispatchEvent(new CustomEvent('cadpo:engine-limiter-change', { detail: { limiter: value } }));
@@ -306,25 +299,30 @@ export default function EnginePowerCalculator() {
     setMessage(`Curva escalada un ${formatNumber(factor * 100, 1)}% para alcanzar aproximadamente ${formatNumber(desired, 1)} CV.`);
   };
 
+  const applyTargetTorque = () => {
+    const desired = positiveNumber(targetTorque);
+    if (!desired || !stats?.torque) return;
+    const factor = desired / stats.torque;
+    setPoints(current => current.map(point => ({ ...point, torque: Number((numberValue(point.torque) * factor).toFixed(3)) })));
+    setMessage(`Curva escalada un ${formatNumber(factor * 100, 1)}% para alcanzar aproximadamente ${formatNumber(desired, 1)} Nm.`);
+  };
+
   const restoreCurve = () => {
     setPoints(referencePoints.map(point => ({ ...point })));
     updateLimiter(originalLimiter);
     setInertia(originalInertia);
+    setMinimumRpm(originalMinimumRpm);
+    setLimiterHz(originalLimiterHz);
     setDamageRpmThreshold(originalDamageRpmThreshold);
     setDamageRpmK(originalDamageRpmK);
     setTargetCv('');
+    setTargetTorque('');
     setMessage('Se restauraron los valores importados.');
   };
 
   const buildPowerCurveContent = () => {
     const ordered = [...points].sort((a, b) => positiveNumber(a.rpm) - positiveNumber(b.rpm));
     return `${ordered.map(point => `${Math.round(positiveNumber(point.rpm))}|${numberValue(point.torque).toFixed(3)}`).join('\r\n')}\r\n`;
-  };
-
-  const savePowerCurve = () => {
-    const content = buildPowerCurveContent();
-    downloadTextFile(curveFilename.split(/[\\/]/).pop() || 'power.lut', content);
-    setMessage(`${curveFilename} generado con ${points.length} puntos.`);
   };
 
   const buildEngineContent = () => {
@@ -336,6 +334,8 @@ export default function EnginePowerCalculator() {
       const inertiaResult = replaceIniValue(content, 'ENGINE_DATA', 'INERTIA', positiveNumber(inertia).toFixed(3));
       if (inertiaResult.replaced) content = inertiaResult.content;
     }
+    content = upsertIniValue(content, 'ENGINE_DATA', 'MINIMUM', Math.round(positiveNumber(minimumRpm, 800)), 'RPM de ralentí');
+    content = upsertIniValue(content, 'ENGINE_DATA', 'LIMITER_HZ', nonNegativeNumber(limiterHz, 30), 'Frecuencia de actuación del limitador');
     content = upsertIniValue(
       content,
       'DAMAGE',
@@ -353,15 +353,12 @@ export default function EnginePowerCalculator() {
     return content;
   };
 
-  const saveEngine = () => {
-    const content = buildEngineContent();
-    if (!content) {
-      setMessage('No se encontró LIMITER dentro de [ENGINE_DATA].');
-      return;
-    }
-    downloadTextFile('engine.ini', content);
-    setMessage('engine.ini generado conservando el resto del archivo original.');
-  };
+  useEffect(() => {
+    const files = [];
+    if (loaded && curveChanged) files.push(curveFilename.split(/[\\/]/).pop() || 'power.lut');
+    if (loaded && engineSettingsChanged) files.push('engine.ini');
+    window.dispatchEvent(new CustomEvent('cadpo:engine-modified-files-change', { detail: { files } }));
+  }, [curveChanged, curveFilename, engineSettingsChanged, loaded]);
 
   useEffect(() => {
     const downloadModifiedEngineFiles = event => {
@@ -389,17 +386,23 @@ export default function EnginePowerCalculator() {
 
       {error ? <p className="mt-5 border border-red-400/30 bg-red-400/[0.07] px-3 py-2 text-xs text-red-200">{error}</p> : null}
 
-      {loaded ? <div className="mt-5 grid items-start gap-4 xl:grid-cols-[270px_minmax(0,1fr)]">
+      {loaded ? <div className="mt-5 grid items-start gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="space-y-4 border border-racing-border bg-racing-card p-4">
           <div><p className="text-[9px] font-bold uppercase tracking-widest text-red-300">Datos del motor</p><h3 className="font-racing text-xl font-bold uppercase text-white">Control de potencia</h3></div>
           <div className="grid grid-cols-2 gap-2">
             <div className="border border-racing-border bg-black/20 p-3"><span className="text-[8px] font-bold uppercase text-gray-600">Potencia máxima</span><strong className="mt-1 block font-racing text-2xl text-red-400">{formatNumber(stats?.cv, 1)} CV</strong><small className="text-[9px] text-gray-500">{formatNumber(stats?.hp, 1)} HP · {formatNumber(stats?.powerRpm)} RPM</small></div>
             <div className="border border-racing-border bg-black/20 p-3"><span className="text-[8px] font-bold uppercase text-gray-600">Torque máximo</span><strong className="mt-1 block font-racing text-2xl text-cyan-300">{formatNumber(stats?.torque, 1)} NM</strong><small className="text-[9px] text-gray-500">a {formatNumber(stats?.torqueRpm)} RPM</small></div>
           </div>
-          <label className="block"><span className="text-xs font-semibold text-gray-300">Potencia objetivo</span><div className="mt-1.5 flex"><input type="number" min="1" step="1" value={targetCv} onChange={event => setTargetCv(event.target.value)} placeholder={formatNumber(stats?.cv)} className="input-field min-w-0 flex-1"/><button type="button" onClick={applyTargetPower} className="shrink-0 bg-red-500 px-3 text-[9px] font-bold uppercase text-white hover:bg-red-400">Aplicar CV</button></div><span className="mt-1 block text-[9px] leading-relaxed text-gray-600">Escala proporcionalmente el torque; no modifica las relaciones de caja.</span></label>
+          <div className="space-y-2">
+            <label className="block"><span className="text-xs font-semibold text-gray-300">Potencia objetivo</span><div className="mt-1.5 flex"><input type="number" min="1" step="1" value={targetCv} onChange={event => setTargetCv(event.target.value)} placeholder={formatNumber(stats?.cv)} className="input-field min-w-0 flex-1"/><button type="button" onClick={applyTargetPower} className="shrink-0 bg-red-500 px-3 text-[9px] font-bold uppercase text-white hover:bg-red-400">Aplicar CV</button></div></label>
+            <label className="block"><span className="text-xs font-semibold text-gray-300">Torque objetivo</span><div className="mt-1.5 flex"><input type="number" min="1" step="1" value={targetTorque} onChange={event => setTargetTorque(event.target.value)} placeholder={formatNumber(stats?.torque)} className="input-field min-w-0 flex-1"/><button type="button" onClick={applyTargetTorque} className="shrink-0 bg-cyan-400 px-3 text-[9px] font-bold uppercase text-black hover:bg-cyan-300">Aplicar Nm</button></div></label>
+            <span className="block text-[9px] leading-relaxed text-gray-600">CV y torque escalan toda la curva proporcionalmente sin alterar su forma ni las relaciones de caja.</span>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <label><span className="text-[10px] font-semibold text-gray-400">Limitador</span><div className="relative mt-1"><input type="number" min="1000" step="100" value={limiter} onChange={event => updateLimiter(event.target.value)} className="input-field pr-10 text-sm"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[7px] text-gray-600">RPM</span></div></label>
             <label><span className="text-[10px] font-semibold text-gray-400">Inercia</span><input type="number" min="0.001" step="0.01" value={inertia} onChange={event => setInertia(event.target.value)} className="input-field mt-1 text-sm"/></label>
+            <label><span className="text-[10px] font-semibold text-gray-400">Ralentí</span><div className="relative mt-1"><input type="number" min="100" step="50" value={minimumRpm} onChange={event => setMinimumRpm(event.target.value)} className="input-field pr-10 text-sm"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[7px] text-gray-600">RPM</span></div></label>
+            <label><span className="text-[10px] font-semibold text-gray-400">Frecuencia de corte</span><div className="relative mt-1"><input type="number" min="0" step="1" value={limiterHz} onChange={event => setLimiterHz(event.target.value)} className="input-field pr-8 text-sm"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[7px] text-gray-600">HZ</span></div></label>
           </div>
           <div className="border border-red-400/20 bg-red-400/[0.04] p-3">
             <p className="text-[9px] font-bold uppercase tracking-wider text-red-300">Daño del motor</p>
@@ -410,7 +413,6 @@ export default function EnginePowerCalculator() {
             <p className="mt-2 text-[9px] leading-relaxed text-gray-600">RPM_DAMAGE_K se aplica por cada RPM que supera el umbral configurado.</p>
           </div>
           <div className="border border-racing-border bg-black/20 p-3"><p className="text-[9px] font-bold uppercase text-gray-500">Sobrealimentación</p>{turboInfo.length ? <>{turboInfo.map(turbo => <p key={turbo.id} className="mt-1 text-xs text-gray-300"><strong className="text-yellow-300">{turbo.name}</strong> · Máx. {turbo.maxBoost ?? '—'} · Wastegate {turbo.wastegate ?? '—'}</p>)}<p className="mt-2 text-[9px] leading-relaxed text-yellow-200/70">La potencia del gráfico corresponde a la curva base. El turbo puede modificar la entrega efectiva en pista.</p></> : <p className="mt-1 text-xs text-gray-600">No se detectaron secciones de turbo.</p>}</div>
-          <div className="grid grid-cols-2 gap-2"><button type="button" onClick={savePowerCurve} className="inline-flex h-10 items-center justify-center gap-1.5 border border-red-400/50 px-2 text-[9px] font-bold uppercase text-red-300 hover:bg-red-500 hover:text-white"><ArrowDownTrayIcon className="h-4 w-4"/>{curveFilename.split(/[\\/]/).pop()}</button><button type="button" onClick={saveEngine} className="inline-flex h-10 items-center justify-center gap-1.5 border border-white/20 px-2 text-[9px] font-bold uppercase text-white hover:bg-white hover:text-black"><ArrowDownTrayIcon className="h-4 w-4"/>engine.ini</button></div>
           <button type="button" onClick={restoreCurve} className="inline-flex h-9 w-full items-center justify-center gap-2 border border-racing-border text-[9px] font-bold uppercase text-gray-400 hover:border-white/40 hover:text-white"><ArrowPathIcon className="h-4 w-4"/>Restaurar archivo cargado</button>
           {message ? <p className="border-l-2 border-red-400 pl-2 text-[10px] leading-relaxed text-gray-300">{message}</p> : null}
         </aside>
@@ -421,10 +423,6 @@ export default function EnginePowerCalculator() {
             <EngineChart points={[...points].sort((a, b) => positiveNumber(a.rpm) - positiveNumber(b.rpm))} referencePoints={referencePoints} maxRpm={positiveNumber(graphMaxRpm, 9000)} maxValue={positiveNumber(graphMaxValue, 400)}/>
           </div>
 
-          <section className="border border-racing-border bg-racing-card">
-            <header className="flex items-center justify-between border-b border-racing-border px-4 py-3"><div><h3 className="font-racing text-xl font-bold uppercase text-white">Curva editable</h3><p className="text-[10px] text-gray-500">Torque en Nm; la potencia se calcula automáticamente.</p></div><button type="button" onClick={addPoint} className="inline-flex h-8 items-center gap-1.5 border border-red-400/40 px-3 text-[9px] font-bold uppercase text-red-300 hover:bg-red-500 hover:text-white"><PlusIcon className="h-4 w-4"/>Punto</button></header>
-            <div className="grid grid-cols-1 gap-px bg-racing-border sm:grid-cols-2 lg:grid-cols-3">{points.map(point => <div key={point.id} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 bg-racing-card p-3"><label><span className="text-[8px] font-bold uppercase text-gray-600">RPM</span><input type="number" min="1" step="100" value={point.rpm} onChange={event => updatePoint(point.id, 'rpm', event.target.value)} className="input-field mt-1 text-center font-racing text-sm"/></label><label><span className="text-[8px] font-bold uppercase text-gray-600">Torque Nm</span><input type="number" step="1" value={point.torque} onChange={event => updatePoint(point.id, 'torque', event.target.value)} className="input-field mt-1 text-center font-racing text-sm text-cyan-300"/></label><button type="button" onClick={() => removePoint(point.id)} className="mb-1 inline-flex h-8 w-8 items-center justify-center text-gray-700 hover:text-red-300" aria-label={`Eliminar punto ${point.rpm} RPM`}><TrashIcon className="h-4 w-4"/></button><div className="col-span-2 -mt-1 text-center text-[9px] text-red-300">{formatNumber(calculateCv(point), 1)} CV</div></div>)}</div>
-          </section>
         </div>
       </div> : <div className="mt-5 flex min-h-56 flex-col items-center justify-center border border-dashed border-racing-border bg-black/15 px-6 text-center"><BoltIcon className="h-12 w-12 text-gray-700"/><h3 className="mt-3 font-racing text-xl font-bold uppercase text-gray-500">Cargá los datos del motor</h3><p className="mt-1 text-xs text-gray-600">El gráfico aparecerá cuando se detecten engine.ini y su curva de potencia.</p></div>}
     </section>

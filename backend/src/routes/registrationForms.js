@@ -13,6 +13,7 @@ router.get('/admin/:id/official-cars', requireAdmin, controller.getAdminOfficial
 router.post('/admin/:id/official-cars', requireAdmin, uploadRegistrationImages.single('foto'), controller.createAdminOfficialCar);
 router.put('/admin/:id/official-cars/:officialCarId', requireAdmin, uploadRegistrationImages.single('foto'), controller.updateAdminOfficialCar);
 router.delete('/admin/:id/official-cars/:officialCarId', requireAdmin, controller.removeAdminOfficialCar);
+router.patch('/admin/:id/visibility', requireAdmin, controller.updateVisibility);
 router.put('/admin/:id', requireAdmin, controller.saveConfig);
 router.delete('/admin/:id', requireAdmin, controller.removeConfig);
 router.get('/:id', controller.getPublicOne);

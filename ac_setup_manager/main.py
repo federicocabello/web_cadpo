@@ -7,7 +7,17 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from core import SetupDocument, range_summary, validate_range
+from core import (
+    SetupDocument,
+    discover_control_templates,
+    physics_binding,
+    range_summary,
+    read_physics_default,
+    validate_range,
+    write_physics_default,
+)
+from layout_dialog import SetupLayoutDialog
+from module_dialog import ModuleManagerDialog
 
 
 BG = "#090b0f"
@@ -41,7 +51,12 @@ class SetupManagerApp(tk.Tk):
         self.document: SetupDocument | None = None
         self.edits: dict[str, dict[str, str]] = {}
         self.deleted: set[str] = set()
+        self.disabled: set[str] = set()
         self.added: list[tuple[str, dict[str, str]]] = []
+        self.pending_defaults: dict[str, str] = {}
+        self.original_defaults: dict[str, str] = {}
+        self.available_templates = {}
+        self.layout_dialog: SetupLayoutDialog | None = None
         self.current_section = ""
         self.folder_var = tk.StringVar()
         self.search_var = tk.StringVar()
@@ -53,6 +68,9 @@ class SetupManagerApp(tk.Tk):
         self.reference_var = tk.StringVar(value="")
         self.key_var = tk.StringVar()
         self.value_var = tk.StringVar()
+        self.available_var = tk.StringVar()
+        self.default_var = tk.StringVar()
+        self.default_source_var = tk.StringVar(value="Seleccioná una sección para consultar el valor inicial real.")
         self.field_vars = {key: tk.StringVar() for key, _ in COMMON_FIELDS}
 
         self._configure_styles()
@@ -72,7 +90,21 @@ class SetupManagerApp(tk.Tk):
         style.configure("Treeview", background=CARD, foreground=TEXT, fieldbackground=CARD, borderwidth=0, rowheight=29)
         style.configure("Treeview.Heading", background=CARD_ALT, foreground=CYAN, relief="flat", font=("Segoe UI", 9, "bold"))
         style.map("Treeview", background=[("selected", "#164e46")], foreground=[("selected", "white")])
-        style.configure("TCombobox", fieldbackground=BG, background=CARD_ALT, foreground=TEXT, arrowcolor=TEXT)
+        style.configure("TCombobox", fieldbackground=BG, background=CARD_ALT, foreground=TEXT, arrowcolor=CYAN, bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", BG), ("disabled", CARD_ALT)],
+            foreground=[("readonly", TEXT), ("disabled", MUTED)],
+            selectbackground=[("readonly", BG)],
+            selectforeground=[("readonly", TEXT)],
+            background=[("readonly", CARD_ALT), ("active", "#24303b")],
+            arrowcolor=[("readonly", CYAN), ("disabled", MUTED)],
+        )
+        self.option_add("*TCombobox*Listbox.background", CARD_ALT)
+        self.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.option_add("*TCombobox*Listbox.selectBackground", "#167b69")
+        self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+        self.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
 
     def _build_ui(self) -> None:
         header = tk.Frame(self, bg=BG, padx=22, pady=16)
@@ -81,7 +113,11 @@ class SetupManagerApp(tk.Tk):
         title_row = tk.Frame(header, bg=BG)
         title_row.pack(fill="x")
         tk.Label(title_row, text="EDITOR DE SETUP", bg=BG, fg=TEXT, font=("Arial Black", 25)).pack(side="left")
-        tk.Button(title_row, text="GUARDAR SETUP.INI", command=self.save, bg=CYAN, fg="#03110e", activebackground="#65ffe0", relief="flat", padx=22, pady=11, font=("Segoe UI", 10, "bold"), cursor="hand2").pack(side="right")
+        title_actions = tk.Frame(title_row, bg=BG)
+        title_actions.pack(side="right")
+        tk.Button(title_actions, text="DISEÑO DE PESTAÑAS", command=self.open_layout_editor, bg=CARD_ALT, fg=TEXT, activebackground=BORDER, relief="flat", padx=16, pady=11, font=("Segoe UI", 9, "bold"), cursor="hand2").pack(side="left", padx=(0, 8))
+        tk.Button(title_actions, text="MÓDULOS Y EFECTOS", command=self.open_module_manager, bg=YELLOW, fg="#171203", activebackground="#fde047", relief="flat", padx=18, pady=11, font=("Segoe UI", 10, "bold"), cursor="hand2").pack(side="left", padx=(0, 8))
+        tk.Button(title_actions, text="GUARDAR SETUP.INI", command=self.save, bg=CYAN, fg="#03110e", activebackground="#65ffe0", relief="flat", padx=22, pady=11, font=("Segoe UI", 10, "bold"), cursor="hand2").pack(side="left")
         tk.Label(header, text="Controlá todas las secciones, rangos, pasos y archivos de opciones sin alterar el formato que necesita Assetto Corsa.", bg=BG, fg=MUTED, font=("Segoe UI", 10)).pack(anchor="w", pady=(3, 10))
         folder_row = tk.Frame(header, bg=BG)
         folder_row.pack(fill="x")
@@ -102,6 +138,13 @@ class SetupManagerApp(tk.Tk):
         tk.Entry(filters, textvariable=self.search_var, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat", font=("Segoe UI", 9)).pack(fill="x", ipady=7, pady=(8, 6))
         self.tab_combo = ttk.Combobox(filters, textvariable=self.tab_var, values=("TODAS",), state="readonly")
         self.tab_combo.pack(fill="x")
+
+        available = tk.Frame(filters, bg=CARD_ALT, padx=9, pady=9)
+        available.pack(fill="x", pady=(10, 0))
+        tk.Label(available, text="HABILITAR CONTROL DISPONIBLE", bg=CARD_ALT, fg=YELLOW, font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        self.available_combo = ttk.Combobox(available, textvariable=self.available_var, values=(), state="readonly")
+        self.available_combo.pack(fill="x", pady=(5, 5))
+        tk.Button(available, text="HABILITAR EN EL SETUP", command=self.enable_available_control, bg=YELLOW, fg="#171203", relief="flat", pady=7, font=("Segoe UI", 8, "bold"), cursor="hand2").pack(fill="x")
 
         self.section_tree = ttk.Treeview(left, columns=("tab", "type"), show="tree headings", selectmode="browse")
         self.section_tree.heading("#0", text="SECCIÓN")
@@ -146,6 +189,17 @@ class SetupManagerApp(tk.Tk):
             entry.pack(fill="x", ipady=7, pady=(3, 0))
             entry.bind("<FocusOut>", lambda _event: self.commit_fields())
 
+        default_card = tk.Frame(editor, bg="#101a25", highlightbackground="#2563a5", highlightthickness=1, padx=12, pady=10)
+        default_card.pack(fill="x", pady=(0, 12))
+        default_head = tk.Frame(default_card, bg="#101a25")
+        default_head.pack(fill="x")
+        tk.Label(default_head, text="VALOR PREDETERMINADO REAL", bg="#101a25", fg="#7dd3fc", font=("Segoe UI", 8, "bold")).pack(side="left")
+        tk.Label(default_head, text="Se guarda en el archivo físico asociado, no en setup.ini", bg="#101a25", fg=MUTED, font=("Segoe UI", 8)).pack(side="right")
+        self.default_entry = tk.Entry(default_card, textvariable=self.default_var, state="disabled", disabledbackground=BG, disabledforeground=MUTED, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat", font=("Consolas", 12, "bold"))
+        self.default_entry.pack(fill="x", ipady=8, pady=(7, 4))
+        self.default_entry.bind("<FocusOut>", lambda _event: self.commit_fields())
+        tk.Label(default_card, textvariable=self.default_source_var, bg="#101a25", fg=MUTED, anchor="w", font=("Segoe UI", 8)).pack(fill="x")
+
         range_card = tk.Frame(editor, bg="#0c2521", highlightbackground="#167b69", highlightthickness=1, padx=12, pady=10)
         range_card.pack(fill="x", pady=(0, 12))
         tk.Label(range_card, text="VISTA DEL RANGO", bg="#0c2521", fg=CYAN, font=("Segoe UI", 8, "bold")).pack(anchor="w")
@@ -180,22 +234,32 @@ class SetupManagerApp(tk.Tk):
         if selected:
             self.load_folder(selected)
 
-    def load_folder(self, folder: str) -> None:
+    def load_folder(self, folder: str, open_layout: bool = True) -> None:
         try:
-            self.document = SetupDocument.load(folder)
+            next_document = SetupDocument.load(folder)
         except Exception as error:
             messagebox.showerror("No se pudo cargar", str(error), parent=self)
             return
+        if self.layout_dialog and self.layout_dialog.winfo_exists():
+            self.layout_dialog.destroy()
+        self.layout_dialog = None
+        self.document = next_document
         self.folder_var.set(str(self.document.path.parent))
         self.edits.clear()
         self.deleted.clear()
+        self.disabled = {section.name for section in self.document.sections if not section.enabled}
         self.added.clear()
+        self.pending_defaults.clear()
+        self.original_defaults.clear()
         self.current_section = ""
-        tabs = sorted({section.tab for section in self.document.sections})
+        tabs = list(dict.fromkeys(section.tab for section in self.document.sections))
         self.tab_combo.configure(values=("TODAS", *tabs))
         self.tab_var.set("TODAS")
         self._refresh_sections()
+        self._refresh_available_controls()
         self.status_var.set(f"{len(self.document.sections)} secciones detectadas en {self.document.path}")
+        if open_layout:
+            self.after_idle(self.open_layout_editor)
 
     def _all_sections(self):
         if not self.document:
@@ -204,7 +268,7 @@ class SetupManagerApp(tk.Tk):
         for name, values in self.added:
             sections.append(type("AddedSection", (), {
                 "name": name, "title": values.get("NAME", name), "tab": values.get("TAB", "GENERAL"),
-                "kind": "Nueva sección", "values": values,
+                "kind": "Nueva sección", "values": values, "enabled": name not in self.disabled,
             })())
         return sections
 
@@ -215,14 +279,61 @@ class SetupManagerApp(tk.Tk):
         self.section_tree.delete(*self.section_tree.get_children())
         query = self.search_var.get().strip().lower()
         tab = self.tab_var.get()
+        grouped = {}
         for section in self._all_sections():
-            if query and query not in f"{section.name} {section.title} {section.tab}".lower():
+            values = self._section_values(section.name)
+            effective_tab = (values.get("TAB") or "GENERAL").strip()
+            effective_title = values.get("NAME", section.title)
+            if query and query not in f"{section.name} {effective_title} {effective_tab}".lower():
                 continue
-            if tab != "TODAS" and section.tab != tab:
+            if tab != "TODAS" and effective_tab != tab:
                 continue
-            self.section_tree.insert("", "end", iid=section.name, text=section.name, values=(section.tab, section.kind))
+            grouped.setdefault(effective_tab, []).append((section, effective_title))
+        for group_name in grouped:
+            group_id = f"tab::{group_name}"
+            self.section_tree.insert("", "end", iid=group_id, text=group_name, values=("", f"{len(grouped[group_name])} controles"), open=True)
+            for section, effective_title in sorted(grouped[group_name], key=lambda item: (item[1].lower(), item[0].name.lower())):
+                enabled = self.is_setup_control_enabled(section.name)
+                kind = section.kind if enabled else "DESACTIVADO"
+                tags = () if enabled else ("disabled",)
+                self.section_tree.insert(group_id, "end", iid=section.name, text=section.name, values=(group_name, kind), tags=tags)
+        self.section_tree.tag_configure("disabled", foreground=MUTED)
         if selected and self.section_tree.exists(selected):
             self.section_tree.selection_set(selected)
+            self.section_tree.see(selected)
+
+    def _refresh_available_controls(self) -> None:
+        if not self.document:
+            self.available_templates = {}
+            self.available_combo.configure(values=())
+            self.available_var.set("")
+            return
+        templates = discover_control_templates(self.document.path.parent, {section.name for section in self._all_sections()})
+        self.available_templates = {
+            f"{item.category} · {item.title} · [{item.section}]": item for item in templates
+        }
+        labels = tuple(self.available_templates)
+        self.available_combo.configure(values=labels)
+        self.available_var.set(labels[0] if labels else "")
+
+    def available_control_labels(self) -> tuple[str, ...]:
+        return tuple(self.available_templates)
+
+    def enable_available_control(self, selected_label: str | None = None) -> str:
+        label = selected_label or self.available_var.get()
+        template = self.available_templates.get(label)
+        if not template:
+            messagebox.showinfo("Sin controles", "No hay controles físicos pendientes para habilitar.", parent=self)
+            return ""
+        self.commit_fields()
+        self.added.append((template.section, dict(template.values)))
+        self._refresh_sections()
+        self._refresh_available_controls()
+        self.section_tree.selection_set(template.section)
+        self.section_tree.see(template.section)
+        self._section_selected()
+        self.status_var.set(f"[{template.section}] habilitado en memoria. Revisá sus valores y guardá setup.ini.")
+        return template.section
 
     def _section_values(self, name: str) -> dict[str, str]:
         if not self.document:
@@ -236,14 +347,23 @@ class SetupManagerApp(tk.Tk):
         selection = self.section_tree.selection()
         if not selection:
             return
+        if selection[0].startswith("tab::"):
+            return
         self.commit_fields()
         self.current_section = selection[0]
         values = self._section_values(self.current_section)
         section = next(item for item in self._all_sections() if item.name == self.current_section)
         self.section_title_var.set(f"[{self.current_section}]  {section.title}")
-        self.section_type_var.set(section.kind.upper())
+        state = "ACTIVO" if self.is_setup_control_enabled(self.current_section) else "DESACTIVADO"
+        self.section_type_var.set(f"{section.kind.upper()}  ·  {state}")
         for key, _label in COMMON_FIELDS:
             self.field_vars[key].set(values.get(key, ""))
+        default, source = read_physics_default(self.document.path.parent, self.current_section)
+        self.original_defaults.setdefault(self.current_section, default)
+        self.default_var.set(self.pending_defaults.get(self.current_section, default))
+        editable = physics_binding(self.current_section) is not None and bool(default)
+        self.default_entry.configure(state="normal" if editable else "disabled")
+        self.default_source_var.set(source)
         self._refresh_key_tree(values)
         self._refresh_analysis(values)
 
@@ -256,6 +376,12 @@ class SetupManagerApp(tk.Tk):
             value = self.field_vars[key].get().strip()
             if value or key in base:
                 changes[key] = value
+        if physics_binding(self.current_section) and self.default_entry.cget("state") != "disabled":
+            default = self.default_var.get().strip()
+            if default and default != self.original_defaults.get(self.current_section, ""):
+                self.pending_defaults[self.current_section] = default
+            else:
+                self.pending_defaults.pop(self.current_section, None)
         merged = self._section_values(self.current_section)
         self._refresh_analysis(merged)
         self._refresh_key_tree(merged)
@@ -298,22 +424,24 @@ class SetupManagerApp(tk.Tk):
         self._refresh_analysis(values)
         self.status_var.set(f"{self.current_section}: {key} actualizado en memoria. Guardá setup.ini para aplicarlo.")
 
-    def add_section(self) -> None:
+    def add_section(self) -> str:
         name = simpledialog.askstring("Nueva sección", "Nombre técnico de la sección (ejemplo: ARB_FRONT):", parent=self)
         if not name:
-            return
+            return ""
         name = name.strip().upper().replace(" ", "_")
         if any(section.name.upper() == name for section in self._all_sections()):
             messagebox.showwarning("Sección existente", f"[{name}] ya existe.", parent=self)
-            return
+            return ""
         visible = simpledialog.askstring("Nueva sección", "Nombre visible en el setup:", initialvalue=name.replace("_", " ").title(), parent=self) or ""
         tab = simpledialog.askstring("Nueva sección", "Pestaña (SUSPENSION, TYRES, GEARS, GENERIC…):", initialvalue="GENERIC", parent=self) or "GENERIC"
         values = {"NAME": visible, "TAB": tab.upper(), "MIN": "0", "MAX": "1", "STEP": "1", "POS_X": "0.5", "POS_Y": "0", "SHOW_CLICKS": "0"}
         self.added.append((name, values))
         self._refresh_sections()
+        self._refresh_available_controls()
         self.section_tree.selection_set(name)
         self.section_tree.see(name)
         self._section_selected()
+        return name
 
     def delete_section(self) -> None:
         if not self.current_section:
@@ -326,9 +454,11 @@ class SetupManagerApp(tk.Tk):
         else:
             self.deleted.add(self.current_section)
         self.edits.pop(self.current_section, None)
+        self.disabled.discard(self.current_section)
         self.current_section = ""
         self.section_title_var.set("SECCIÓN ELIMINADA")
         self._refresh_sections()
+        self._refresh_available_controls()
 
     def save(self) -> None:
         if not self.document:
@@ -337,14 +467,29 @@ class SetupManagerApp(tk.Tk):
         self.commit_fields()
         all_warnings = []
         for section in self._all_sections():
-            warnings = validate_range(self._section_values(section.name))
+            if not self.is_setup_control_enabled(section.name):
+                continue
+            values = self._section_values(section.name)
+            warnings = validate_range(values)
             all_warnings.extend(f"[{section.name}] {warning}" for warning in warnings)
+            if section.name in self.pending_defaults and values.get("MIN") and values.get("MAX"):
+                try:
+                    default = float(self.pending_defaults[section.name].replace(",", "."))
+                    minimum = float(values["MIN"].replace(",", "."))
+                    maximum = float(values["MAX"].replace(",", "."))
+                    if default < minimum or default > maximum:
+                        all_warnings.append(f"[{section.name}] El valor predeterminado {default:g} está fuera del rango {minimum:g} a {maximum:g}.")
+                except ValueError:
+                    all_warnings.append(f"[{section.name}] El valor predeterminado debe ser numérico.")
         if all_warnings and not messagebox.askyesno("Rangos para revisar", "\n".join(all_warnings[:12]) + "\n\n¿Guardar igualmente?", icon="warning", parent=self):
             return
         try:
-            self.document.save(self.edits, self.deleted, self.added)
+            reopen_layout = bool(self.layout_dialog and self.layout_dialog.winfo_exists())
+            self.document.save(self.edits, self.deleted, self.added, self.disabled)
+            for section, value in self.pending_defaults.items():
+                write_physics_default(self.document.path.parent, section, value)
             path = self.document.path
-            self.load_folder(str(path.parent))
+            self.load_folder(str(path.parent), open_layout=reopen_layout)
             self.status_var.set(f"Guardado correctamente: {path}")
         except Exception as error:
             messagebox.showerror("No se pudo guardar", str(error), parent=self)
@@ -359,6 +504,73 @@ class SetupManagerApp(tk.Tk):
             subprocess.Popen(["open", str(path)])
         else:
             subprocess.Popen(["xdg-open", str(path)])
+
+    def open_module_manager(self) -> None:
+        if not self.document:
+            messagebox.showwarning("Sin mod cargado", "Primero cargá la carpeta data del mod.", parent=self)
+            return
+        ModuleManagerDialog(self, self.document.path.parent)
+
+    def open_layout_editor(self) -> None:
+        if not self.document:
+            messagebox.showwarning("Sin mod cargado", "Primero cargá la carpeta data del mod.", parent=self)
+            return
+        if self.layout_dialog and self.layout_dialog.winfo_exists():
+            self.layout_dialog.lift()
+            self.layout_dialog.focus_force()
+            return
+        self.commit_fields()
+        self.layout_dialog = SetupLayoutDialog(
+            self,
+            self._all_sections,
+            self._section_values,
+            self.apply_layout_position,
+            self.is_setup_control_enabled,
+            self.set_setup_control_enabled,
+            self.available_control_labels,
+            self.enable_available_control,
+            self.add_section,
+            self.save,
+        )
+        self.layout_dialog.protocol("WM_DELETE_WINDOW", self.close_layout_editor)
+
+    def close_layout_editor(self) -> None:
+        if self.layout_dialog and self.layout_dialog.winfo_exists():
+            self.layout_dialog.destroy()
+        self.layout_dialog = None
+
+    def apply_layout_position(self, section: str, tab: str, pos_x: str, pos_y: str) -> None:
+        changes = self.edits.setdefault(section, {})
+        changes.update({"TAB": tab, "POS_X": pos_x, "POS_Y": pos_y})
+        tabs = list(dict.fromkeys((self._section_values(item.name).get("TAB") or "GENERAL").strip() for item in self._all_sections()))
+        if tab not in tabs:
+            tabs.append(tab)
+        self.tab_combo.configure(values=("TODAS", *tabs))
+        if self.current_section == section:
+            self.field_vars["TAB"].set(tab)
+            self.field_vars["POS_X"].set(pos_x)
+            self.field_vars["POS_Y"].set(pos_y)
+            self._refresh_key_tree(self._section_values(section))
+        self._refresh_sections()
+        self.status_var.set(f"[{section}] movido a {tab}: POS_X={pos_x}, POS_Y={pos_y}. Guardá setup.ini para aplicar.")
+
+    def is_setup_control_enabled(self, section: str) -> bool:
+        return section not in self.disabled
+
+    def set_setup_control_enabled(self, section: str, enabled: bool) -> None:
+        if enabled:
+            self.disabled.discard(section)
+            action = "activado"
+        else:
+            self.disabled.add(section)
+            action = "desactivado"
+        self._refresh_sections()
+        if self.current_section == section:
+            current = next((item for item in self._all_sections() if item.name == section), None)
+            if current:
+                state = "ACTIVO" if enabled else "DESACTIVADO"
+                self.section_type_var.set(f"{current.kind.upper()}  ·  {state}")
+        self.status_var.set(f"[{section}] {action} en memoria. Guardá setup.ini para confirmar.")
 
 
 if __name__ == "__main__":

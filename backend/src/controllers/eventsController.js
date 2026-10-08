@@ -7,6 +7,31 @@ const slugify = require('../utils/slugify');
 const ensureEventMultipliers = require('../utils/ensureEventMultipliers');
 
 const eventBannerExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
+const pendingCircuitName = 'A CONFIRMAR';
+
+const isPendingCircuitValue = value => {
+  const normalized = String(value || '').trim().toLocaleUpperCase('es-AR').replace(/[_-]+/g, ' ');
+  return normalized === 'PENDING' || normalized === pendingCircuitName;
+};
+
+const resolveCircuitId = async (database, value) => {
+  if (!isPendingCircuitValue(value)) {
+    const circuitId = Number(value);
+    return Number.isInteger(circuitId) && circuitId > 0 ? circuitId : null;
+  }
+
+  const [[existing]] = await database.query(
+    'SELECT id FROM circuitos WHERE UPPER(TRIM(nombre)) = ? AND COALESCE(variante, \'\') = \'\' ORDER BY id ASC LIMIT 1',
+    [pendingCircuitName]
+  );
+  if (existing?.id) return Number(existing.id);
+
+  const [result] = await database.query(
+    'INSERT INTO circuitos (nombre, localidad, provincia, pais, imagen, trazado, variante) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [pendingCircuitName, '', '', '', '', '', '']
+  );
+  return Number(result.insertId);
+};
 
 const getEventGallery = async (idcampeonato, ronda, verifyEvent = true) => {
   const championshipId = Number(idcampeonato);
@@ -116,13 +141,14 @@ const getUpcoming = async (req, res, next) => {
 const withMediaFields = row => {
   const circuitoSlug = slugify(row.circuito);
   const categoriaSlug = slugify(row.categoria);
+  const pendingCircuit = String(row.circuito || '').trim().toLocaleUpperCase('es-AR') === pendingCircuitName;
 
   return {
     ...row,
     circuito_slug: circuitoSlug,
     categoria_slug: categoriaSlug,
-    circuito_foto_url: row.imagen || `/media/circuitos/fotos/${circuitoSlug}.png`,
-    circuito_trazado_url: row.trazado || `/media/circuitos/trazados/${circuitoSlug}.png`,
+    circuito_foto_url: pendingCircuit ? '' : row.imagen || `/media/circuitos/fotos/${circuitoSlug}.png`,
+    circuito_trazado_url: pendingCircuit ? '' : row.trazado || `/media/circuitos/trazados/${circuitoSlug}.png`,
     campeonato_media_path: `/media/campeonatos/${categoriaSlug}/temporada-${slugify(row.temporada)}`,
   };
 };
@@ -141,11 +167,13 @@ const create = async (req, res, next) => {
     if (!idcampeonato || !fecha || !ronda || !idcircuito) {
       return res.status(400).json({ error: 'idcampeonato, fecha, ronda e idcircuito son requeridos' });
     }
+    const circuitId = await resolveCircuitId(pool, idcircuito);
+    if (!circuitId) return res.status(400).json({ error: 'Seleccioná un circuito o marcá la fecha como A CONFIRMAR' });
 
     await pool.query(
       `INSERT INTO calendario (idcampeonato, fecha, ronda, idcircuito, especial, especialidad, coronacion, transmision)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [idcampeonato, fecha, ronda, idcircuito, especial ? 1 : 0, normalizeSpecialty(especial, especialidad), coronacion ? 1 : 0, normalizeTransmissionUrl(transmision)]
+      [idcampeonato, fecha, ronda, circuitId, especial ? 1 : 0, normalizeSpecialty(especial, especialidad), coronacion ? 1 : 0, normalizeTransmissionUrl(transmision)]
     );
 
     res.status(201).json({ message: 'Fecha agregada al calendario', data: req.body });
@@ -176,11 +204,16 @@ const createBatch = async (req, res, next) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
     for (const event of events) {
+      const circuitId = await resolveCircuitId(connection, event.idcircuito);
+      if (!circuitId) {
+        await connection.rollback();
+        return res.status(400).json({ error: `Seleccioná un circuito o A CONFIRMAR para la fecha ${event.ronda}` });
+      }
       await connection.query(query, [
         event.idcampeonato,
         event.fecha,
         event.ronda,
-        event.idcircuito,
+        circuitId,
         event.especial ? 1 : 0,
         normalizeSpecialty(event.especial, event.especialidad),
         event.coronacion ? 1 : 0,
@@ -209,6 +242,8 @@ const update = async (req, res, next) => {
     if (!idcampeonato || !fecha || !ronda || !idcircuito) {
       return res.status(400).json({ error: 'idcampeonato, fecha, ronda e idcircuito son requeridos' });
     }
+    const circuitId = await resolveCircuitId(pool, idcircuito);
+    if (!circuitId) return res.status(400).json({ error: 'Seleccioná un circuito o marcá la fecha como A CONFIRMAR' });
 
     const [result] = await pool.query(
       `UPDATE calendario
@@ -218,7 +253,7 @@ const update = async (req, res, next) => {
         idcampeonato,
         fecha,
         ronda,
-        idcircuito,
+        circuitId,
         especial ? 1 : 0,
         normalizeSpecialty(especial, especialidad),
         coronacion ? 1 : 0,

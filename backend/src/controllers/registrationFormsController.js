@@ -6,6 +6,7 @@ const normalizeCountryCode = require('../utils/countryCode');
 const normalizeInstagram = require('../utils/instagram');
 const publicDir = require('../utils/publicDir');
 const slugify = require('../utils/slugify');
+const ensureRegistrationFormVisibility = require('../utils/ensureRegistrationFormVisibility');
 
 const FORM_TTL_MS = 10 * 60 * 1000;
 const tokenSecret = () => process.env.ADMIN_SESSION_SECRET || process.env.DB_PASSWORD;
@@ -237,7 +238,7 @@ const verifyFormToken = (token, championshipId) => {
 };
 
 const configSelect = `
-  SELECT cfg.idcampeonato, cfg.fecha_apertura, cfg.fecha_cierre,
+  SELECT cfg.idcampeonato, cfg.visible, cfg.fecha_apertura, cfg.fecha_cierre,
          cfg.precio, cfg.precio_diseno, cfg.precio_pintura_oficial, cfg.setup_detalle, cfg.limite_inscriptos, cfg.limite_por_modelo, cfg.preinscriptos, cfg.autos_habilitados, cfg.planes,
          cfg.permite_personalizado, cfg.permite_diseno_liga, cfg.permite_pintura_oficial, cfg.permite_extra,
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
@@ -267,6 +268,7 @@ const normalizeConfig = row => {
   const occupied = registered + preEnrolled;
   return {
     ...row,
+    visible: Number(row.visible) !== 0,
     permite_personalizado: Boolean(row.permite_personalizado),
     permite_diseno_liga: Boolean(row.permite_diseno_liga),
     permite_pintura_oficial: Boolean(row.permite_pintura_oficial),
@@ -283,6 +285,7 @@ const normalizeConfig = row => {
 };
 
 const loadForm = async id => {
+  await ensureRegistrationFormVisibility();
   const [[row]] = await pool.query(`${configSelect} WHERE cfg.idcampeonato = ? GROUP BY cfg.idcampeonato`, [id]);
   if (!row) return null;
   const config = normalizeConfig(row);
@@ -330,11 +333,14 @@ const loadForm = async id => {
   const officialCars = await listOfficialCars(id);
   return {
     ...config,
-    calendario: calendar.map(event => ({
-      ...event,
-      circuito_foto_url: event.imagen || `/media/circuitos/fotos/${slugify(event.circuito)}.png`,
-      circuito_trazado_url: event.trazado || `/media/circuitos/trazados/${slugify(event.circuito)}.png`,
-    })),
+    calendario: calendar.map(event => {
+      const pendingCircuit = String(event.circuito || '').trim().toLocaleUpperCase('es-AR') === 'A CONFIRMAR';
+      return {
+        ...event,
+        circuito_foto_url: pendingCircuit ? '' : event.imagen || `/media/circuitos/fotos/${slugify(event.circuito)}.png`,
+        circuito_trazado_url: pendingCircuit ? '' : event.trazado || `/media/circuitos/trazados/${slugify(event.circuito)}.png`,
+      };
+    }),
     autos: cars,
     autos_oficiales: officialCars,
   };
@@ -342,6 +348,7 @@ const loadForm = async id => {
 
 const getPublicAll = async (req, res, next) => {
   try {
+    await ensureRegistrationFormVisibility();
     const [rows] = await pool.query(`${configSelect} GROUP BY cfg.idcampeonato ORDER BY c.anio DESC, c.temporada DESC`);
     res.json({ data: rows.map(normalizeConfig) });
   } catch (error) { next(error); }
@@ -530,6 +537,7 @@ const getPreviousRanking = async (req, res, next) => {
 
 const getAdminAll = async (req, res, next) => {
   try {
+    await ensureRegistrationFormVisibility();
     const [rows] = await pool.query(`${configSelect} GROUP BY cfg.idcampeonato ORDER BY c.anio DESC, c.temporada DESC`);
     res.json({ data: rows.map(normalizeConfig) });
   } catch (error) { next(error); }
@@ -718,7 +726,9 @@ const removeAdminOfficialCar = async (req, res, next) => {
 
 const saveConfig = async (req, res, next) => {
   try {
+    await ensureRegistrationFormVisibility();
     const id = Number(req.params.id);
+    const visible = ![false, 0, '0', 'false'].includes(req.body.visible);
     const openAt = String(req.body.fecha_apertura || '').replace('T', ' ');
     const closeAt = String(req.body.fecha_cierre || '').replace('T', ' ');
     const price = Number(req.body.precio);
@@ -792,20 +802,36 @@ const saveConfig = async (req, res, next) => {
     ];
     await pool.query(
       `INSERT INTO inscripciones_config
-       (idcampeonato, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos, limite_por_modelo,
+       (idcampeonato, visible, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos, limite_por_modelo,
         preinscriptos, autos_habilitados, planes, permite_personalizado, permite_diseno_liga, permite_pintura_oficial, permite_extra)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE fecha_apertura=VALUES(fecha_apertura),
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE visible=VALUES(visible), fecha_apertura=VALUES(fecha_apertura),
        fecha_cierre=VALUES(fecha_cierre), precio=VALUES(precio), precio_diseno=VALUES(precio_diseno),
        precio_pintura_oficial=VALUES(precio_pintura_oficial),
        setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), limite_por_modelo=VALUES(limite_por_modelo), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados), planes=VALUES(planes),
        permite_personalizado=VALUES(permite_personalizado), permite_diseno_liga=VALUES(permite_diseno_liga),
        permite_pintura_oficial=VALUES(permite_pintura_oficial),
        permite_extra=VALUES(permite_extra)`,
-      [id, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
+      [id, visible ? 1 : 0, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
         JSON.stringify(enabledCarsPayload), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
     );
     res.json({ message: 'Formulario de inscripción guardado', data: await loadForm(id) });
+  } catch (error) { next(error); }
+};
+
+const updateVisibility = async (req, res, next) => {
+  try {
+    await ensureRegistrationFormVisibility();
+    const visible = ![false, 0, '0', 'false'].includes(req.body.visible);
+    const [result] = await pool.query(
+      'UPDATE inscripciones_config SET visible = ? WHERE idcampeonato = ?',
+      [visible ? 1 : 0, req.params.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Formulario no encontrado' });
+    res.json({
+      message: visible ? 'El formulario ahora se muestra en el inicio.' : 'El formulario fue ocultado del inicio.',
+      data: await loadForm(req.params.id),
+    });
   } catch (error) { next(error); }
 };
 
@@ -1025,5 +1051,6 @@ module.exports = {
   start,
   submit,
   updateAdminOfficialCar,
+  updateVisibility,
   uploadAdminImages,
 };

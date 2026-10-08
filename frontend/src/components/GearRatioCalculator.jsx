@@ -96,8 +96,8 @@ const replaceIniValue = (content, targetSection, targetKey, nextValue) => {
   return { content: lines.join(''), replaced };
 };
 
-const downloadTextFile = (filename, content) => {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+const downloadBlobFile = (filename, blob) => {
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -108,14 +108,20 @@ const downloadTextFile = (filename, content) => {
 };
 
 const safeOutputFilename = (value, fallback = 'archivo.ini') => {
-  const withoutComment = String(value || '').replace(/;.*/, '').replace(/["']/g, '').trim();
+  const withoutComment = String(value || '')
+    .normalize('NFKC')
+    .replace(/;.*/, '')
+    .replace(/["']/g, '')
+    .trim();
   const leaf = withoutComment.split(/[\\/]/).pop()?.trim() || '';
   const sanitized = [...leaf]
-    .map(character => character.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? '_' : character)
+    .map(character => /[a-z0-9._-]/i.test(character) ? character : '_')
     .join('')
+    .replace(/_+/g, '_')
     .replace(/[. ]+$/g, '')
     .trim();
-  if (!sanitized || sanitized === '.' || sanitized === '..') return fallback;
+  const baseName = sanitized.split('.')[0]?.toUpperCase();
+  if (!sanitized || sanitized === '.' || sanitized === '..' || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(baseName)) return fallback;
   return sanitized;
 };
 
@@ -231,10 +237,12 @@ export default function GearRatioCalculator() {
   const [defaultFinalRatioId, setDefaultFinalRatioId] = useState(null);
   const [finalRatiosDirty, setFinalRatiosDirty] = useState(false);
   const [newRatioLabel, setNewRatioLabel] = useState('');
-  const [saveMessage, setSaveMessage] = useState('');
   const [bulkSaveMessage, setBulkSaveMessage] = useState('');
   const [bulkSaveStatus, setBulkSaveStatus] = useState('idle');
-  const [bulkSaving, setBulkSaving] = useState(false);
+  const [engineModifiedFileNames, setEngineModifiedFileNames] = useState([]);
+  const [brakesModifiedFileNames, setBrakesModifiedFileNames] = useState([]);
+  const [tyresModifiedFileNames, setTyresModifiedFileNames] = useState([]);
+  const [suspensionModifiedFileNames, setSuspensionModifiedFileNames] = useState([]);
   const diameter = positiveNumber(setup.wheelDiameter);
   const revLimit = positiveNumber(setup.revLimit);
   const shiftRpm = Math.min(positiveNumber(setup.shiftRpm), revLimit || Infinity);
@@ -244,6 +252,49 @@ export default function GearRatioCalculator() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(setup));
   }, [setup]);
+
+  useEffect(() => {
+    const updateEngineModifiedFiles = event => setEngineModifiedFileNames(
+      Array.isArray(event.detail?.files) ? event.detail.files : [],
+    );
+    window.addEventListener('cadpo:engine-modified-files-change', updateEngineModifiedFiles);
+    return () => window.removeEventListener('cadpo:engine-modified-files-change', updateEngineModifiedFiles);
+  }, []);
+
+  useEffect(() => {
+    const updateTyresModifiedFiles = event => setTyresModifiedFileNames(
+      Array.isArray(event.detail?.files) ? event.detail.files : [],
+    );
+    window.addEventListener('cadpo:tyres-modified-files-change', updateTyresModifiedFiles);
+    return () => window.removeEventListener('cadpo:tyres-modified-files-change', updateTyresModifiedFiles);
+  }, []);
+
+  useEffect(() => {
+    const updateSuspensionModifiedFiles = event => setSuspensionModifiedFileNames(
+      Array.isArray(event.detail?.files) ? event.detail.files : [],
+    );
+    window.addEventListener('cadpo:suspension-modified-files-change', updateSuspensionModifiedFiles);
+    return () => window.removeEventListener('cadpo:suspension-modified-files-change', updateSuspensionModifiedFiles);
+  }, []);
+
+  useEffect(() => {
+    const syncTyreRadius = event => {
+      if (String(event.detail?.section || '').toUpperCase() !== String(importMetadata.tyreSection || '').toUpperCase()) return;
+      const radius = positiveNumber(event.detail?.radius);
+      if (!radius) return;
+      setSetup(current => ({ ...current, wheelDiameter: Number((radius * 2000).toFixed(2)) }));
+    };
+    window.addEventListener('cadpo:tyre-radius-change', syncTyreRadius);
+    return () => window.removeEventListener('cadpo:tyre-radius-change', syncTyreRadius);
+  }, [importMetadata.tyreSection]);
+
+  useEffect(() => {
+    const updateBrakesModifiedFiles = event => setBrakesModifiedFileNames(
+      Array.isArray(event.detail?.files) ? event.detail.files : [],
+    );
+    window.addEventListener('cadpo:brakes-modified-files-change', updateBrakesModifiedFiles);
+    return () => window.removeEventListener('cadpo:brakes-modified-files-change', updateBrakesModifiedFiles);
+  }, []);
 
   useEffect(() => {
     const syncEngineLimiter = event => {
@@ -311,6 +362,11 @@ export default function GearRatioCalculator() {
     setSetup(current => ({ ...current, [field]: value }));
     if (field === 'revLimit') {
       window.dispatchEvent(new CustomEvent('cadpo:gear-limiter-change', { detail: { limiter: value } }));
+    }
+    if (field === 'wheelDiameter') {
+      window.dispatchEvent(new CustomEvent('cadpo:gear-wheel-diameter-change', {
+        detail: { diameter: value, section: importMetadata.tyreSection },
+      }));
     }
   };
   const updateGear = (index, value) => setSetup(current => ({ ...current, gears: current.gears.map((gear, gearIndex) => gearIndex === index ? value : gear) }));
@@ -437,10 +493,8 @@ export default function GearRatioCalculator() {
     setDefaultFinalRatioId(ratioOptions[0]?.id || null);
     setFinalRatiosDirty(false);
     setNewRatioLabel('');
-    setSaveMessage('');
     setBulkSaveMessage('');
     setBulkSaveStatus('idle');
-    setBulkSaving(false);
     setImportReport(report);
     if (missingFiles.length) setImportError(`Se importaron los datos disponibles, pero faltan: ${missingFiles.join(', ')}.`);
     setDataLoaded(true);
@@ -455,7 +509,6 @@ export default function GearRatioCalculator() {
     setDefaultFinalRatioId(null);
     setFinalRatiosDirty(false);
     setNewRatioLabel('');
-    setSaveMessage('');
     setDataLoaded(false);
     setImportReport([]);
     setImportError('');
@@ -470,48 +523,6 @@ export default function GearRatioCalculator() {
     positiveNumber(setup.finalDrive) !== positiveNumber(referenceSetup.finalDrive)
     || setup.gears.some((ratio, index) => positiveNumber(ratio) !== positiveNumber(referenceSetup.gears[index]))
   ));
-
-  const saveEngineFile = () => {
-    const updated = replaceIniValue(sourceFiles['engine.ini'], 'ENGINE_DATA', 'LIMITER', Math.round(positiveNumber(setup.revLimit)));
-    if (!updated.replaced) {
-      setSaveMessage('No se encontró LIMITER dentro de [ENGINE_DATA].');
-      return;
-    }
-    downloadTextFile('engine.ini', updated.content);
-    setSaveMessage('engine.ini generado. Solo se modificó el valor LIMITER.');
-  };
-
-  const saveTyresFile = () => {
-    const originalDecimals = String(importMetadata.tyreRadiusRaw).split('.')[1]?.length || 3;
-    const radius = (positiveNumber(setup.wheelDiameter) / 2000).toFixed(Math.max(3, originalDecimals));
-    const updated = replaceIniValue(sourceFiles['tyres.ini'], importMetadata.tyreSection, 'RADIUS', radius);
-    if (!updated.replaced) {
-      setSaveMessage(`No se encontró RADIUS dentro de [${importMetadata.tyreSection}].`);
-      return;
-    }
-    downloadTextFile('tyres.ini', updated.content);
-    setSaveMessage(`tyres.ini generado. Solo se modificó RADIUS en [${importMetadata.tyreSection}].`);
-  };
-
-  const saveDrivetrainFile = () => {
-    let content = sourceFiles['drivetrain.ini'];
-    const finalResult = replaceIniValue(content, 'GEARS', importMetadata.finalKey, positiveNumber(setup.finalDrive).toFixed(3));
-    if (!finalResult.replaced) {
-      setSaveMessage(`No se encontró ${importMetadata.finalKey} dentro de [GEARS].`);
-      return;
-    }
-    content = finalResult.content;
-    for (let index = 0; index < setup.gears.length; index += 1) {
-      const gearResult = replaceIniValue(content, 'GEARS', `GEAR_${index + 1}`, positiveNumber(setup.gears[index]).toFixed(3));
-      if (!gearResult.replaced) {
-        setSaveMessage(`No se encontró GEAR_${index + 1} dentro de [GEARS].`);
-        return;
-      }
-      content = gearResult.content;
-    }
-    downloadTextFile('drivetrain.ini', content);
-    setSaveMessage('drivetrain.ini generado con las relaciones actuales; el resto del archivo se conservó.');
-  };
 
   const addCurrentFinalRatio = () => {
     const ratio = positiveNumber(setup.finalDrive);
@@ -545,35 +556,24 @@ export default function GearRatioCalculator() {
     setFinalRatiosDirty(true);
   };
 
-  const saveFinalRatioFile = () => {
-    const validOptions = finalRatioOptions.filter(option => positiveNumber(option.ratio));
-    if (!validOptions.length) {
-      setSaveMessage('Agregá al menos una relación final antes de generar el archivo.');
-      return;
-    }
-    const filename = String(importMetadata.ratioFilename || 'final.rto').split(/[\\/]/).pop() || 'final.rto';
-    const defaultOption = validOptions.find(option => option.id === defaultFinalRatioId);
-    const orderedForFile = defaultOption
-      ? [defaultOption, ...validOptions.filter(option => option.id !== defaultFinalRatioId)]
-      : validOptions;
-    downloadTextFile(filename, buildRatioFile(orderedForFile));
-    setSaveMessage(`${filename} generado con ${validOptions.length} relaciones finales.`);
-  };
+  const finalRatioFilename = safeOutputFilename(importMetadata.ratioFilename, 'final.rto');
+  const generatedSetupContent = ensureFinalRatioSetup(sourceFiles['setup.ini'] || '', finalRatioFilename);
+  const setupChanged = Boolean(finalRatiosDirty && generatedSetupContent !== (sourceFiles['setup.ini'] || ''));
+  const modifiedFileNames = [...new Set([
+    drivetrainChanged ? 'drivetrain.ini' : '',
+    engineChanged ? 'engine.ini' : '',
+    tyresChanged ? 'tyres.ini' : '',
+    finalRatiosDirty && finalRatioOptions.length ? finalRatioFilename : '',
+    setupChanged ? 'setup.ini' : '',
+    ...engineModifiedFileNames,
+    ...brakesModifiedFileNames,
+    ...tyresModifiedFileNames,
+    ...suspensionModifiedFileNames,
+  ].filter(Boolean))];
 
-  const saveSetupFile = () => {
-    const filename = String(importMetadata.ratioFilename || 'final.rto').split(/[\\/]/).pop() || 'final.rto';
-    const content = ensureFinalRatioSetup(sourceFiles['setup.ini'] || '', filename);
-    downloadTextFile('setup.ini', content);
-    setSaveMessage(sourceFiles['setup.ini']
-      ? 'setup.ini generado conservando su contenido y enlazando las relaciones finales.'
-      : 'setup.ini nuevo generado con el selector de relaciones finales.');
-  };
-
-  const downloadAllModifiedFiles = async () => {
-    if (bulkSaving) return;
-    setBulkSaving(true);
+  const downloadModifiedFile = requestedFilename => {
     setBulkSaveStatus('working');
-    setBulkSaveMessage('Preparando los archivos modificados…');
+    setBulkSaveMessage(`Preparando ${requestedFilename}…`);
     const detail = { files: [] };
     if (drivetrainChanged) {
       let content = sourceFiles['drivetrain.ini'];
@@ -598,6 +598,10 @@ export default function GearRatioCalculator() {
       const updated = replaceIniValue(sourceFiles['tyres.ini'], importMetadata.tyreSection, 'RADIUS', radius);
       if (updated.replaced) detail.files.push({ name: 'tyres.ini', content: updated.content });
     }
+    if (engineChanged) {
+      const updated = replaceIniValue(sourceFiles['engine.ini'], 'ENGINE_DATA', 'LIMITER', Math.round(positiveNumber(setup.revLimit)));
+      if (updated.replaced) detail.files.push({ name: 'engine.ini', content: updated.content });
+    }
     if (finalRatiosDirty && finalRatioOptions.length) {
       const validOptions = finalRatioOptions.filter(option => positiveNumber(option.ratio));
       const defaultOption = validOptions.find(option => option.id === defaultFinalRatioId);
@@ -605,54 +609,37 @@ export default function GearRatioCalculator() {
         ? [defaultOption, ...validOptions.filter(option => option.id !== defaultFinalRatioId)]
         : validOptions;
       detail.files.push({
-        name: String(importMetadata.ratioFilename || 'final.rto').split(/[\\/]/).pop() || 'final.rto',
+        name: finalRatioFilename,
         content: buildRatioFile(orderedForFile),
       });
     }
+    if (setupChanged) detail.files.push({ name: 'setup.ini', content: generatedSetupContent });
     window.dispatchEvent(new CustomEvent('cadpo:download-modified-engine-files', { detail }));
-    detail.files = detail.files.map(file => ({
-      ...file,
-      name: safeOutputFilename(file.name, 'archivo.ini'),
-    }));
+    window.dispatchEvent(new CustomEvent('cadpo:download-modified-brakes-files', { detail }));
+    window.dispatchEvent(new CustomEvent('cadpo:download-modified-tyres-files', { detail }));
+    window.dispatchEvent(new CustomEvent('cadpo:download-modified-suspension-files', { detail }));
+    detail.files = [...new Map(detail.files.map(file => {
+      const name = safeOutputFilename(file.name, 'archivo.ini');
+      return [name.toLocaleLowerCase(), { ...file, name }];
+    })).values()];
     if (!detail.files.length) {
       setBulkSaveStatus('idle');
       setBulkSaveMessage('No se detectaron cambios. Modificá algún valor antes de guardar.');
-      setBulkSaving(false);
       return;
     }
 
     try {
-      if (typeof window.showDirectoryPicker === 'function') {
-        const directory = await window.showDirectoryPicker({ mode: 'readwrite' });
-        for (const file of detail.files) {
-          try {
-            const handle = await directory.getFileHandle(file.name, { create: true });
-            const writable = await handle.createWritable();
-            await writable.write(file.content);
-            await writable.close();
-            const storedFile = await handle.getFile();
-            const expectedSize = new Blob([file.content]).size;
-            if (storedFile.size !== expectedSize) throw new Error('el tamaño escrito no coincide');
-          } catch (error) {
-            throw new Error(`${file.name}: ${error?.message || 'no se pudo guardar'}`);
-          }
-        }
-        setBulkSaveMessage(`Guardado y verificado en “${directory.name}”: ${detail.files.map(file => file.name).join(', ')}.`);
-      } else {
-        detail.files.forEach(file => downloadTextFile(file.name, file.content));
-        setBulkSaveMessage(`Se iniciaron las descargas: ${detail.files.map(file => file.name).join(', ')}.`);
-      }
+      const requestedFile = detail.files.find(file => file.name.toLocaleLowerCase() === requestedFilename.toLocaleLowerCase());
+      if (!requestedFile) throw new Error(`no se encontró ${requestedFilename} entre los archivos modificados`);
+      downloadBlobFile(
+        requestedFile.name,
+        new Blob([requestedFile.content], { type: 'text/plain;charset=utf-8' }),
+      );
+      setBulkSaveMessage(`Se inició la descarga de ${requestedFile.name}.`);
       setBulkSaveStatus('success');
     } catch (error) {
-      if (error?.name === 'AbortError') {
-        setBulkSaveStatus('idle');
-        setBulkSaveMessage('Guardado cancelado. No se modificó ningún archivo.');
-      } else {
-        setBulkSaveStatus('error');
-        setBulkSaveMessage(`No se pudieron guardar los archivos: ${error?.message || 'error desconocido'}.`);
-      }
-    } finally {
-      setBulkSaving(false);
+      setBulkSaveStatus('error');
+      setBulkSaveMessage(`No se pudo descargar el archivo: ${error?.message || 'error desconocido'}.`);
     }
   };
 
@@ -675,12 +662,12 @@ export default function GearRatioCalculator() {
         {importError ? <p className="mt-2 border border-red-400/30 bg-red-400/[0.07] px-3 py-2 text-xs leading-relaxed text-red-200">{importError}</p> : null}
       </div>
 
-      {dataLoaded ? <div>
-        <button type="button" onClick={downloadAllModifiedFiles} disabled={bulkSaving} className="group flex min-h-16 w-full items-center justify-center gap-3 border border-cyan-300 bg-cyan-400 px-5 font-racing text-lg font-bold uppercase tracking-wider text-black transition hover:bg-white disabled:cursor-wait disabled:opacity-60">
-          <ArrowDownTrayIcon className={`h-7 w-7 transition ${bulkSaving ? 'animate-bounce' : 'group-hover:translate-y-0.5'}`}/>
-          {bulkSaving ? 'Guardando archivos…' : 'Guardar todos los archivos modificados'}
-        </button>
-        <p className="mt-2 text-center text-[10px] leading-relaxed text-gray-500">Elegí la carpeta de destino. Los archivos se guardan directamente allí y no aparecen en el historial de Descargas.</p>
+      {dataLoaded ? <div className="border border-cyan-400/35 bg-cyan-400/[0.04] p-4 sm:p-5">
+        <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Archivos modificados</p>
+            {modifiedFileNames.length ? <div className="mt-2 flex flex-wrap gap-2">{modifiedFileNames.map(filename => <button type="button" key={filename} onClick={() => downloadModifiedFile(filename)} className="group inline-flex items-center gap-2 border border-cyan-400/35 bg-black/25 px-3 py-2 font-mono text-xs text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-400 hover:text-black"><ArrowDownTrayIcon className="h-4 w-4 transition group-hover:translate-y-0.5"/>{filename}</button>)}</div> : <p className="mt-2 text-xs text-gray-500">Todavía no modificaste ningún archivo.</p>}
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-gray-500">Los archivos aparecen acá apenas modificás la caja, el motor, los frenos, los neumáticos o las relaciones finales. Hacé clic en el nombre del archivo que quieras descargar.</p>
         {bulkSaveMessage ? <p className={`mt-3 border px-4 py-3 text-center text-xs font-semibold ${bulkSaveStatus === 'success' ? 'border-green-400/40 bg-green-400/[0.08] text-green-300' : bulkSaveStatus === 'error' ? 'border-red-400/40 bg-red-400/[0.08] text-red-200' : 'border-racing-border bg-black/20 text-gray-300'}`}>{bulkSaveMessage}</p> : null}
       </div> : null}
 
@@ -694,25 +681,15 @@ export default function GearRatioCalculator() {
           </div>
           <label className="block"><span className="text-xs font-semibold text-gray-300">Diámetro de rueda</span><div className="relative mt-1.5"><input type="number" min="100" step="1" value={setup.wheelDiameter} onChange={event => updateField('wheelDiameter', event.target.value)} className="input-field pr-10"/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-600">MM</span></div></label>
           <p className="border-l-2 border-cyan-400 bg-cyan-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-gray-400">En <strong className="text-white">tyres.ini</strong>, tomá el valor <strong className="text-white">RADIUS</strong> de la rueda motriz y multiplicalo por 2000. Ejemplo: 0.330 = 660 mm.</p>
-          {dataLoaded ? <div className="border border-racing-border bg-black/20 p-3">
-            <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Guardar archivos modificados</p><p className="mt-1 text-[10px] leading-relaxed text-gray-600">Los botones se habilitan al cambiar un valor relacionado. El resto del contenido original se conserva.</p></div>
-            <div className="grid grid-cols-3 gap-2">
-              <button type="button" onClick={saveDrivetrainFile} disabled={!drivetrainChanged} className="inline-flex min-h-10 items-center justify-center gap-1.5 border border-cyan-400/40 px-1 text-[9px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:border-racing-border disabled:text-gray-700 disabled:hover:bg-transparent"><ArrowDownTrayIcon className="h-4 w-4"/>drivetrain</button>
-              <button type="button" onClick={saveEngineFile} disabled={!engineChanged} className="inline-flex min-h-10 items-center justify-center gap-2 border border-cyan-400/40 px-2 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:border-racing-border disabled:text-gray-700 disabled:hover:bg-transparent"><ArrowDownTrayIcon className="h-4 w-4"/>engine.ini</button>
-              <button type="button" onClick={saveTyresFile} disabled={!tyresChanged} className="inline-flex min-h-10 items-center justify-center gap-2 border border-cyan-400/40 px-2 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:border-racing-border disabled:text-gray-700 disabled:hover:bg-transparent"><ArrowDownTrayIcon className="h-4 w-4"/>tyres.ini</button>
-            </div>
-            {!sameGearCount ? <p className="mt-2 text-[10px] leading-relaxed text-yellow-300">Para guardar drivetrain.ini mantené la misma cantidad de marchas que el archivo original.</p> : null}
-            <p className="mt-2 text-[10px] leading-relaxed text-gray-600">“RPM de cambio” es una referencia del gráfico; el archivo del motor solo cambia cuando modificás “Corte del motor”.</p>
-            {saveMessage ? <p className="mt-2 border-l-2 border-cyan-400 pl-2 text-[10px] leading-relaxed text-gray-300">{saveMessage}</p> : null}
-          </div> : null}
+          {dataLoaded && !sameGearCount ? <p className="border border-yellow-400/25 bg-yellow-400/[0.05] px-3 py-2 text-[10px] leading-relaxed text-yellow-300">Para generar drivetrain.ini mantené la misma cantidad de marchas que el archivo original.</p> : null}
         </div>
 
         {dataLoaded ? <div className="min-w-0 space-y-4">
           <div className="border border-racing-border bg-racing-card">
             <div className="px-3 py-3"><div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between"><div className="flex min-w-0 items-center gap-2"><ChartBarIcon className="h-6 w-6 shrink-0 text-cyan-400"/><div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Gráfico de cambios</p><h3 className="truncate font-racing text-lg font-bold text-white">{setup.name || 'Sin nombre'}</h3></div></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-[104px_104px_auto_auto]"><label className="block"><span className="block text-[8px] font-bold uppercase text-gray-600">Máx. velocidad</span><div className="mt-1 flex h-8 items-center border border-racing-border bg-black/25 pl-1.5"><input type="number" min="10" step="10" value={setup.graphMaxSpeed} onChange={event => updateField('graphMaxSpeed', event.target.value)} className="min-w-0 w-[68px] bg-transparent text-center font-racing text-xs text-white outline-none"/><span className="shrink-0 pr-1 text-[7px] text-gray-600">KM/H</span></div></label><label className="block"><span className="block text-[8px] font-bold uppercase text-gray-600">Máx. motor</span><div className="mt-1 flex h-8 items-center border border-racing-border bg-black/25 pl-1.5"><input type="number" min="1000" step="500" value={setup.graphMaxRpm} onChange={event => updateField('graphMaxRpm', event.target.value)} className="min-w-0 w-[68px] bg-transparent text-center font-racing text-xs text-white outline-none"/><span className="shrink-0 pr-1 text-[7px] text-gray-600">RPM</span></div></label><div><p className="text-[8px] font-bold uppercase text-gray-600">Circunferencia</p><strong className="mt-1 block font-racing text-base text-white">{formatNumber(circumference, 3)} M</strong></div><div><p className="text-[8px] font-bold uppercase text-gray-600">Velocidad final</p><strong className="mt-1 block whitespace-nowrap font-racing text-base text-cyan-300">{formatNumber(rows.at(-1)?.redlineSpeed)} KM/H</strong></div></div></div></div>
             <div className="border-t border-racing-border bg-black/20 px-3 py-2.5">
-              <div className="mb-2 flex items-center justify-between gap-3"><div><p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Relaciones por marcha</p><p className="text-[8px] text-gray-600">Cambios de 0,1</p></div><div className="flex gap-1"><button type="button" onClick={removeGear} disabled={setup.gears.length <= 1} className="inline-flex h-7 w-7 items-center justify-center border border-racing-border text-gray-400 hover:border-red-400 hover:text-white disabled:opacity-30" aria-label="Quitar marcha"><MinusIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={addGear} disabled={setup.gears.length >= 10} className="inline-flex h-7 w-7 items-center justify-center border border-racing-border text-gray-400 hover:border-cyan-400 hover:text-white disabled:opacity-30" aria-label="Agregar marcha"><PlusIcon className="h-3.5 w-3.5"/></button></div></div>
-              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(setup.gears.length, 10)}, minmax(64px, 1fr))` }}>{setup.gears.map((gear, index) => <label key={index} className="flex min-w-0 items-center border border-racing-border bg-black/30 px-1.5 py-1"><span className="mr-1.5 shrink-0 font-racing text-sm font-bold" style={{ color: COLORS[index % COLORS.length] }}>{index + 1}ª</span><input type="number" min="0.1" step="0.1" value={gear} onChange={event => updateGear(index, event.target.value)} className="min-w-0 w-full bg-transparent text-right font-racing text-sm font-bold text-white outline-none"/></label>)}</div>
+              <div className="mb-2 flex items-center justify-between gap-3"><div><p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Relaciones por marcha</p><p className="text-[8px] text-gray-600">Cambios de 0,05</p></div><div className="flex gap-1"><button type="button" onClick={removeGear} disabled={setup.gears.length <= 1} className="inline-flex h-7 w-7 items-center justify-center border border-racing-border text-gray-400 hover:border-red-400 hover:text-white disabled:opacity-30" aria-label="Quitar marcha"><MinusIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={addGear} disabled={setup.gears.length >= 10} className="inline-flex h-7 w-7 items-center justify-center border border-racing-border text-gray-400 hover:border-cyan-400 hover:text-white disabled:opacity-30" aria-label="Agregar marcha"><PlusIcon className="h-3.5 w-3.5"/></button></div></div>
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(setup.gears.length, 10)}, minmax(64px, 1fr))` }}>{setup.gears.map((gear, index) => <label key={index} className="flex min-w-0 items-center border border-racing-border bg-black/30 px-1.5 py-1"><span className="mr-1.5 shrink-0 font-racing text-sm font-bold" style={{ color: COLORS[index % COLORS.length] }}>{index + 1}ª</span><input type="number" min="0.05" step="0.05" value={gear} onChange={event => updateGear(index, event.target.value)} className="min-w-0 w-full bg-transparent text-right font-racing text-sm font-bold text-white outline-none"/></label>)}</div>
             </div>
           </div>
           <GearRatioChart rows={rows} revLimit={revLimit} shiftRpm={shiftRpm} graphMaxSpeed={positiveNumber(setup.graphMaxSpeed, 300)} graphMaxRpm={positiveNumber(setup.graphMaxRpm, 9000)} referenceRows={referenceRows} referenceShiftRpm={referenceShiftRpm}/>
@@ -725,18 +702,17 @@ export default function GearRatioCalculator() {
         {dataLoaded ? <aside className="overflow-hidden border border-racing-border bg-racing-card xl:sticky xl:top-4">
           <header className="border-b border-racing-border p-4"><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-300">Assetto Corsa · final.rto</p><h3 className="mt-1 font-racing text-xl font-bold uppercase text-white">Relaciones finales</h3><p className="mt-1 text-[10px] leading-relaxed text-gray-600">Probá, guardá y aplicá relaciones sin alejarte del gráfico.</p></header>
           <div className="border-b border-racing-border bg-cyan-400/[0.04] p-4">
-            <label><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Relación final actual</span><input type="number" min="0.1" step="0.1" value={setup.finalDrive} onChange={event => updateField('finalDrive', event.target.value)} className="input-field mt-1.5 text-center font-racing text-2xl font-bold text-cyan-300"/></label>
+            <label><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Relación final actual</span><input type="number" min="0.05" step="0.05" value={setup.finalDrive} onChange={event => updateField('finalDrive', event.target.value)} className="input-field mt-1.5 text-center font-racing text-2xl font-bold text-cyan-300"/></label>
             <div className="mt-3 grid gap-2"><input value={newRatioLabel} onChange={event => setNewRatioLabel(event.target.value)} placeholder={`Nombre: CORTA ${finalRatioOptions.length + 1}`} className="input-field"/><button type="button" onClick={addCurrentFinalRatio} className="inline-flex h-10 items-center justify-center gap-2 bg-cyan-400 px-3 text-[10px] font-bold uppercase text-black hover:bg-cyan-300"><PlusIcon className="h-4 w-4"/>Guardar relación actual</button></div>
           </div>
           <div className="scrollbar-hidden max-h-[410px] divide-y divide-racing-border/70 overflow-y-auto">{finalRatioOptions.map((option, index) => {
             const active = Math.abs(positiveNumber(option.ratio) - positiveNumber(setup.finalDrive)) < 0.0001;
             return <div key={option.id} className={`p-3 ${active ? 'bg-cyan-400/[0.07]' : ''}`}>
               <div className="flex items-center gap-2"><button type="button" onClick={() => updateField('finalDrive', option.ratio)} className={`flex h-8 w-8 shrink-0 items-center justify-center border font-racing text-xs font-bold ${active ? 'border-cyan-300 bg-cyan-400 text-black' : 'border-racing-border text-gray-500 hover:border-cyan-400 hover:text-white'}`}>{index + 1}</button><input value={option.label} onChange={event => updateFinalRatioOption(option.id, 'label', event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-white outline-none"/><button type="button" onClick={() => removeFinalRatioOption(option.id)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-gray-700 hover:text-red-300" aria-label={`Eliminar ${option.label}`}><TrashIcon className="h-4 w-4"/></button></div>
-              <div className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-2"><label className="flex h-9 items-center border border-racing-border bg-black/25 px-1.5"><input type="number" min="0.1" step="0.1" value={option.ratio} onChange={event => updateFinalRatioOption(option.id, 'ratio', event.target.value)} className="min-w-0 w-full bg-transparent text-center font-racing text-base text-white outline-none"/></label><button type="button" onClick={() => updateField('finalDrive', option.ratio)} className="h-9 border border-cyan-400/30 px-2 text-[8px] font-bold uppercase text-cyan-300 hover:bg-cyan-400 hover:text-black">Aplicar</button></div>
+              <div className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-2"><label className="flex h-9 items-center border border-racing-border bg-black/25 px-1.5"><input type="number" min="0.05" step="0.05" value={option.ratio} onChange={event => updateFinalRatioOption(option.id, 'ratio', event.target.value)} className="min-w-0 w-full bg-transparent text-center font-racing text-base text-white outline-none"/></label><button type="button" onClick={() => updateField('finalDrive', option.ratio)} className="h-9 border border-cyan-400/30 px-2 text-[8px] font-bold uppercase text-cyan-300 hover:bg-cyan-400 hover:text-black">Aplicar</button></div>
               <div className="mt-2">{option.id === defaultFinalRatioId ? <span className="text-[8px] font-bold uppercase tracking-wider text-yellow-300">Predeterminada</span> : <button type="button" onClick={() => makeDefaultFinalRatio(option.id)} className="text-[8px] font-bold uppercase tracking-wider text-gray-600 hover:text-yellow-300">Usar como predeterminada</button>}</div>
             </div>;
           })}{!finalRatioOptions.length ? <p className="px-4 py-8 text-center text-xs text-gray-600">Todavía no agregaste relaciones.</p> : null}</div>
-          <div className="grid grid-cols-2 gap-2 border-t border-racing-border bg-black/20 p-3"><button type="button" onClick={saveFinalRatioFile} disabled={!finalRatioOptions.length} className="inline-flex h-9 items-center justify-center gap-1 border border-cyan-400/40 px-2 text-[8px] font-bold uppercase text-cyan-300 hover:bg-cyan-400 hover:text-black disabled:opacity-30"><ArrowDownTrayIcon className="h-3.5 w-3.5"/>{String(importMetadata.ratioFilename || 'final.rto').split(/[\\/]/).pop()}</button><button type="button" onClick={saveSetupFile} className="inline-flex h-9 items-center justify-center gap-1 border border-white/20 px-2 text-[8px] font-bold uppercase text-white hover:bg-white hover:text-black"><ArrowDownTrayIcon className="h-3.5 w-3.5"/>setup.ini</button></div>
         </aside> : null}
       </section>
 
