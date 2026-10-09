@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarIcon, CheckCircleIcon, ClockIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import EventCard from '../components/EventCard';
-import { eventsApi } from '../services/api';
+import PollsSection from '../components/PollsSection';
+import { eventsApi, pollsApi } from '../services/api';
 import { parseCalendarDate } from '../utils/calendarDate';
 import { getLiveTimingEvents, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
 
@@ -52,6 +53,7 @@ function EventSection({ title, description, events, totalCount, upcoming, nearby
 
 export default function Events({ initialStatus = '' }) {
   const [events, setEvents] = useState([]);
+  const [polls, setPolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [pastPage, setPastPage] = useState(1);
@@ -60,8 +62,15 @@ export default function Events({ initialStatus = '' }) {
     const fetchEvents = async () => {
       setLoading(true);
       try {
-        const res = await eventsApi.getAll();
-        setEvents(res.data.data ?? []);
+        const [eventsResponse, pollsResponse] = await Promise.all([
+          eventsApi.getAll(),
+          pollsApi.getAll().catch(error => {
+            console.error('No se pudieron cargar las votaciones:', error);
+            return { data: { data: [] } };
+          }),
+        ]);
+        setEvents(eventsResponse.data.data ?? []);
+        setPolls(pollsResponse.data.data ?? []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -129,7 +138,7 @@ export default function Events({ initialStatus = '' }) {
           <div className="flex justify-center py-24">
             <div className="w-10 h-10 border-2 border-racing-red border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : upcomingEvents.length > 0 || completedEvents.length > 0 ? (
+        ) : upcomingEvents.length > 0 || completedEvents.length > 0 || polls.length > 0 ? (
           <div className="grid gap-12">
             <EventSection
               title="Próximas fechas"
@@ -139,6 +148,7 @@ export default function Events({ initialStatus = '' }) {
               nearbyEventIds={nearbyEventIds}
               liveTimingEventIds={liveTimingEventIds}
             />
+            <PollsSection polls={polls} onPollUpdated={updated => setPolls(current => current.map(poll => String(poll.id) === String(updated.id) ? updated : poll))} />
             <EventSection
               title="Fechas disputadas"
               description="La última carrera realizada aparece primero."

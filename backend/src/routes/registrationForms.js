@@ -7,6 +7,8 @@ const router = express.Router();
 router.get('/', controller.getPublicAll);
 router.get('/admin/all', requireAdmin, controller.getAdminAll);
 router.get('/admin/:id/images', requireAdmin, controller.getAdminImages);
+router.get('/admin/:id/free-drivers', requireAdmin, controller.getAdminFreeDrivers);
+router.put('/admin/:id/free-drivers', requireAdmin, controller.updateAdminFreeDrivers);
 router.post('/admin/:id/images', requireAdmin, uploadRegistrationImages.array('images', 10), controller.uploadAdminImages);
 router.delete('/admin/:id/images/:filename', requireAdmin, controller.removeAdminImage);
 router.get('/admin/:id/official-cars', requireAdmin, controller.getAdminOfficialCars);

@@ -11,7 +11,8 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import ChampionshipCard from '../components/ChampionshipCard';
-import { championshipsApi, registrationFormsApi } from '../services/api';
+import PollsSection from '../components/PollsSection';
+import { championshipsApi, pollsApi, registrationFormsApi } from '../services/api';
 import { getDatabaseDateParts } from '../utils/calendarDate';
 
 const PAGE_SIZE = 10;
@@ -161,6 +162,7 @@ function ChampionshipSection({ status, championships }) {
 export default function Championships({ initialStatus = '' }) {
   const [championships, setChampionships] = useState([]);
   const [registrationPhases, setRegistrationPhases] = useState(new Map());
+  const [polls, setPolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -170,9 +172,10 @@ export default function Championships({ initialStatus = '' }) {
     const fetchChampionships = async () => {
       setLoading(true);
       try {
-        const [championshipResult, formsResult] = await Promise.allSettled([
+        const [championshipResult, formsResult, pollsResult] = await Promise.allSettled([
           championshipsApi.getAll(),
           registrationFormsApi.getAll(),
+          pollsApi.getAll(),
         ]);
 
         if (championshipResult.status === 'rejected') throw championshipResult.reason;
@@ -185,6 +188,12 @@ export default function Championships({ initialStatus = '' }) {
         } else {
           console.error(formsResult.reason);
           setRegistrationPhases(new Map());
+        }
+        if (pollsResult.status === 'fulfilled') {
+          setPolls((pollsResult.value.data.data ?? []).filter(poll => poll.estado === 'abierta'));
+        } else {
+          console.error(pollsResult.reason);
+          setPolls([]);
         }
       } catch (err) {
         console.error(err);
@@ -306,6 +315,7 @@ export default function Championships({ initialStatus = '' }) {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {!loading && polls.length ? <div className="mb-10"><PollsSection polls={polls} onPollUpdated={updated => setPolls(current => current.map(poll => String(poll.id) === String(updated.id) ? updated : poll))} /></div> : null}
         {loading ? (
           <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent" /></div>
         ) : filteredChampionships.length === 0 || (statusFilter !== 'all' && paginationItems.length === 0) ? (

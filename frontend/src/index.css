@@ -423,6 +423,36 @@
   animation-play-state: paused;
 }
 
+@keyframes poll-result-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.poll-result-fill {
+  animation: poll-result-fill 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes poll-winner-reveal {
+  0% { opacity: 0; transform: translateY(14px) scale(0.97); }
+  65% { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes poll-winner-glow {
+  0%, 100% { box-shadow: 0 0 18px rgba(250, 204, 21, 0.16); }
+  50% { box-shadow: 0 0 38px rgba(250, 204, 21, 0.42); }
+}
+
+.poll-winner-banner,
+.poll-winner-badge {
+  animation: poll-winner-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.poll-winner-card {
+  animation: poll-winner-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    poll-winner-glow 2.4s ease-in-out 700ms infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .race-hero-background,
   .registration-background-transition,
@@ -443,6 +473,16 @@
   .registration-info-flag,
   .social-carousel-track-two,
   .championship-ticker-track {
+    animation: none;
+  }
+
+  .poll-result-fill {
+    animation: none;
+  }
+
+  .poll-winner-banner,
+  .poll-winner-badge,
+  .poll-winner-card {
     animation: none;
   }
 }

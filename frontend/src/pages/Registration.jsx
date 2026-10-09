@@ -10,7 +10,7 @@ import { formatPrice } from '../utils/currency';
 import { formatInstagramHandle } from '../utils/instagram';
 
 const clsx = (...classes) => classes.filter(Boolean).join(' ');
-const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: 'ar', steam: '', ig: '', rankingPosition: null };
+const emptyDriver = { idpiloto: '', nombre: '', localidad: '', provincia: '', telefono: '', nacionalidad: 'ar', steam: '', ig: '', rankingPosition: null, freeRegistration: false };
 const formatPersonName = value => String(value || '').trim().toLocaleLowerCase('es-AR')
   .replace(/(^|\s|-|\/)(\p{L})/gu, (match, separator, letter) => `${separator}${letter.toLocaleUpperCase('es-AR')}`);
 const getRegistrationPhase = (form, now) => {
@@ -96,6 +96,17 @@ export default function Registration() {
   const planRequiresNumber = Boolean(configuredPlan && configuredPlan.tipo !== 'sin_numero');
   const usesOfficialCar = configuredPlan?.tipo === 'pintura_oficial';
   const usesManualNumber = configuredPlan?.tipo === 'con_numero';
+  const hasFreeRegistration = Boolean(driver.idpiloto && driver.freeRegistration);
+
+  useEffect(() => {
+    setConfig(current => {
+      if (!current) return current;
+      const originalPrice = Number(current.precio_original ?? current.precio ?? 0);
+      const visiblePrice = hasFreeRegistration ? 0 : originalPrice;
+      if (Number(current.precio) === visiblePrice && current.precio_original !== undefined) return current;
+      return { ...current, precio_original: originalPrice, precio: visiblePrice };
+    });
+  }, [hasFreeRegistration]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +135,7 @@ export default function Registration() {
       .then(async response => {
         const loadedConfig = response.data.data;
         if (cancelled) return;
-        setConfig(loadedConfig);
+        setConfig({ ...loadedConfig, precio_original: loadedConfig.precio });
         const [imagesResult, prizesResult] = await Promise.allSettled([
           mediaApi.getRegistrationImages({ categoria: loadedConfig.categoria, temporada: loadedConfig.temporada }),
           championshipsApi.getPrizes(selectedId),
@@ -192,9 +203,9 @@ export default function Registration() {
     ...plan,
     label: plan.titulo,
     description: plan.descripcion,
-    price: Number(config.precio) + Number(plan.precio_adicional || 0),
+    price: (hasFreeRegistration ? 0 : Number(config.precio)) + Number(plan.precio_adicional || 0),
     displayPrice: Number(plan.precio_adicional || 0) > 0 ? `+ ${formatPrice(plan.precio_adicional)} adicional` : 'Sin costo adicional',
-  })), [config]);
+  })), [config, hasFreeRegistration]);
   const selectedCar = config?.autos?.find(car => String(car.id) === String(carId)) || null;
   const selectedModality = modalities.find(item => item.id === modality) || null;
   const selectedOfficialCar = config?.autos_oficiales?.find(car => String(car.id) === String(officialCarId)) || null;
@@ -264,7 +275,7 @@ export default function Registration() {
       idpiloto: selected.id, nombre: selected.nombre || '', localidad: selected.localidad || '',
       provincia: selected.provincia || '', telefono: selected.telefono || '',
       nacionalidad: selected.nacionalidad || 'ar', steam: selected.steam || '', ig: formatInstagramHandle(selected.ig),
-      rankingPosition,
+      rankingPosition, freeRegistration: Boolean(selected.inscripcion_gratis),
     });
     setNumber(usesOfficialCar && selectedOfficialCar ? String(selectedOfficialCar.numero) : rankingPosition && !rankingConflictsWithOfficial ? String(rankingPosition) : '');
     setNumberAvailable(null);
@@ -273,7 +284,7 @@ export default function Registration() {
 
   const changeDriver = event => {
     const { name, value } = event.target;
-    setDriver(current => ({ ...current, [name]: name === 'ig' ? formatInstagramHandle(value) : value, ...(name === 'nombre' ? { idpiloto: '', rankingPosition: null } : {}) }));
+    setDriver(current => ({ ...current, [name]: name === 'ig' ? formatInstagramHandle(value) : value, ...(name === 'nombre' ? { idpiloto: '', rankingPosition: null, freeRegistration: false } : {}) }));
   };
 
   const showPreviousRanking = async () => {
@@ -447,8 +458,9 @@ export default function Registration() {
             <section className={clsx('card-glass', 'order-1', 'p-4', 'sm:p-6')}>
               <h3 className={clsx('font-racing', 'text-xl', 'font-bold', 'sm:text-2xl')}>1. Datos del piloto</h3>
               <div className={clsx('relative', 'mt-5')}><div className={clsx('flex', 'flex-wrap', 'items-center', 'justify-between', 'gap-2')}><label className={clsx('text-sm', 'text-gray-300')}>Nombre y apellido</label>{driver.idpiloto ? <div className={clsx('flex', 'items-center', 'gap-2')}><span className={clsx('border', 'border-green-400/40', 'bg-green-500/10', 'px-2.5', 'py-1', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-wider', 'text-green-300')}>Piloto registrado</span><button type="button" onClick={() => { setDriver(emptyDriver); setSuggestions([]); setShowSuggestions(false); }} className={clsx('text-[10px]', 'font-bold', 'uppercase', 'tracking-wider', 'text-gray-400', 'transition-colors', 'hover:text-white')}>Cambiar piloto</button></div> : driver.nombre.trim() ? <span className={clsx('border', 'border-yellow-400/40', 'bg-yellow-400/10', 'px-2.5', 'py-1', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-wider', 'text-yellow-300')}>Piloto nuevo</span> : null}</div><div className={clsx('relative', 'mt-2')}><MagnifyingGlassIcon className={clsx('absolute', 'left-3', 'top-1/2', 'h-5', 'w-5', '-translate-y-1/2', 'text-gray-500')}/><input name="nombre" value={driver.nombre} onChange={changeDriver} onBlur={() => { if (!driver.idpiloto) setDriver(current => ({ ...current, nombre: formatPersonName(current.nombre) })); }} onFocus={() => { if (!driver.idpiloto) setShowSuggestions(true); }} className={`input-field pl-10 ${driver.idpiloto ? 'cursor-not-allowed bg-black/40 text-gray-400' : ''}`} autoComplete="off" required readOnly={Boolean(driver.idpiloto)} placeholder="Escribí tu nombre para buscarte"/></div>
-                {showSuggestions && suggestions.length ? <div className={clsx('absolute', 'z-30', 'mt-1', 'max-h-72', 'w-full', 'overflow-y-auto', 'border', 'border-racing-border', 'bg-racing-dark', 'shadow-xl')}>{suggestions.map(item => <button key={item.id} type="button" onClick={() => selectDriver(item)} className={clsx('block', 'w-full', 'border-b', 'border-racing-border', 'px-3', 'py-3', 'text-left', 'transition-colors', 'hover:bg-racing-red/10', 'sm:px-4')}><strong className={clsx('block', 'break-words', 'text-white')}>{item.nombre}</strong><span className={clsx('mt-1', 'flex', 'flex-col', 'gap-1', 'text-xs', 'text-gray-400', 'sm:flex-row', 'sm:flex-wrap', 'sm:gap-x-4', 'sm:text-sm')}><span>Localidad: <span className="text-gray-200">{item.localidad || 'Sin registrar'}</span></span><span>Teléfono: <span className="text-gray-200">{item.telefono || 'Sin registrar'}</span></span>{item.ig ? <span className={clsx('break-all', 'text-racing-red')}>{formatInstagramHandle(item.ig)}</span> : null}</span></button>)}</div> : null}
+                {showSuggestions && suggestions.length ? <div className={clsx('absolute', 'z-30', 'mt-1', 'max-h-72', 'w-full', 'overflow-y-auto', 'border', 'border-racing-border', 'bg-racing-dark', 'shadow-xl')}>{suggestions.map(item => <button key={item.id} type="button" onClick={() => selectDriver(item)} className={clsx('block', 'w-full', 'border-b', 'border-racing-border', 'px-3', 'py-3', 'text-left', 'transition-colors', 'hover:bg-racing-red/10', 'sm:px-4')}><span className="flex flex-wrap items-center gap-2"><strong className={clsx('break-words', 'text-white')}>{item.nombre}</strong>{item.inscripcion_gratis ? <span className="border border-green-400/45 bg-green-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-green-300">Inscripción gratis</span> : null}</span><span className={clsx('mt-1', 'flex', 'flex-col', 'gap-1', 'text-xs', 'text-gray-400', 'sm:flex-row', 'sm:flex-wrap', 'sm:gap-x-4', 'sm:text-sm')}><span>Localidad: <span className="text-gray-200">{item.localidad || 'Sin registrar'}</span></span><span>Teléfono: <span className="text-gray-200">{item.telefono || 'Sin registrar'}</span></span>{item.ig ? <span className={clsx('break-all', 'text-racing-red')}>{formatInstagramHandle(item.ig)}</span> : null}</span></button>)}</div> : null}
               </div>
+              {hasFreeRegistration ? <div className="mt-4 flex items-start gap-3 border border-green-400/45 bg-green-500/10 p-4 text-green-100"><CheckCircleIcon className="h-6 w-6 shrink-0 text-green-400"/><div><p className="font-racing text-lg font-bold uppercase text-green-300">Tenés la inscripción bonificada</p><p className="mt-1 text-sm leading-relaxed text-gray-300">El precio base de este campeonato es gratis para vos. Si elegís Diseño de la Liga u otro servicio adicional, solamente abonás ese extra.</p></div></div> : null}
               <p className={clsx('mt-2', 'text-xs', 'text-gray-500')}>Si aparecés en la búsqueda, seleccioná tu nombre. Si sos nuevo, completá todos tus datos.</p>
               <div className={clsx('mt-5', 'grid', 'gap-4', 'sm:grid-cols-2')}>
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Teléfono <span className="text-gray-600">(opcional)</span></span><input name="telefono" value={driver.telefono} onChange={changeDriver} className={clsx('input-field', 'mt-2')}/></label>

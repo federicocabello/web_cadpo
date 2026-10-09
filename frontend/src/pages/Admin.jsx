@@ -26,6 +26,7 @@ import {
   WrenchScrewdriverIcon,
   WrenchIcon,
   RectangleStackIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
@@ -37,9 +38,9 @@ import { aggregateAssettoSanctions, assettoSessionOptions, buildAssettoSanctionL
 import GearRatioCalculator from '../components/GearRatioCalculator';
 import EnginePowerCalculator from '../components/EnginePowerCalculator';
 import BrakesCalculator from '../components/BrakesCalculator';
-import SuspensionCalculator from '../components/SuspensionCalculator';
 import TyresCalculator from '../components/TyresCalculator';
 import CadpoImporter from '../components/CadpoImporter';
+import PollsAdmin from '../components/PollsAdmin';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -77,6 +78,7 @@ const adminSections = [
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
   { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
   { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
+  { id: 'votaciones', label: 'VOTACIONES', icon: ChartBarIcon },
   { id: 'relaciones-caja', label: 'RELACIONES DE CAJA', icon: WrenchScrewdriverIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
@@ -374,6 +376,7 @@ const emptyRegistrationConfig = {
   preinscriptos: '0',
   autos_habilitados: [],
   limites_por_modelo: {},
+  pilotos_gratis: [],
   planes: cloneRegistrationPlans(defaultRegistrationPlans),
   permite_personalizado: true,
   permite_diseno_liga: true,
@@ -798,7 +801,9 @@ export default function Admin() {
   const [officialCars, setOfficialCars] = useState([]);
   const [officialCarForm, setOfficialCarForm] = useState(emptyOfficialCarForm);
   const [officialCarCollapsedBrands, setOfficialCarCollapsedBrands] = useState({});
-  const [registrationFormCollapsed, setRegistrationFormCollapsed] = useState({ backgrounds: true, enabledCars: true });
+  const [registrationFormCollapsed, setRegistrationFormCollapsed] = useState({ backgrounds: true, enabledCars: true, freeDrivers: true });
+  const [freeDriverSearch, setFreeDriverSearch] = useState('');
+  const [freeDriversMessage, setFreeDriversMessage] = useState('');
   const [officialCarsMessage, setOfficialCarsMessage] = useState('');
   const [savingOfficialCar, setSavingOfficialCar] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
@@ -1819,14 +1824,27 @@ export default function Admin() {
     }
   };
 
+  const loadFreeRegistrationDrivers = async id => {
+    if (!id) return;
+    try {
+      const response = await registrationFormsApi.getFreeDrivers(id);
+      const selectedIds = (response.data.data || []).map(driver => Number(driver.id));
+      setRegistrationConfig(current => ({ ...current, pilotos_gratis: selectedIds }));
+    } catch (error) {
+      setFreeDriversMessage(error.response?.data?.error || 'No se pudieron cargar los pilotos con inscripción gratuita.');
+    }
+  };
+
   const selectRegistrationConfigChampionship = id => {
     setRegistrationConfigChampionshipId(id);
     setRegistrationConfigMessage('');
     setRegistrationGalleryMessage('');
     setOfficialCarsMessage('');
+    setFreeDriversMessage('');
+    setFreeDriverSearch('');
     setOfficialCarForm(emptyOfficialCarForm);
     setOfficialCarCollapsedBrands({});
-    setRegistrationFormCollapsed({ backgrounds: true, enabledCars: true });
+    setRegistrationFormCollapsed({ backgrounds: true, enabledCars: true, freeDrivers: true });
     loadChampionshipPrizes(id);
     if (officialCarPhotoInputRef.current) officialCarPhotoInputRef.current.value = '';
     setRegistrationImageFiles([]);
@@ -1835,6 +1853,7 @@ export default function Admin() {
     if (existing) {
       loadRegistrationGallery(id);
       loadOfficialCars(id);
+      loadFreeRegistrationDrivers(id);
     } else {
       setRegistrationGallery([]);
       setRegistrationGalleryPath('');
@@ -1853,6 +1872,7 @@ export default function Admin() {
       preinscriptos: String(existing.preinscriptos ?? 0),
       autos_habilitados: existing.autos_habilitados || [],
       limites_por_modelo: existing.limites_por_modelo || {},
+      pilotos_gratis: [],
       planes: normalizeAdminRegistrationPlans(existing.planes),
       permite_personalizado: existing.permite_personalizado,
       permite_diseno_liga: existing.permite_diseno_liga,
@@ -1913,6 +1933,16 @@ export default function Admin() {
     }));
   };
 
+  const toggleFreeRegistrationDriver = id => {
+    const numericId = Number(id);
+    setRegistrationConfig(current => ({
+      ...current,
+      pilotos_gratis: current.pilotos_gratis.includes(numericId)
+        ? current.pilotos_gratis.filter(driverId => driverId !== numericId)
+        : [...current.pilotos_gratis, numericId],
+    }));
+  };
+
   const saveRegistrationConfig = async event => {
     event.preventDefault();
     if (!registrationConfigChampionshipId) return;
@@ -1925,9 +1955,11 @@ export default function Admin() {
         fecha_cierre: toMySqlDateTime(registrationConfig.fecha_cierre),
       };
       const response = await registrationFormsApi.saveConfig(registrationConfigChampionshipId, payload);
+      const freeDriversResponse = await registrationFormsApi.updateFreeDrivers(registrationConfigChampionshipId, registrationConfig.pilotos_gratis);
       const saved = response.data.data;
       setRegistrationConfigs(current => [saved, ...current.filter(item => String(item.idcampeonato) !== String(saved.idcampeonato))]);
       setRegistrationConfigMessage(response.data.message);
+      setFreeDriversMessage(freeDriversResponse.data.message || 'Pilotos con inscripción gratuita actualizados.');
       await loadRegistrationGallery(registrationConfigChampionshipId);
       await loadOfficialCars(registrationConfigChampionshipId);
     } catch (error) {
@@ -5275,7 +5307,8 @@ export default function Admin() {
   };
 
   const renderSection = () => {
-    if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><SuspensionCalculator/><TyresCalculator/></div>;
+    if (activeSection === 'votaciones') return <PollsAdmin />;
+    if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><TyresCalculator/></div>;
 
     if (activeSection === 'denuncias') {
       const filteredComplaints = complaints.filter(item =>
@@ -5459,6 +5492,15 @@ export default function Admin() {
       const enabledOfficialCars = categoryCars.filter(car => registrationConfig.autos_habilitados.includes(Number(car.id)));
       const assignedModelLimit = registrationConfig.autos_habilitados.reduce((total, carId) => total + Number(registrationConfig.limites_por_modelo?.[carId] || 0), 0);
       const modelLimitDifference = Number(registrationConfig.limite_inscriptos || 0) - assignedModelLimit;
+      const freeDriverIds = new Set(registrationConfig.pilotos_gratis || []);
+      const selectedFreeDrivers = drivers.filter(driver => freeDriverIds.has(Number(driver.id)))
+        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' }));
+      const normalizedFreeDriverSearch = freeDriverSearch.trim().toLocaleLowerCase('es-AR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const freeDriverCandidates = drivers.filter(driver => {
+        if (freeDriverIds.has(Number(driver.id))) return false;
+        const searchable = `${driver.nombre || ''} ${driver.localidad || ''}`.toLocaleLowerCase('es-AR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return !normalizedFreeDriverSearch || searchable.includes(normalizedFreeDriverSearch);
+      }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' })).slice(0, 12);
       const officialCarBrands = [...new Map(enabledOfficialCars.map(car => [String(car.idmarca), {
         id: String(car.idmarca),
         marca: car.marca,
@@ -5523,6 +5565,18 @@ export default function Admin() {
                 {!loadingChampionshipPrizes && !championshipPrizes.length ? <p className="mt-5 border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no cargaste premios para este campeonato.</p> : null}
                 {championshipPrizesMessage ? <p className="mt-4 border border-yellow-400/20 bg-yellow-400/[0.05] p-3 text-sm text-yellow-200">{championshipPrizesMessage}</p> : null}
                 <button type="button" onClick={saveChampionshipPrizes} disabled={loadingChampionshipPrizes || savingChampionshipPrizes} className="mt-5 w-full bg-yellow-400 px-5 py-3 text-xs font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">{savingChampionshipPrizes ? 'Guardando premios...' : 'Guardar premios'}</button>
+              </section>
+              <section className="overflow-hidden border border-green-400/30 bg-green-500/[0.03]">
+                <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, freeDrivers: !current.freeDrivers }))} className="flex w-full items-center justify-between gap-4 p-4 text-left transition hover:bg-green-400/[0.05] sm:p-5" aria-expanded={!registrationFormCollapsed.freeDrivers}>
+                  <span><span className="block font-racing text-xl font-bold text-white">Pilotos con inscripción gratuita</span><span className="mt-1 block text-xs text-gray-500">La bonificación elimina solamente el precio base. Los diseños y adicionales se cobran normalmente.</span></span>
+                  <span className="flex shrink-0 items-center gap-3"><span className="border border-green-400/35 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-300">{selectedFreeDrivers.length}</span><ChevronDownIcon className={`h-5 w-5 text-green-300 transition-transform duration-500 ${registrationFormCollapsed.freeDrivers ? '-rotate-90' : ''}`}/></span>
+                </button>
+                <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.freeDrivers ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="border-t border-green-400/20 p-4 sm:p-5">
+                  <label className="block"><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Buscar piloto</span><span className="relative mt-2 block"><MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-600"/><input value={freeDriverSearch} onChange={event => setFreeDriverSearch(event.target.value)} className="input-field pl-10" placeholder="Nombre o localidad"/></span></label>
+                  {selectedFreeDrivers.length ? <div className="mt-4"><p className="text-[10px] font-bold uppercase tracking-wider text-green-300">Bonificados</p><div className="mt-2 flex flex-wrap gap-2">{selectedFreeDrivers.map(driver => <button key={driver.id} type="button" onClick={() => toggleFreeRegistrationDriver(driver.id)} className="group inline-flex items-center gap-2 border border-green-400/35 bg-green-500/10 px-3 py-2 text-left text-xs font-semibold text-green-200 transition hover:border-red-400 hover:bg-red-500/10 hover:text-red-200"><span>{driver.nombre}</span><XMarkIcon className="h-4 w-4"/></button>)}</div></div> : <p className="mt-4 border border-dashed border-racing-border py-4 text-center text-xs text-gray-600">Todavía no seleccionaste pilotos.</p>}
+                  <div className="mt-4 max-h-72 divide-y divide-racing-border overflow-y-auto border border-racing-border bg-black/20">{freeDriverCandidates.map(driver => <button key={driver.id} type="button" onClick={() => toggleFreeRegistrationDriver(driver.id)} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:bg-green-500/10"><span className="min-w-0"><strong className="block truncate text-sm text-white">{driver.nombre}</strong><span className="block truncate text-xs text-gray-500">{[driver.localidad, driver.provincia].filter(Boolean).join(', ') || 'Sin localidad'}</span></span><span className="shrink-0 text-[10px] font-bold uppercase text-green-300">Agregar gratis</span></button>)}{!freeDriverCandidates.length ? <p className="p-5 text-center text-xs text-gray-600">No hay pilotos para mostrar.</p> : null}</div>
+                  {freeDriversMessage ? <p className="mt-4 text-sm text-green-200">{freeDriversMessage}</p> : null}
+                </div></div></div>
               </section>
               <section className="overflow-hidden border border-racing-border bg-black/20">
                 <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, enabledCars: !current.enabledCars }))} className="flex w-full items-center justify-between gap-4 p-4 text-left transition hover:bg-white/[0.04] sm:p-5" aria-expanded={!registrationFormCollapsed.enabledCars}>

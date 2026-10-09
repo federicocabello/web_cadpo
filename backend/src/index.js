@@ -30,11 +30,15 @@ const sponsorsRouter = require('./routes/sponsors');
 const complaintsRouter = require('./routes/complaints');
 const projectsRouter = require('./routes/projects');
 const importerRouter = require('./routes/importer');
+const pollsRouter = require('./routes/polls');
 const liveTimingMonitor = require('./services/liveTimingMonitor');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Hostinger/Passenger entrega la IP pública mediante un proxy inverso.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -90,6 +94,7 @@ app.use('/api/sponsors', sponsorsRouter);
 app.use('/api/complaints', complaintsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/importer', importerRouter);
+app.use('/api/polls', pollsRouter);
 
 // Servir el frontend desde Hostinger, desde el paquete de producción o desde Vite local.
 const hostingerPublicPath = path.join(__dirname, '../../public_html');

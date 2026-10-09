@@ -172,6 +172,16 @@ export const projectsApi = {
   remove: id => api.delete(`/projects/admin/${id}`),
 };
 
+export const pollsApi = {
+  getAll: () => api.get('/polls'),
+  vote: (id, idopciones) => api.post(`/polls/${id}/vote`, { idopciones }),
+  getAdminAll: () => api.get('/polls/admin/all'),
+  create: data => api.post('/polls/admin', data, { timeout: 60000 }),
+  update: (id, data) => api.put(`/polls/admin/${id}`, data, { timeout: 60000 }),
+  resetVotes: id => api.delete(`/polls/admin/${id}/votes`),
+  remove: id => api.delete(`/polls/admin/${id}`),
+};
+
 export const complaintsApi = {
   getContext: () => api.get('/complaints/context'),
   create: data => api.post('/complaints', data),
@@ -213,6 +223,8 @@ export const registrationFormsApi = {
   submit: (id, data) => api.post(`/registration-forms/${id}/submit`, data),
   getAdminAll: () => api.get('/registration-forms/admin/all'),
   getImages: id => api.get(`/registration-forms/admin/${id}/images`),
+  getFreeDrivers: id => api.get(`/registration-forms/admin/${id}/free-drivers`),
+  updateFreeDrivers: (id, idpilotos) => api.put(`/registration-forms/admin/${id}/free-drivers`, { idpilotos }),
   uploadImages: (id, data) => api.post(`/registration-forms/admin/${id}/images`, data, { timeout: 60000 }),
   removeImage: (id, filename) => api.delete(`/registration-forms/admin/${id}/images/${encodeURIComponent(filename)}`),
   getOfficialCars: id => api.get(`/registration-forms/admin/${id}/official-cars`),

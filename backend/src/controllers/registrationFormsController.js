@@ -110,6 +110,31 @@ const normalizeFixedPlans = row => {
 };
 const registrationImageExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
+const ensureFreeRegistrationsTable = async (database = pool) => {
+  await database.query(`
+    CREATE TABLE IF NOT EXISTS inscripciones_gratuitas (
+      idcampeonato INT NOT NULL,
+      idpiloto INT NOT NULL,
+      creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (idcampeonato, idpiloto),
+      KEY idx_inscripciones_gratuitas_piloto (idpiloto)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+};
+
+const listFreeRegistrationDrivers = async championshipId => {
+  await ensureFreeRegistrationsTable();
+  const [rows] = await pool.query(
+    `SELECT p.id, p.nombre, p.localidad, p.provincia
+     FROM inscripciones_gratuitas free
+     JOIN pilotos p ON p.id = free.idpiloto
+     WHERE free.idcampeonato = ?
+     ORDER BY p.nombre`,
+    [championshipId],
+  );
+  return rows;
+};
+
 const getRegistrationGallery = async championshipId => {
   const [[championship]] = await pool.query(
     `SELECT c.temporada, cat.categoria
@@ -378,15 +403,22 @@ const searchDrivers = async (req, res, next) => {
     }
     const search = String(req.query.search || '').trim();
     if (search.length < 2) return res.json({ data: [] });
+    await ensureFreeRegistrationsTable();
     const [rows] = await pool.query(
-      `SELECT id, nombre, localidad, provincia, telefono, nacionalidad, steam, ig
-       FROM pilotos ORDER BY nombre`
+      `SELECT p.id, p.nombre, p.localidad, p.provincia, p.telefono, p.nacionalidad, p.steam, p.ig,
+              EXISTS(
+                SELECT 1 FROM inscripciones_gratuitas free
+                WHERE free.idcampeonato = ? AND free.idpiloto = p.id
+              ) AS inscripcion_gratis
+       FROM pilotos p ORDER BY p.nombre`,
+      [req.params.id],
     );
     const normalizedSearch = foldText(search);
     const ranking = await getPreviousSeasonRanking(req.params.id);
     const matches = rows.filter(driver => foldText(driver.nombre).includes(normalizedSearch)).slice(0, 8)
       .map(driver => ({
         ...driver,
+        inscripcion_gratis: Boolean(driver.inscripcion_gratis),
         ranking_position: ranking.positions.get(Number(driver.id)) || null,
         ranking_championship_id: ranking.championshipId,
       }));
@@ -541,6 +573,46 @@ const getAdminAll = async (req, res, next) => {
     const [rows] = await pool.query(`${configSelect} GROUP BY cfg.idcampeonato ORDER BY c.anio DESC, c.temporada DESC`);
     res.json({ data: rows.map(normalizeConfig) });
   } catch (error) { next(error); }
+};
+
+const getAdminFreeDrivers = async (req, res, next) => {
+  try {
+    res.json({ data: await listFreeRegistrationDrivers(req.params.id) });
+  } catch (error) { next(error); }
+};
+
+const updateAdminFreeDrivers = async (req, res, next) => {
+  const connection = await pool.getConnection();
+  try {
+    const championshipId = Number(req.params.id);
+    const driverIds = parseIds(req.body.idpilotos);
+    if (!Number.isInteger(championshipId) || championshipId < 1) {
+      return res.status(400).json({ error: 'Campeonato inválido' });
+    }
+    await ensureFreeRegistrationsTable(connection);
+    if (driverIds.length) {
+      const [validDrivers] = await connection.query('SELECT id FROM pilotos WHERE id IN (?)', [driverIds]);
+      if (validDrivers.length !== driverIds.length) {
+        return res.status(400).json({ error: 'Hay pilotos seleccionados que ya no existen' });
+      }
+    }
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM inscripciones_gratuitas WHERE idcampeonato = ?', [championshipId]);
+    if (driverIds.length) {
+      await connection.query(
+        'INSERT INTO inscripciones_gratuitas (idcampeonato, idpiloto) VALUES ?',
+        [driverIds.map(driverId => [championshipId, driverId])],
+      );
+    }
+    await connection.commit();
+    res.json({
+      data: await listFreeRegistrationDrivers(championshipId),
+      message: `${driverIds.length} piloto${driverIds.length === 1 ? '' : 's'} con inscripción gratuita guardado${driverIds.length === 1 ? '' : 's'}.`,
+    });
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally { connection.release(); }
 };
 
 const getAdminImages = async (req, res, next) => {
@@ -890,9 +962,10 @@ const submit = async (req, res, next) => {
     };
     if (!driver.nombre) return res.status(400).json({ error: 'Completá el nombre y apellido' });
 
+    await ensureFreeRegistrationsTable(connection);
     await connection.beginTransaction();
     const [[lockedConfig]] = await connection.query(
-      `SELECT limite_inscriptos, limite_por_modelo, preinscriptos, autos_habilitados, fecha_apertura, fecha_cierre,
+      `SELECT precio, limite_inscriptos, limite_por_modelo, preinscriptos, autos_habilitados, fecha_apertura, fecha_cierre,
               CASE WHEN NOW() >= fecha_apertura AND NOW() < fecha_cierre THEN 1 ELSE 0 END AS inscripcion_abierta
        FROM inscripciones_config
        WHERE idcampeonato = ? FOR UPDATE`, [id]
@@ -998,12 +1071,20 @@ const submit = async (req, res, next) => {
         throw Object.assign(new Error(`El número ${number} ya está ocupado`), { statusCode: 409 });
       }
     }
-    const registrationPrice = Number(form.precio || 0) + Number(selectedPlan.precio_adicional || 0);
+    const [[freeRegistration]] = await connection.query(
+      `SELECT 1 AS allowed FROM inscripciones_gratuitas
+       WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1 FOR UPDATE`,
+      [id, driverId],
+    );
+    const hasFreeRegistration = Boolean(freeRegistration);
+    const basePrice = hasFreeRegistration ? 0 : Number(lockedConfig.precio || 0);
+    const registrationPrice = basePrice + Number(selectedPlan.precio_adicional || 0);
+    const paymentConfirmed = registrationPrice <= 0 ? 1 : 0;
     await connection.query(
       `INSERT INTO inscriptos
        (idcampeonato, idpiloto, idauto, numero, pago, tipo_inscripcion, idauto_oficial, precio_inscripcion)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
-      [id, driverId, carId, number, selectedPlan.id, officialCarId, registrationPrice]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, driverId, carId, number, paymentConfirmed, selectedPlan.id, officialCarId, registrationPrice]
     );
     await connection.query(
       `INSERT INTO inscripciones_detalle
@@ -1018,7 +1099,14 @@ const submit = async (req, res, next) => {
       [id, driverId, modality, selectedPlan.id, selectedPlan.titulo, registrationPrice]
     );
     await connection.commit();
-    res.status(201).json({ message: 'Inscripción registrada correctamente' });
+    res.status(201).json({
+      message: registrationPrice <= 0
+        ? 'Inscripción gratuita registrada y confirmada correctamente'
+        : hasFreeRegistration
+          ? `Inscripción bonificada. Solo resta abonar el adicional de ${selectedPlan.titulo}.`
+          : 'Inscripción registrada correctamente',
+      data: { inscripcion_gratis: hasFreeRegistration, precio_total: registrationPrice, pago_confirmado: Boolean(paymentConfirmed) },
+    });
   } catch (error) {
     await connection.rollback();
     next(error);
@@ -1027,8 +1115,10 @@ const submit = async (req, res, next) => {
 
 const removeConfig = async (req, res, next) => {
   try {
+    await ensureFreeRegistrationsTable();
     const [result] = await pool.query('DELETE FROM inscripciones_config WHERE idcampeonato = ?', [req.params.id]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Formulario no encontrado' });
+    await pool.query('DELETE FROM inscripciones_gratuitas WHERE idcampeonato = ?', [req.params.id]);
     res.json({ message: 'Formulario eliminado. Las inscripciones existentes se conservaron.' });
   } catch (error) { next(error); }
 };
@@ -1038,6 +1128,7 @@ module.exports = {
   checkNumber,
   createAdminOfficialCar,
   getAdminAll,
+  getAdminFreeDrivers,
   getAdminImages,
   getAdminOfficialCars,
   getPublicAll,
@@ -1051,6 +1142,7 @@ module.exports = {
   start,
   submit,
   updateAdminOfficialCar,
+  updateAdminFreeDrivers,
   updateVisibility,
   uploadAdminImages,
 };

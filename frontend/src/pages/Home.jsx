@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ArrowDownTrayIcon, ArrowRightIcon, BuildingOffice2Icon, CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentTextIcon, FlagIcon, GlobeAltIcon, MapIcon, MapPinIcon, MegaphoneIcon, PaintBrushIcon, PhoneIcon, PlayCircleIcon, UserGroupIcon, VideoCameraIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { complaintsApi, eventsApi, mediaApi, registrationFormsApi, sponsorsApi, templatesApi } from '../services/api';
+import { complaintsApi, eventsApi, mediaApi, pollsApi, registrationFormsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import { getCountryName } from '../data/countries';
 import ServerJoinButton from '../components/ServerJoinButton';
@@ -10,6 +10,7 @@ import { getEventPhase, getFeaturedUpcomingEvents, getLiveTimingEvents } from '.
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { formatPrice } from '../utils/currency';
 import { formatComplaintCountdown } from '../utils/complaintCountdown';
+import PollsSection from '../components/PollsSection';
 
 const shuffle = items => [...items].sort(() => Math.random() - 0.5);
 const formatDate = value => value ? formatCalendarDate(value, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : 'Por confirmar';
@@ -126,10 +127,21 @@ const registrationThemes = {
 function RegistrationPrompt({ registration, mobile = false }) {
   if (!registration) return null;
   return (
-    <button type="button" onClick={() => document.getElementById(`inscripciones-campeonato-${registration.idcampeonato}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`group z-30 flex items-stretch overflow-hidden border border-emerald-400/45 bg-black/85 text-left shadow-[0_14px_35px_rgba(0,0,0,0.55)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-emerald-300 hover:bg-black/95 ${mobile ? 'mt-3 w-full sm:hidden' : 'absolute bottom-7 right-8 hidden sm:flex lg:right-12'}`} aria-label="Ir al campeonato con inscripciones abiertas">
+    <button type="button" onClick={() => document.getElementById(`inscripciones-campeonato-${registration.idcampeonato}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`group flex items-stretch overflow-hidden border border-emerald-400/45 bg-black/85 text-left shadow-[0_14px_35px_rgba(0,0,0,0.55)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-emerald-300 hover:bg-black/95 ${mobile ? 'min-w-0 flex-1' : ''}`} aria-label="Ir al campeonato con inscripciones abiertas">
       <span className="w-1.5 shrink-0 bg-emerald-500 transition-all duration-300 group-hover:w-2.5"/>
-      <span className="px-4 py-3"><span className="block text-[9px] font-semibold uppercase tracking-[0.22em] text-emerald-300">Inscripciones abiertas</span><span className="block font-racing text-sm font-bold uppercase text-white sm:text-base">Nuevo campeonato</span></span>
-      <span className="flex w-11 items-center justify-center border-l border-emerald-400/20 bg-emerald-500/15 transition-colors group-hover:bg-emerald-500"><ChevronDownIcon className="h-5 w-5 animate-bounce text-emerald-300 group-hover:text-white"/></span>
+      <span className={`min-w-0 flex-1 ${mobile ? 'px-2 py-2.5' : 'px-4 py-3'}`}><span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-emerald-300 sm:text-[9px] sm:tracking-[0.22em]">Inscripciones abiertas</span><span className="block font-racing text-xs font-bold uppercase leading-tight text-white sm:text-base">Nuevo campeonato</span></span>
+      <span className={`flex shrink-0 items-center justify-center border-l border-emerald-400/20 bg-emerald-500/15 transition-colors group-hover:bg-emerald-500 ${mobile ? 'w-8' : 'w-11'}`}><ChevronDownIcon className="h-5 w-5 animate-bounce text-emerald-300 group-hover:text-white"/></span>
+    </button>
+  );
+}
+
+function VotingPrompt({ poll, mobile = false }) {
+  if (!poll) return null;
+  return (
+    <button type="button" onClick={() => document.getElementById('votacion-proximo-campeonato')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className={`group flex items-stretch overflow-hidden border border-cyan-300/50 bg-black/85 text-left shadow-[0_14px_35px_rgba(0,0,0,0.55)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-cyan-200 hover:bg-black/95 ${mobile ? 'min-w-0 flex-1' : ''}`} aria-label="Ir a la votación del nuevo campeonato">
+      <span className="w-1.5 shrink-0 bg-cyan-300 transition-all duration-300 group-hover:w-2.5"/>
+      <span className={`min-w-0 flex-1 ${mobile ? 'px-2 py-2.5' : 'px-4 py-3'}`}><span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-cyan-300 sm:text-[9px] sm:tracking-[0.22em]">Votación abierta</span><span className="block font-racing text-xs font-bold uppercase leading-tight text-white sm:text-base">Nuevo campeonato</span></span>
+      <span className={`flex shrink-0 items-center justify-center border-l border-cyan-300/20 bg-cyan-300/15 transition-colors group-hover:bg-cyan-300 ${mobile ? 'w-8' : 'w-11'}`}><ChevronDownIcon className="h-5 w-5 animate-bounce text-cyan-300 group-hover:text-black"/></span>
     </button>
   );
 }
@@ -181,7 +193,7 @@ function RulesModal({ event, onClose }) {
   );
 }
 
-function EventSection({ event, now, onShowCalendar, registrationPrompt, complaintPromptEvent, showLiveTiming }) {
+function EventSection({ event, now, onShowCalendar, registrationPrompt, votingPrompt, complaintPromptEvent, showLiveTiming }) {
   const [rulesOpen, setRulesOpen] = useState(false);
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
   const countdown = getCountdown(event.fecha, now);
@@ -207,12 +219,12 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, complain
           <div className="mt-8 max-w-3xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: `repeat(${countdownParts.length}, minmax(0, 1fr))` }}>{countdownParts.map(part => <div key={part.key} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
           <div className="mt-7 flex flex-wrap gap-3 xl:flex-nowrap xl:gap-2"><ServerJoinButton href={event.servidor} variant="green" steady className="event-action-button w-full justify-center sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"/>{event.transmision ? <a href={event.transmision} target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-red inline-flex w-full shrink-0 items-center justify-center gap-3 border border-red-400 bg-racing-red px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-racing transition-colors hover:bg-red-600 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><PlayCircleIcon className="h-5 w-7"/>Ver transmisión</a> : null}{showLiveTiming ? <Link to={`/tiempos-en-vivo?campeonato=${event.idcampeonato}`} className="event-action-button server-action-button server-action-blue inline-flex w-full shrink-0 items-center justify-center gap-3 border border-blue-300 bg-blue-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(37,99,235,0.34)] transition-colors hover:bg-blue-500 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><ClockIcon className="h-5 w-7"/>Ver tiempos en vivo</Link> : null}{event.reglamento ? <button type="button" onClick={() => setRulesOpen(true)} className="event-action-button server-action-button server-action-white inline-flex w-full shrink-0 items-center justify-center gap-3 border border-white bg-white px-5 py-3 font-racing text-sm font-bold uppercase text-black shadow-[0_0_22px_rgba(255,255,255,0.2)] transition-colors hover:bg-gray-200 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><DocumentTextIcon className="h-5 w-5"/>Ver reglamento</button> : null}</div>
           {complaintPromptEvent ? <div className="mt-4 md:hidden"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
-          <RegistrationPrompt registration={registrationPrompt} mobile/>
+          {votingPrompt || registrationPrompt ? <div className="mt-3 flex w-full items-stretch gap-2 sm:hidden"><VotingPrompt poll={votingPrompt} mobile/><RegistrationPrompt registration={registrationPrompt} mobile/></div> : null}
         </div>
         <div className="order-1 flex min-h-[200px] w-full items-center justify-center lg:order-2 lg:min-h-[500px] lg:justify-end">{event.circuito_trazado_url ? <img src={event.circuito_trazado_url} alt={`Trazado de ${event.circuito}`} className="race-track-float max-h-[28vh] w-full max-w-[520px] object-contain drop-shadow-[0_18px_35px_rgba(0,0,0,0.9)] lg:max-h-[54vh]" onError={imageEvent => { imageEvent.currentTarget.style.display = 'none'; }}/> : <FlagIcon className="h-28 w-28 text-white/15"/>}</div>
       </div>
       {complaintPromptEvent ? <div className="absolute right-8 top-12 z-30 hidden md:block lg:right-14 2xl:right-20"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
-      <RegistrationPrompt registration={registrationPrompt}/>
+      {votingPrompt || registrationPrompt ? <div className="absolute bottom-7 right-8 z-30 hidden items-stretch gap-3 sm:flex lg:right-12"><VotingPrompt poll={votingPrompt}/><RegistrationPrompt registration={registrationPrompt}/></div> : null}
       {rulesOpen ? <RulesModal event={event} onClose={() => setRulesOpen(false)}/> : null}
       <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-racing-red to-transparent"/>
     </section>
@@ -426,6 +438,7 @@ export default function Home() {
   const [sponsors, setSponsors] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [complaintContext, setComplaintContext] = useState({ eventos: [], proxima: null });
+  const [polls, setPolls] = useState([]);
 
   const upcomingEvents = useMemo(() => getFeaturedUpcomingEvents(events, new Date(now)), [events, now]);
   const liveTimingEventIds = useMemo(() => new Set(getLiveTimingEvents(events, new Date(now)).map(event => `${event.idcampeonato}-${event.ronda}`)), [events, now]);
@@ -434,6 +447,11 @@ export default function Home() {
     return order[a.phase] - order[b.phase] || (parseCalendarDate(a.fecha_apertura)?.getTime() || 0) - (parseCalendarDate(b.fecha_apertura)?.getTime() || 0);
   }), [registrationForms, now]);
   const openRegistration = registrations.find(item => item.phase === 'open') || null;
+  const openPoll = polls.find(poll => {
+    const startsAt = parseCalendarDate(poll.fecha_inicio)?.getTime() || 0;
+    const closesAt = parseCalendarDate(poll.fecha_cierre)?.getTime() || 0;
+    return startsAt > 0 && closesAt > 0 && startsAt <= now && now <= closesAt;
+  }) || null;
   const openComplaintEvent = complaintContext.eventos.find(event => (parseCalendarDate(event.cierre_denuncias)?.getTime() || 0) > now) || null;
   const championshipBroadcasts = useMemo(() => {
     const pastBroadcasts = events
@@ -446,7 +464,7 @@ export default function Home() {
   const registrationIds = registrations.map(item => item.idcampeonato).join(',');
 
   useEffect(() => {
-    Promise.all([eventsApi.getAll(), registrationFormsApi.getAll(), templatesApi.getAll()]).then(([eventsResponse, formsResponse, templatesResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); setTemplates(templatesResponse.data.data || []); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
+    Promise.all([eventsApi.getAll(), registrationFormsApi.getAll(), templatesApi.getAll(), pollsApi.getAll().catch(() => ({ data: { data: [] } }))]).then(([eventsResponse, formsResponse, templatesResponse, pollsResponse]) => { setEvents(eventsResponse.data.data || []); setRegistrationForms(formsResponse.data.data || []); setTemplates(templatesResponse.data.data || []); setPolls((pollsResponse.data.data || []).filter(poll => ['proxima', 'abierta'].includes(poll.estado))); }).catch(error => console.error('Error cargando el inicio:', error)).finally(() => setLoading(false));
     sponsorsApi.getAll().then(response => setSponsors(response.data.data || [])).catch(error => console.error('Error cargando sponsors:', error));
   }, []);
 
@@ -504,8 +522,9 @@ export default function Home() {
 
   return (
     <div className="animate-fade-in">
-      {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} complaintPromptEvent={index === Math.max(0, upcomingEvents.findIndex(item => String(item.idcampeonato) === String(openComplaintEvent?.idcampeonato) && String(item.ronda) === String(openComplaintEvent?.ronda))) ? openComplaintEvent : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
+      {!loading ? upcomingEvents.map((event, index) => <EventSection key={`${event.idcampeonato}-${event.ronda}`} event={event} now={now} onShowCalendar={setCalendarEvent} registrationPrompt={index === upcomingEvents.length - 1 ? openRegistration : null} votingPrompt={index === upcomingEvents.length - 1 ? openPoll : null} complaintPromptEvent={index === Math.max(0, upcomingEvents.findIndex(item => String(item.idcampeonato) === String(openComplaintEvent?.idcampeonato) && String(item.ronda) === String(openComplaintEvent?.ronda))) ? openComplaintEvent : null} showLiveTiming={liveTimingEventIds.has(`${event.idcampeonato}-${event.ronda}`)}/>) : null}
       {!loading && !upcomingEvents.length && openComplaintEvent ? <div className="mx-auto w-full max-w-[1600px] px-5 py-5 sm:px-8 lg:px-14 xl:px-20"><ComplaintPrompt event={openComplaintEvent} now={now}/></div> : null}
+      {!loading && polls.length ? <section id="votacion-proximo-campeonato" className="relative isolate scroll-mt-20 overflow-hidden bg-[#05090c] py-12 sm:py-16"><div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_15%_20%,rgba(34,211,238,0.10),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.025),transparent_45%)]"/><div className="mx-auto w-full max-w-[1600px] px-5 sm:px-8 lg:px-14 xl:px-20"><PollsSection polls={polls} onPollUpdated={updated => setPolls(current => current.map(poll => String(poll.id) === String(updated.id) ? updated : poll))} /></div><div className="pointer-events-none absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-300 to-transparent"/></section> : null}
       {!loading ? registrations.map(registration => <RegistrationSection key={registration.idcampeonato} registration={registration} details={registrationDetails[registration.idcampeonato]} images={registrationImages[registration.idcampeonato] || []} activeImage={activeRegistrationImages[registration.idcampeonato] || 0} now={now} events={events} template={templates.find(item => String(item.idcampeonato) === String(registration.idcampeonato)) || null}/>) : null}
       {!loading && championshipBroadcasts.length ? <BroadcastSection key={championshipBroadcasts[0].idcampeonato} broadcasts={championshipBroadcasts} now={now}/> : null}
       {!loading ? <AdvertisingSection sponsors={sponsors}/> : null}

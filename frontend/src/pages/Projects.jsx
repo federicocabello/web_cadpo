@@ -18,6 +18,9 @@ const formatProjectDate = value => {
 };
 
 const protectImage = event => event.preventDefault();
+const projectsSeoTitle = 'Proyectos para Assetto Corsa | CADPO TORNEOS';
+const projectsSeoDescription = 'Categorías, autos y circuitos para Assetto Corsa desarrollados por CADPO TORNEOS. Conocé los proyectos, avances e imágenes de la comunidad.';
+const projectsCanonicalUrl = 'https://cadpotorneos.com/proyectos';
 
 function ProjectGallery({ project, initialIndex, onClose }) {
   const [index, setIndex] = useState(initialIndex);
@@ -42,7 +45,71 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [gallery, setGallery] = useState(null);
+  useEffect(() => {
+    const description = document.querySelector('meta[name="description"]');
+    const keywords = document.querySelector('meta[name="keywords"]');
+    const canonical = document.querySelector('link[rel="canonical"]');
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    const ogDescription = document.querySelector('meta[property="og:description"]');
+    const ogUrl = document.querySelector('meta[property="og:url"]');
+    const previous = {
+      title: document.title,
+      description: description?.getAttribute('content') || '',
+      keywords: keywords?.getAttribute('content') || '',
+      canonical: canonical?.getAttribute('href') || '',
+      ogTitle: ogTitle?.getAttribute('content') || '',
+      ogDescription: ogDescription?.getAttribute('content') || '',
+      ogUrl: ogUrl?.getAttribute('content') || '',
+    };
+    document.title = projectsSeoTitle;
+    description?.setAttribute('content', projectsSeoDescription);
+    keywords?.setAttribute('content', 'Assetto Corsa, circuitos Assetto Corsa, categorías Assetto Corsa, mods Assetto Corsa, CADPO TORNEOS, simracing Argentina');
+    canonical?.setAttribute('href', projectsCanonicalUrl);
+    ogTitle?.setAttribute('content', projectsSeoTitle);
+    ogDescription?.setAttribute('content', projectsSeoDescription);
+    ogUrl?.setAttribute('content', projectsCanonicalUrl);
+    return () => {
+      document.title = previous.title;
+      description?.setAttribute('content', previous.description);
+      keywords?.setAttribute('content', previous.keywords);
+      canonical?.setAttribute('href', previous.canonical);
+      ogTitle?.setAttribute('content', previous.ogTitle);
+      ogDescription?.setAttribute('content', previous.ogDescription);
+      ogUrl?.setAttribute('content', previous.ogUrl);
+    };
+  }, []);
   useEffect(() => { projectsApi.getAll().then(response => setProjects(response.data.data || [])).catch(requestError => setError(requestError.response?.data?.error || 'No se pudieron cargar los proyectos.')).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    if (!projects.length) return undefined;
+    const schema = document.createElement('script');
+    schema.type = 'application/ld+json';
+    schema.id = 'cadpo-projects-schema';
+    schema.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: projectsSeoTitle,
+      description: projectsSeoDescription,
+      url: projectsCanonicalUrl,
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: projects.map((project, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: `${projectsCanonicalUrl}#proyecto-${project.id}`,
+          item: {
+            '@type': 'CreativeWork',
+            name: `${project.titulo} para Assetto Corsa`,
+            description: project.descripcion || `${project.titulo}, proyecto para Assetto Corsa de CADPO TORNEOS.`,
+            dateCreated: project.creado || undefined,
+            image: (project.fotos || []).map(photo => String(photo.imagen || '').startsWith('http') ? photo.imagen : `https://cadpotorneos.com${photo.imagen}`),
+          },
+        })),
+      },
+    });
+    document.getElementById(schema.id)?.remove();
+    document.head.appendChild(schema);
+    return () => schema.remove();
+  }, [projects]);
   const grouped = useMemo(() => Object.fromEntries(sections.map(section => [section.id, projects.filter(project => project.tipo === section.id)])), [projects]);
-  return <main className="mx-auto min-h-[70vh] w-full max-w-[1600px] animate-fade-in px-3 py-6 sm:px-8 sm:py-8 lg:px-14 xl:px-20"><header className="border-b border-racing-border pb-6 sm:pb-7"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-racing-red sm:text-xs sm:tracking-[0.24em]">CADPO en desarrollo</p><h1 className="mt-2 font-racing text-4xl font-bold uppercase text-white sm:text-7xl">Proyectos</h1><p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-400 sm:text-base">Conocé las categorías y los circuitos que estamos preparando para seguir ampliando la experiencia de la comunidad.</p></header>{loading ? <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent"/></div> : error ? <div className="mt-8 border border-red-500/30 bg-red-500/10 p-7 text-red-200">{error}</div> : <div className="mt-8 space-y-12 sm:mt-10 sm:space-y-16">{sections.map(section => { const items = grouped[section.id] || []; const Icon = section.Icon; return items.length ? <section key={section.id}><div className="flex items-center gap-3 sm:gap-4"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-racing-red text-white sm:h-12 sm:w-12"><Icon className="h-5 w-5 sm:h-6 sm:w-6"/></span><div className="min-w-0"><h2 className="font-racing text-2xl font-bold uppercase text-white sm:text-4xl">{section.title}</h2><p className="text-xs leading-relaxed text-gray-500 sm:text-sm">{section.subtitle}</p></div></div><div className="mt-5 space-y-6 sm:mt-6 sm:space-y-8">{items.map(project => <article key={project.id} className="overflow-hidden border border-racing-border bg-racing-card"><div className="p-4 sm:p-7"><div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 break-words font-racing text-2xl font-bold uppercase text-white sm:text-4xl">{project.titulo}</h3>{formatProjectDate(project.creado) ? <span className="shrink-0 border border-racing-red/30 bg-racing-red/[0.08] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-racing-red sm:px-3 sm:text-[10px] sm:tracking-[0.18em]">{formatProjectDate(project.creado)}</span> : null}</div>{project.descripcion ? <p className="mt-3 max-w-5xl text-sm leading-relaxed text-gray-400 sm:text-base">{project.descripcion}</p> : null}</div>{project.fotos?.length ? <div className="grid h-[420px] select-none grid-cols-2 grid-rows-4 gap-0.5 bg-racing-border min-[420px]:h-[480px] sm:h-[540px] sm:grid-cols-4 sm:grid-rows-2 sm:gap-1" onContextMenu={protectImage} style={{ WebkitTouchCallout: 'none' }}>{project.fotos.slice(0, 5).map((photo, index) => <button type="button" key={photo.id} onClick={() => setGallery({ project, index })} className={`group relative overflow-hidden bg-black ${index === 0 ? 'col-span-2 row-span-2' : ''}`} aria-label={`Ver imagen ${index + 1} de ${project.titulo}`}><img src={photo.imagen} alt="" loading="lazy" draggable={false} onDragStart={protectImage} className="pointer-events-none h-full w-full object-cover opacity-85 transition duration-500 group-hover:scale-[1.03] group-hover:opacity-100"/>{index === 4 && project.fotos.length > 5 ? <span className="absolute inset-0 flex items-center justify-center bg-black/65 font-racing text-2xl font-bold text-white">+{project.fotos.length - 5}</span> : null}</button>)}</div> : <div className="flex items-center gap-2 border-t border-racing-border px-5 py-4 text-xs text-gray-600"><PhotoIcon className="h-5 w-5"/>Próximamente agregaremos imágenes.</div>}</article>)}</div></section> : null; })}{!projects.length ? <div className="border border-dashed border-racing-border py-20 text-center"><PhotoIcon className="mx-auto h-14 w-14 text-gray-700"/><h2 className="mt-4 font-racing text-2xl font-bold uppercase text-gray-300">Próximamente</h2><p className="mt-2 text-sm text-gray-500">Todavía no hay proyectos publicados.</p></div> : null}</div>}{gallery ? <ProjectGallery project={gallery.project} initialIndex={gallery.index} onClose={() => setGallery(null)}/> : null}</main>;
+  return <main className="mx-auto min-h-[70vh] w-full max-w-[1600px] animate-fade-in px-3 py-6 sm:px-8 sm:py-8 lg:px-14 xl:px-20"><header className="border-b border-racing-border pb-6 sm:pb-7"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-racing-red sm:text-xs sm:tracking-[0.24em]">CADPO en desarrollo</p><h1 className="mt-2 font-racing text-4xl font-bold uppercase text-white sm:text-7xl">Proyectos</h1><p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-400 sm:text-base">Conocé las categorías, autos y circuitos para Assetto Corsa que estamos preparando para seguir ampliando la experiencia de la comunidad.</p></header>{loading ? <div className="flex justify-center py-24"><div className="h-10 w-10 animate-spin rounded-full border-2 border-racing-red border-t-transparent"/></div> : error ? <div className="mt-8 border border-red-500/30 bg-red-500/10 p-7 text-red-200">{error}</div> : <div className="mt-8 space-y-12 sm:mt-10 sm:space-y-16">{sections.map(section => { const items = grouped[section.id] || []; const Icon = section.Icon; return items.length ? <section key={section.id}><div className="flex items-center gap-3 sm:gap-4"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-racing-red text-white sm:h-12 sm:w-12"><Icon className="h-5 w-5 sm:h-6 sm:w-6"/></span><div className="min-w-0"><h2 className="font-racing text-2xl font-bold uppercase text-white sm:text-4xl">{section.title}</h2><p className="text-xs leading-relaxed text-gray-500 sm:text-sm">{section.subtitle}</p></div></div><div className="mt-5 space-y-6 sm:mt-6 sm:space-y-8">{items.map(project => <article id={`proyecto-${project.id}`} key={project.id} className="overflow-hidden border border-racing-border bg-racing-card"><div className="p-4 sm:p-7"><div className="flex flex-wrap items-start justify-between gap-3"><h3 className="min-w-0 break-words font-racing text-2xl font-bold uppercase text-white sm:text-4xl">{project.titulo}</h3><div className="flex shrink-0 flex-wrap items-center justify-end gap-2"><span className="border border-cyan-300/40 bg-cyan-300/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-cyan-200 sm:px-3 sm:text-[10px] sm:tracking-[0.18em]">Para Assetto Corsa</span>{formatProjectDate(project.creado) ? <span className="border border-racing-red/30 bg-racing-red/[0.08] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.14em] text-racing-red sm:px-3 sm:text-[10px] sm:tracking-[0.18em]">{formatProjectDate(project.creado)}</span> : null}</div></div>{project.descripcion ? <p className="mt-3 max-w-5xl text-sm leading-relaxed text-gray-400 sm:text-base">{project.descripcion}</p> : null}</div>{project.fotos?.length ? <div className="grid h-[420px] select-none grid-cols-2 grid-rows-4 gap-0.5 bg-racing-border min-[420px]:h-[480px] sm:h-[540px] sm:grid-cols-4 sm:grid-rows-2 sm:gap-1" onContextMenu={protectImage} style={{ WebkitTouchCallout: 'none' }}>{project.fotos.slice(0, 5).map((photo, index) => <button type="button" key={photo.id} onClick={() => setGallery({ project, index })} className={`group relative overflow-hidden bg-black ${index === 0 ? 'col-span-2 row-span-2' : ''}`} aria-label={`Ver imagen ${index + 1} de ${project.titulo} para Assetto Corsa`}><img src={photo.imagen} alt={`${project.titulo} para Assetto Corsa - imagen ${index + 1}`} loading="lazy" draggable={false} onDragStart={protectImage} className="pointer-events-none h-full w-full object-cover opacity-85 transition duration-500 group-hover:scale-[1.03] group-hover:opacity-100"/>{index === 4 && project.fotos.length > 5 ? <span className="absolute inset-0 flex items-center justify-center bg-black/65 font-racing text-2xl font-bold text-white">+{project.fotos.length - 5}</span> : null}</button>)}</div> : <div className="flex items-center gap-2 border-t border-racing-border px-5 py-4 text-xs text-gray-600"><PhotoIcon className="h-5 w-5"/>Próximamente agregaremos imágenes.</div>}</article>)}</div></section> : null; })}{!projects.length ? <div className="border border-dashed border-racing-border py-20 text-center"><PhotoIcon className="mx-auto h-14 w-14 text-gray-700"/><h2 className="mt-4 font-racing text-2xl font-bold uppercase text-gray-300">Próximamente</h2><p className="mt-2 text-sm text-gray-500">Todavía no hay proyectos publicados.</p></div> : null}</div>}{gallery ? <ProjectGallery project={gallery.project} initialIndex={gallery.index} onClose={() => setGallery(null)}/> : null}</main>;
 }
