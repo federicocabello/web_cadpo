@@ -27,9 +27,9 @@ const driverNameKey = value => String(value || '')
   .replace(/\s+/g, ' ')
   .toLocaleLowerCase('es-AR');
 const formatBallast = value => {
-  const ballast = Number(value);
+  const ballast = Math.trunc(Number(value));
   if (!ballast) return '';
-  return `+${Number.isInteger(ballast) ? ballast : ballast.toFixed(1)} KG`;
+  return `+${ballast.toLocaleString('es-AR', { maximumFractionDigits: 0 })} KG`;
 };
 const sectorColor = (sector, fastestSectors) => {
   if (sector.time === fastestSectors[sector.index]) return 'text-[#c77dff]';

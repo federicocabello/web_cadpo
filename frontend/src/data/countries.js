@@ -82,6 +82,10 @@ export const driverCountries = selectCountries([
   'gt', 'hn', 'mx', 'ni', 'pa', 'py', 'pe', 'pr', 'uy', 've',
 ]);
 
+export const registrationCountries = selectCountries([
+  'ar', 'uy', 'cl', 'br', 'py', 'co', 've', 'pe', 'ec',
+]);
+
 export const circuitCountries = selectCountries([
   'ar', 'br', 'cl', 'uy',
   'us', 'ca', 'mx',

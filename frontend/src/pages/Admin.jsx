@@ -5,6 +5,7 @@ import {
   ArrowUpTrayIcon,
   ArchiveBoxIcon,
   BellAlertIcon,
+  BoltIcon,
   BuildingOffice2Icon,
   ExclamationTriangleIcon,
   ClipboardDocumentListIcon,
@@ -41,6 +42,7 @@ import BrakesCalculator from '../components/BrakesCalculator';
 import TyresCalculator from '../components/TyresCalculator';
 import CadpoImporter from '../components/CadpoImporter';
 import PollsAdmin from '../components/PollsAdmin';
+import ClubAdmin from '../components/ClubAdmin';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -79,6 +81,7 @@ const adminSections = [
   { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
   { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
   { id: 'votaciones', label: 'VOTACIONES', icon: ChartBarIcon },
+  { id: 'club', label: 'CLUB', icon: BoltIcon },
   { id: 'relaciones-caja', label: 'RELACIONES DE CAJA', icon: WrenchScrewdriverIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
 ];
@@ -91,6 +94,7 @@ const resultPointFields = [
   { key: 'pts_final', shortLabel: 'F', label: 'Final', decimal: true },
 ];
 const resultSpreadsheetColumns = [
+  { key: 'presentismo', label: 'P', title: 'Presentismo', type: 'attendance' },
   { key: 'pos_qualy_sprint', label: 'Pos. QS', type: 'position' },
   { key: 'pts_qualy_sprint', label: 'Pts. QS', type: 'integer' },
   { key: 'pos_qualy_final', label: 'Pos. QF', type: 'position' },
@@ -236,6 +240,7 @@ const formatResultPoints = value => Number(value || 0).toLocaleString('es-AR', {
   maximumFractionDigits: 2,
 });
 const formatResultPointsCell = value => parseResultPoints(value) === 0 ? '' : formatResultPoints(value);
+const parseResultBallast = value => Math.trunc(parseResultPoints(value));
 const parseResultSanctionDetails = value => {
   if (!value) return {};
   if (typeof value === 'object' && !Array.isArray(value)) return value;
@@ -247,12 +252,12 @@ const parseResultSanctionDetails = value => {
   }
 };
 const formatResultBallast = value => {
-  const ballast = parseResultPoints(value);
+  const ballast = parseResultBallast(value);
   if (ballast === 0) return '—';
-  return `${ballast > 0 ? '+' : ''}${formatResultPoints(ballast)} kg`;
+  return `${ballast > 0 ? '+' : ''}${ballast.toLocaleString('es-AR', { maximumFractionDigits: 0 })} KG`;
 };
 const getResultBallastClass = value => {
-  const ballast = parseResultPoints(value);
+  const ballast = parseResultBallast(value);
   if (ballast < 0) return 'text-emerald-300';
   if (ballast > 0) return 'text-orange-300';
   return 'text-gray-600';
@@ -704,7 +709,9 @@ function ResultSpreadsheetCell({
   withAction = false,
 }) {
   const cellRef = useRef(null);
-  const displayValue = String(value ?? '');
+  const displayValue = type === 'signed' && String(value ?? '').trim() !== ''
+    ? String(parseResultBallast(value))
+    : String(value ?? '');
 
   useEffect(() => {
     if (cellRef.current && document.activeElement !== cellRef.current) {
@@ -716,6 +723,9 @@ function ResultSpreadsheetCell({
     if (!cellRef.current || disabled) return;
     let nextValue = cellRef.current.textContent?.trim() || '';
     if (type === 'position') nextValue = nextValue.toLocaleUpperCase('es-AR');
+    if (type === 'signed' && nextValue && /^-?\d+(?:[.,]\d+)?$/.test(nextValue)) {
+      nextValue = String(Math.trunc(Number(nextValue.replace(',', '.'))));
+    }
     cellRef.current.textContent = nextValue;
     if (nextValue !== displayValue) {
       const accepted = onCommit(nextValue);
@@ -760,7 +770,7 @@ function ResultSpreadsheetCell({
         }
       }}
       title={error || undefined}
-      className={`flex h-10 min-w-full items-center pl-2 ${withAction === 'double' ? 'pr-[76px]' : withAction ? 'pr-10' : 'pr-2'} text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-racing-red ${type === 'pilot' ? 'justify-start font-semibold' : 'justify-center font-racing'} ${error ? 'bg-red-500/25 ring-2 ring-inset ring-red-500' : modified ? `bg-amber-400/20 ring-1 ring-inset ${selected ? 'ring-sky-400' : 'ring-amber-300/70'}` : selected ? 'bg-sky-500/20 ring-1 ring-inset ring-sky-400' : 'focus:bg-racing-dark'} ${disabled ? 'cursor-cell text-transparent' : 'cursor-cell text-white'}`}
+      className={`flex h-10 min-w-full items-center pl-2 ${withAction === 'double' ? 'pr-[76px]' : withAction ? 'pr-10' : 'pr-2'} text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-racing-red ${type === 'pilot' ? 'justify-start font-semibold' : 'justify-center font-racing'} ${error ? 'bg-red-500/25 ring-2 ring-inset ring-red-500' : modified ? `bg-amber-400/20 ring-1 ring-inset ${selected ? 'ring-sky-400' : 'ring-amber-300/70'}` : selected ? 'bg-sky-500/20 ring-1 ring-inset ring-sky-400' : 'focus:bg-racing-dark'} ${disabled ? 'cursor-cell text-transparent' : type === 'attendance' ? 'cursor-cell font-bold text-violet-200' : 'cursor-cell text-white'}`}
     />
   );
 }
@@ -1171,19 +1181,19 @@ export default function Admin() {
 
   const resultBallastStandings = useMemo(() => resultChampionshipStandings.map(standing => {
     const ballastRounds = new Map();
-    const debutBallast = parseResultPoints(resultDebutBallasts[String(standing.idpiloto)]);
+    const debutBallast = parseResultBallast(resultDebutBallasts[String(standing.idpiloto)]);
     let ballastTotal = debutBallast;
 
     resultBallastRounds.forEach(round => {
       const result = savedResults.find(item => !item._delete
         && String(item.idpiloto) === String(standing.idpiloto)
         && String(item.ronda) === String(round.ronda));
-      const sprint = parseResultPoints(result?.kg_sprint);
-      const sprintSanction = parseResultPoints(result?.kg_sancion_sprint);
-      const final = parseResultPoints(result?.kg_final);
-      const finalSanction = parseResultPoints(result?.kg_sancion_final);
-      const delta = Math.round((sprint + sprintSanction + final + finalSanction) * 100) / 100;
-      ballastTotal = Math.round((ballastTotal + delta) * 100) / 100;
+      const sprint = parseResultBallast(result?.kg_sprint);
+      const sprintSanction = parseResultBallast(result?.kg_sancion_sprint);
+      const final = parseResultBallast(result?.kg_final);
+      const finalSanction = parseResultBallast(result?.kg_sancion_final);
+      const delta = sprint + sprintSanction + final + finalSanction;
+      ballastTotal += delta;
       ballastRounds.set(String(round.ronda), {
         sprint,
         sprintSanction,
@@ -1291,7 +1301,7 @@ export default function Admin() {
     championshipsApi.getDebutBallasts(resultChampionshipId)
       .then(response => {
         if (!active) return;
-        setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), toScoringInputValue(row.kilos)])));
+        setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), parseResultBallast(row.kilos) || ''])));
       })
       .catch(error => {
         if (!active) return;
@@ -2805,6 +2815,16 @@ export default function Admin() {
       ballast: Math.max(0, Math.trunc(Number(assettoSanctionDraft.ballast) || 0)),
       description: String(assettoSanctionDraft.description || '').trim(),
     };
+    if (normalizedDraft.noSanction) {
+      Object.assign(normalizedDraft, {
+        dq: false,
+        time: 0,
+        positions: 0,
+        warnings: 0,
+        ballast: 0,
+        description: normalizedDraft.description.toLocaleUpperCase('es-AR'),
+      });
+    }
     if (normalizedDraft.minute === 0 && normalizedDraft.second === 0) {
       setAssettoSanctionMessage('Indicá el minuto y segundo de la maniobra. No puede quedar en 0:00.');
       return;
@@ -2853,7 +2873,7 @@ export default function Admin() {
       ...current,
       [sessionKey]: { ...imported, sanctions, orderedRows },
     }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows, { preservePoints: true });
+    applyAssettoSessionToGrid(sessionKey, orderedRows);
     setAssettoSanctionDraft(emptyAssettoSanction());
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
@@ -2861,7 +2881,7 @@ export default function Admin() {
     const reachedWarningText = warningProjection.reachedLevels.length
       ? ` Llegó a ${warningProjection.projectedTotal} AP: ${warningProjection.reachedLevels.map(level => `${level.cantidad} AP · ${level.sancion}`).join(' / ')}.`
       : normalizedDraft.warnings > 0 ? ` Acumula ${warningProjection.projectedTotal}${warningProjection.limit ? ` de ${warningProjection.limit}` : ''} AP.` : '';
-    setResultMessage(`Sanción aplicada y posiciones recalculadas.${reachedWarningText} Podés continuar con otro piloto; al terminar, cerrá el modal y presioná Guardar.`);
+    setResultMessage(`Sanción aplicada; posiciones y puntajes recalculados.${reachedWarningText} Podés continuar con otro piloto; al terminar, cerrá el modal y presioná Guardar.`);
   };
 
   const removeAssettoSanction = (entryKey, sanctionIndex) => {
@@ -2895,11 +2915,11 @@ export default function Admin() {
 
     const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows, { preservePoints: true });
+    applyAssettoSessionToGrid(sessionKey, orderedRows);
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
     setAssettoRepositionTarget('');
-    setResultMessage('Sanción eliminada y posiciones recalculadas.');
+    setResultMessage('Sanción eliminada; posiciones y puntajes recalculados.');
   };
 
   const updateAssettoSanctionDetailsWithoutReordering = (sessionKey, entryKey, imported, items) => {
@@ -2967,6 +2987,16 @@ export default function Admin() {
       noSanction: Boolean(assettoSanctionEdit.noSanction),
       description: String(assettoSanctionEdit.description || '').trim(),
     };
+    if (normalizedEdit.noSanction) {
+      Object.assign(normalizedEdit, {
+        dq: false,
+        time: 0,
+        positions: 0,
+        warnings: 0,
+        ballast: 0,
+        description: normalizedEdit.description.toLocaleUpperCase('es-AR'),
+      });
+    }
     if (normalizedEdit.minute === 0 && normalizedEdit.second === 0) {
       setAssettoSanctionMessage('Indicá el minuto y segundo de la maniobra. No puede quedar en 0:00.');
       return;
@@ -3011,13 +3041,13 @@ export default function Admin() {
 
     const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows, { preservePoints: true });
+    applyAssettoSessionToGrid(sessionKey, orderedRows);
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
     const reachedWarningText = warningProjection.reachedLevels.length
       ? ` Llegó a ${warningProjection.projectedTotal} AP: ${warningProjection.reachedLevels.map(level => `${level.cantidad} AP · ${level.sancion}`).join(' / ')}.`
       : normalizedEdit.warnings > 0 ? ` Acumula ${warningProjection.projectedTotal}${warningProjection.limit ? ` de ${warningProjection.limit}` : ''} AP.` : '';
-    setResultMessage(`Sanción actualizada y posiciones recalculadas.${reachedWarningText} Presioná Guardar para confirmar.`);
+    setResultMessage(`Sanción actualizada; posiciones y puntajes recalculados.${reachedWarningText} Presioná Guardar para confirmar.`);
   };
 
   const addChampionshipWarningLevel = () => {
@@ -3143,7 +3173,7 @@ export default function Admin() {
     try {
       const lastres = Object.entries(resultDebutBallasts).map(([idpiloto, kilos]) => ({ idpiloto: Number(idpiloto), kilos }));
       const response = await championshipsApi.saveDebutBallasts(resultChampionshipId, lastres);
-      setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), toScoringInputValue(row.kilos)])));
+      setResultDebutBallasts(Object.fromEntries((response.data.data || []).map(row => [String(row.idpiloto), parseResultBallast(row.kilos) || ''])));
       setResultDebutBallastMessage(response.data.message || 'Lastres debut guardados correctamente.');
     } catch (error) {
       setResultDebutBallastMessage(error.response?.data?.error || 'No se pudieron guardar los lastres debut.');
@@ -3680,6 +3710,7 @@ export default function Admin() {
     if (!row?.result) return '';
     if (column.type === 'pilot') return row.result[column.key] ?? row.result.piloto ?? '';
     const value = row.result[column.key] ?? '';
+    if (column.type === 'signed' && String(value).trim() !== '') return String(parseResultBallast(value));
     return String(value);
   };
 
@@ -3781,7 +3812,9 @@ export default function Admin() {
 
         const normalizedValue = column.type === 'position'
           ? rawValue.toLocaleUpperCase('es-AR')
-          : rawValue;
+          : column.type === 'signed' && /^-?\d+(?:[.,]\d+)?$/.test(rawValue)
+            ? String(Math.trunc(Number(rawValue.replace(',', '.'))))
+            : rawValue;
         if (String(nextResult[column.key] ?? '') !== normalizedValue) {
           nextResult[column.key] = normalizedValue;
           rowChanged = true;
@@ -3944,8 +3977,8 @@ export default function Admin() {
         validationMessages.push(message);
       });
       signedFields.forEach(([field, label]) => {
-        if (/^-?\d*[.,]?\d*$/.test(String(result[field] ?? '').trim())) return;
-        const message = `${label} debe ser un número y puede ser negativo.`;
+        if (/^-?\d*$/.test(String(result[field] ?? '').trim())) return;
+        const message = `${label} debe ser un número entero y puede ser negativo.`;
         validationErrors[`${resultKey}:${field}`] = message;
         validationMessages.push(message);
       });
@@ -4068,12 +4101,12 @@ export default function Admin() {
             pts_qualy_sprint: Number(data.pts_qualy_sprint || 0),
             pos_sprint: String(data.pos_sprint || '').trim(),
             pts_sprint: parseResultPoints(data.pts_sprint),
-            kg_sprint: parseResultPoints(data.kg_sprint),
+            kg_sprint: parseResultBallast(data.kg_sprint),
             pos_qualy_final: String(data.pos_qualy_final || '').trim(),
             pts_qualy_final: Number(data.pts_qualy_final || 0),
             pos_final: String(data.pos_final || '').trim(),
             pts_final: parseResultPoints(data.pts_final),
-            kg_final: parseResultPoints(data.kg_final),
+            kg_final: parseResultBallast(data.kg_final),
             desc_sancion_qualy_sprint: String(data.desc_sancion_qualy_sprint || '').trim(),
             desc_sancion_sprint: String(data.desc_sancion_sprint || '').trim(),
             desc_sancion_qualy_final: String(data.desc_sancion_qualy_final || '').trim(),
@@ -4082,11 +4115,11 @@ export default function Admin() {
             rec_tiempo_sprint: Number(data.rec_tiempo_sprint || 0),
             rec_pos_sprint: Number(data.rec_pos_sprint || 0),
             aps_sprint: Number(data.aps_sprint || 0),
-            kg_sancion_sprint: Number(data.kg_sancion_sprint || 0),
+            kg_sancion_sprint: parseResultBallast(data.kg_sancion_sprint),
             rec_tiempo_final: Number(data.rec_tiempo_final || 0),
             rec_pos_final: Number(data.rec_pos_final || 0),
             aps_final: Number(data.aps_final || 0),
-            kg_sancion_final: Number(data.kg_sancion_final || 0),
+            kg_sancion_final: parseResultBallast(data.kg_sancion_final),
             pole_sprint: Number(Boolean(Number(data.pole_sprint))),
             ganador_sprint: Number(Boolean(Number(data.ganador_sprint))),
             pole_final: Number(Boolean(Number(data.pole_final))),
@@ -5307,6 +5340,7 @@ export default function Admin() {
   };
 
   const renderSection = () => {
+    if (activeSection === 'club') return <ClubAdmin categories={categories} circuits={circuits} cars={cars} />;
     if (activeSection === 'votaciones') return <PollsAdmin />;
     if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><TyresCalculator/></div>;
 
@@ -5882,7 +5916,7 @@ export default function Admin() {
                   <th className="sticky left-0 z-40 w-16 border border-racing-border bg-racing-dark px-2 py-3 text-center text-[10px] uppercase tracking-wider text-gray-400">#</th>
                   <th className="sticky left-16 z-40 w-64 border border-racing-border bg-racing-dark px-3 py-3 text-left text-[10px] uppercase tracking-wider text-gray-400">Piloto</th>
                   {resultSpreadsheetColumns.map(column => (
-                    <th key={column.key} className={`${column.type === 'pilot' ? 'w-64 text-left' : 'w-24 text-center'} border border-racing-border bg-racing-dark px-2 py-3 text-[10px] uppercase tracking-wider text-gray-400`} title={column.label}>
+                    <th key={column.key} className={`${column.type === 'pilot' ? 'w-64 text-left' : column.type === 'attendance' ? 'w-16 text-center' : 'w-24 text-center'} border px-2 py-3 text-[10px] uppercase tracking-wider ${column.type === 'attendance' ? 'border-violet-400/40 bg-violet-500/15 font-bold text-violet-200' : 'border-racing-border bg-racing-dark text-gray-400'}`} title={column.title || column.label}>
                       {column.label}
                     </th>
                   ))}
@@ -5964,12 +5998,12 @@ export default function Admin() {
                           }
                           const value = result?.[column.key] ?? '';
                           return (
-                            <td key={column.key} className="h-10 w-24 border border-racing-border p-0">
+                            <td key={column.key} className={`h-10 border p-0 ${column.type === 'attendance' ? 'w-16 border-violet-400/30 bg-violet-500/[0.08]' : 'w-24 border-racing-border'}`}>
                               <ResultSpreadsheetCell
                                 value={value}
                                 type={column.type}
                                 disabled={!result}
-                                label={`${column.label}, ${result?.piloto || `fila ${row.position}`}`}
+                                label={`${column.title || column.label}, ${result?.piloto || `fila ${row.position}`}`}
                                 rowIndex={rowIndex}
                                 columnIndex={gridColumnIndex}
                                 selected={isResultCellSelected(rowIndex, gridColumnIndex)}
@@ -6164,14 +6198,14 @@ export default function Admin() {
                           </div>
                         </td>
                         <td className={`whitespace-nowrap border border-orange-400/30 bg-orange-400/[0.09] px-4 py-2 text-center font-racing text-xl font-bold ${getResultBallastClass(standing.ballastTotal)}`}>{formatResultBallast(standing.ballastTotal)}</td>
-                        <td className="w-24 min-w-24 border border-racing-border bg-black/[0.08] p-1 text-center"><input type="number" min="0" step="5" value={resultDebutBallasts[String(standing.idpiloto)] ?? ''} onChange={event => setResultDebutBallasts(current => ({ ...current, [String(standing.idpiloto)]: event.target.value }))} className="h-8 w-20 border border-racing-border bg-black/20 px-1 text-center font-racing text-sm text-gray-500 outline-none transition focus:border-violet-400 focus:text-violet-300" placeholder="—" aria-label={`Lastre debut de ${standing.piloto}`}/></td>
+                        <td className="w-24 min-w-24 border border-racing-border bg-black/[0.08] p-1 text-center"><input type="number" min="0" step="5" value={resultDebutBallasts[String(standing.idpiloto)] ?? ''} onChange={event => { const rawValue = event.target.value; setResultDebutBallasts(current => ({ ...current, [String(standing.idpiloto)]: rawValue === '' ? '' : Math.max(0, Math.trunc(Number(rawValue) || 0)) })); }} className="h-8 w-20 border border-racing-border bg-black/20 px-1 text-center font-racing text-sm text-gray-500 outline-none transition focus:border-violet-400 focus:text-violet-300" placeholder="—" aria-label={`Lastre debut de ${standing.piloto}`}/></td>
                         {resultBallastRounds.flatMap(round => {
                           const detail = standing.ballastRounds.get(String(round.ronda));
                           return [
                             <td key={`${round.id}-${standing.idpiloto}-s`} className={`border border-racing-border px-2 py-2 text-center font-racing text-sm ${getResultBallastClass(detail?.sprint)}`}>{formatResultBallast(detail?.sprint)}</td>,
-                            <td key={`${round.id}-${standing.idpiloto}-ss`} className={`border px-2 py-2 text-center font-racing text-sm ${parseResultPoints(detail?.sprintSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatResultBallast(detail?.sprintSanction)}</td>,
+                            <td key={`${round.id}-${standing.idpiloto}-ss`} className={`border px-2 py-2 text-center font-racing text-sm ${parseResultBallast(detail?.sprintSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatResultBallast(detail?.sprintSanction)}</td>,
                             <td key={`${round.id}-${standing.idpiloto}-f`} className={`border border-racing-border px-2 py-2 text-center font-racing text-sm ${getResultBallastClass(detail?.final)}`}>{formatResultBallast(detail?.final)}</td>,
-                            <td key={`${round.id}-${standing.idpiloto}-fs`} className={`border px-2 py-2 text-center font-racing text-sm ${parseResultPoints(detail?.finalSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatResultBallast(detail?.finalSanction)}</td>,
+                            <td key={`${round.id}-${standing.idpiloto}-fs`} className={`border px-2 py-2 text-center font-racing text-sm ${parseResultBallast(detail?.finalSanction) !== 0 ? 'border-red-500/25 bg-red-500/[0.05] text-red-400' : 'border-racing-border text-gray-600'}`}>{formatResultBallast(detail?.finalSanction)}</td>,
                           ];
                         })}
                       </tr>
@@ -6341,7 +6375,7 @@ export default function Admin() {
                     <div>
                       <label>
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Piloto</span>
-                        <select value={assettoSanctionModal.entryKey} onChange={event => selectAssettoSanctionDriver(event.target.value)} className="input-field mt-2">
+                        <select value={assettoSanctionModal.entryKey} onChange={event => selectAssettoSanctionDriver(event.target.value)} disabled={Boolean(assettoSanctionDraft.noSanction || assettoSanctionEdit?.noSanction)} className="input-field mt-2 disabled:cursor-not-allowed disabled:opacity-35">
                           {imported.orderedRows.map(entry => <option key={entry.key} value={entry.key}>{entry.positionLabel} · {entry.driverName}</option>)}
                         </select>
                       </label>
@@ -6358,7 +6392,7 @@ export default function Admin() {
                           const editing = assettoSanctionEdit?.entryKey === assettoSanctionModal.entryKey && assettoSanctionEdit?.index === index;
                           return <article key={`${assettoSanctionModal.entryKey}-sanction-${index}`} className="border-l-2 border-red-500/60 bg-black/25 px-2.5 py-2">
                             {editing ? <div className="space-y-2">
-                              <div className="grid grid-cols-2 gap-1"><button type="button" onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'DENUNCIA' }))} className={`h-7 border text-[8px] font-bold uppercase ${assettoSanctionEdit.type === 'DENUNCIA' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>Denuncia</button><button type="button" onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'SANCIÓN DE OFICIO' }))} className={`h-7 border text-[8px] font-bold uppercase ${assettoSanctionEdit.type === 'SANCIÓN DE OFICIO' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>De oficio</button></div>
+                              <div className="grid grid-cols-2 gap-1"><button type="button" disabled={Boolean(assettoSanctionEdit.noSanction)} onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'DENUNCIA' }))} className={`h-7 border text-[8px] font-bold uppercase disabled:cursor-not-allowed disabled:opacity-35 ${assettoSanctionEdit.type === 'DENUNCIA' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>Denuncia</button><button type="button" disabled={Boolean(assettoSanctionEdit.noSanction)} onClick={() => setAssettoSanctionEdit(current => ({ ...current, type: 'SANCIÓN DE OFICIO' }))} className={`h-7 border text-[8px] font-bold uppercase disabled:cursor-not-allowed disabled:opacity-35 ${assettoSanctionEdit.type === 'SANCIÓN DE OFICIO' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>De oficio</button></div>
                               <div className="grid grid-cols-2 gap-1.5">
                                 {[
                                   ['minute', 'Minuto', 1],
@@ -6371,10 +6405,10 @@ export default function Admin() {
                               </div>
                               {editWarningProjection?.enabled && Number(assettoSanctionEdit.warnings) > 0 ? <div className={`border px-2 py-1.5 text-[8px] font-bold uppercase ${editWarningProjection.exceeded ? 'border-red-500/50 bg-red-500/10 text-red-300' : editWarningProjection.projectedTotal === editWarningProjection.limit && editWarningProjection.limit ? 'border-amber-300/50 bg-amber-400/10 text-amber-200' : 'border-amber-400/25 bg-amber-400/[0.05] text-amber-300'}`}>AP campeonato: {editWarningProjection.currentTotal} → {editWarningProjection.projectedTotal}{editWarningProjection.limit ? ` / ${editWarningProjection.limit}` : ''}{editWarningProjection.exceeded ? ' · Supera el límite' : editWarningProjection.projectedTotal === editWarningProjection.limit && editWarningProjection.limit ? ' · Límite alcanzado' : ''}</div> : null}
                               <div className="grid grid-cols-2 gap-1.5">
-                                <label className={`flex cursor-pointer items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.dq ? 'border-red-400 bg-red-500/10 text-red-300' : 'border-racing-border text-gray-500'}`}><span>DQ</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.dq)} onChange={event => setAssettoSanctionEdit(current => ({ ...current, dq: event.target.checked, noSanction: event.target.checked ? false : current.noSanction }))} className="h-4 w-4 accent-red-500"/></label>
-                                <label className={`flex cursor-pointer items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.noSanction ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300' : 'border-racing-border text-gray-500'}`}><span>Sin sanción</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.noSanction)} onChange={event => setAssettoSanctionEdit(current => ({ ...current, noSanction: event.target.checked, dq: event.target.checked ? false : current.dq }))} className="h-4 w-4 accent-emerald-400"/></label>
+                                <label className={`flex items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.noSanction ? 'cursor-not-allowed border-racing-border text-gray-700 opacity-40' : assettoSanctionEdit.dq ? 'cursor-pointer border-red-400 bg-red-500/10 text-red-300' : 'cursor-pointer border-racing-border text-gray-500'}`}><span>DQ</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.dq)} disabled={Boolean(assettoSanctionEdit.noSanction)} onChange={event => setAssettoSanctionEdit(current => ({ ...current, dq: event.target.checked, noSanction: false }))} className="h-4 w-4 accent-red-500 disabled:cursor-not-allowed"/></label>
+                                <label className={`flex cursor-pointer items-center justify-between border px-2 py-1.5 text-[8px] font-bold uppercase ${assettoSanctionEdit.noSanction ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300' : 'border-racing-border text-gray-500'}`}><span>Sin sanción</span><input type="checkbox" checked={Boolean(assettoSanctionEdit.noSanction)} onChange={event => { const checked = event.target.checked; setAssettoSanctionEdit(current => ({ ...current, noSanction: checked, ...(checked ? { type: 'DENUNCIA', dq: false, time: 0, positions: 0, warnings: 0, ballast: 0, description: String(current.description || '').toLocaleUpperCase('es-AR') } : {}) })); }} className="h-4 w-4 accent-emerald-400"/></label>
                               </div>
-                              <textarea value={assettoSanctionEdit.description} onChange={event => setAssettoSanctionEdit(current => ({ ...current, description: event.target.value }))} maxLength={500} rows={3} className="input-field min-h-20 resize-y text-xs" placeholder="Descripción de la sanción"/>
+                              <textarea value={assettoSanctionEdit.description} onChange={event => { const value = event.target.value; setAssettoSanctionEdit(current => ({ ...current, description: current.noSanction ? value.toLocaleUpperCase('es-AR') : value })); }} maxLength={500} rows={3} className="input-field min-h-20 resize-y text-xs" placeholder="Descripción de la sanción"/>
                               {assettoSanctionMessage ? <p className="text-[8px] font-semibold leading-relaxed text-red-300">{assettoSanctionMessage}</p> : null}
                               <div className="flex justify-end gap-1"><button type="button" onClick={() => { setAssettoSanctionEdit(null); setAssettoSanctionMessage(''); }} className="border border-racing-border px-2 py-1 text-[8px] font-bold uppercase text-gray-400">Cancelar</button><button type="button" onClick={saveAssettoSanctionEdit} className="bg-red-600 px-2 py-1 text-[8px] font-bold uppercase text-white">Guardar cambios</button></div>
                             </div> : <div className="flex items-start gap-2"><p className="min-w-0 flex-1 text-[9px] leading-relaxed text-gray-300">{buildAssettoSanctionLabel(sanction)}</p><div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setAssettoSanctionEdit({ entryKey: assettoSanctionModal.entryKey, index, ...emptyAssettoSanction(), ...sanction }); setAssettoSanctionMessage(''); }} className="inline-flex h-7 w-7 items-center justify-center border border-sky-500/30 text-sky-300 transition hover:bg-sky-600 hover:text-white" aria-label={`Editar sanción ${index + 1}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeAssettoSanction(assettoSanctionModal.entryKey, index)} className="inline-flex h-7 w-7 items-center justify-center border border-red-500/30 text-red-400 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar sanción ${index + 1}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></div>}
@@ -6382,8 +6416,8 @@ export default function Admin() {
                         })}</div> : null}
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => setAssettoSanctionDraft(current => ({ ...current, type: 'DENUNCIA' }))} className={`h-9 border text-[9px] font-bold uppercase ${assettoSanctionDraft.type === 'DENUNCIA' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>Denuncia</button>
-                        <button type="button" onClick={() => setAssettoSanctionDraft(current => ({ ...current, type: 'SANCIÓN DE OFICIO' }))} className={`h-9 border text-[9px] font-bold uppercase ${assettoSanctionDraft.type === 'SANCIÓN DE OFICIO' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>De oficio</button>
+                        <button type="button" disabled={Boolean(assettoSanctionDraft.noSanction)} onClick={() => setAssettoSanctionDraft(current => ({ ...current, type: 'DENUNCIA' }))} className={`h-9 border text-[9px] font-bold uppercase disabled:cursor-not-allowed disabled:opacity-35 ${assettoSanctionDraft.type === 'DENUNCIA' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>Denuncia</button>
+                        <button type="button" disabled={Boolean(assettoSanctionDraft.noSanction)} onClick={() => setAssettoSanctionDraft(current => ({ ...current, type: 'SANCIÓN DE OFICIO' }))} className={`h-9 border text-[9px] font-bold uppercase disabled:cursor-not-allowed disabled:opacity-35 ${assettoSanctionDraft.type === 'SANCIÓN DE OFICIO' ? 'border-red-400 bg-red-500/15 text-red-300' : 'border-racing-border text-gray-500'}`}>De oficio</button>
                       </div>
                     </div>
 
@@ -6428,7 +6462,7 @@ export default function Admin() {
                               if (targetKey) applyRepositionTarget(targetKey);
                             }}
                             className="input-field mt-1"
-                            disabled={!repositionTargets.length || assettoSanctionDraft.dq}
+                            disabled={!repositionTargets.length || assettoSanctionDraft.dq || assettoSanctionDraft.noSanction}
                           >
                             <option value="">Seleccionar piloto</option>
                             {repositionTargets.map(entry => <option key={entry.key} value={entry.key}>{entry.positionLabel} · {entry.driverName}</option>)}
@@ -6437,18 +6471,18 @@ export default function Admin() {
                         <p className="mt-2 text-[10px] leading-relaxed text-gray-500">Al elegir un piloto se calcula automáticamente el recargo para ubicar al sancionado justo detrás. Volver a «Seleccionar piloto» no modifica la posición.</p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <label className={`flex cursor-pointer items-center justify-between border px-4 py-3 ${assettoSanctionDraft.dq ? 'border-red-400 bg-red-500/10 text-red-300' : 'border-racing-border text-gray-400'}`}>
+                        <label className={`flex items-center justify-between border px-4 py-3 ${assettoSanctionDraft.noSanction ? 'cursor-not-allowed border-racing-border text-gray-700 opacity-40' : assettoSanctionDraft.dq ? 'cursor-pointer border-red-400 bg-red-500/10 text-red-300' : 'cursor-pointer border-racing-border text-gray-400'}`}>
                           <span className="text-xs font-bold uppercase">Descalificar (DQ)</span>
-                          <input type="checkbox" checked={Boolean(assettoSanctionDraft.dq)} onChange={event => setAssettoSanctionDraft(current => ({ ...current, dq: event.target.checked, noSanction: event.target.checked ? false : current.noSanction }))} className="h-5 w-5 accent-red-500" />
+                          <input type="checkbox" checked={Boolean(assettoSanctionDraft.dq)} disabled={Boolean(assettoSanctionDraft.noSanction)} onChange={event => setAssettoSanctionDraft(current => ({ ...current, dq: event.target.checked, noSanction: false }))} className="h-5 w-5 accent-red-500 disabled:cursor-not-allowed" />
                         </label>
                         <label className={`flex cursor-pointer items-center justify-between border px-4 py-3 ${assettoSanctionDraft.noSanction ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300' : 'border-racing-border text-gray-400'}`}>
                           <span className="text-xs font-bold uppercase">No hay sanción</span>
-                          <input type="checkbox" checked={Boolean(assettoSanctionDraft.noSanction)} onChange={event => setAssettoSanctionDraft(current => ({ ...current, noSanction: event.target.checked, dq: event.target.checked ? false : current.dq }))} className="h-5 w-5 accent-emerald-400" />
+                          <input type="checkbox" checked={Boolean(assettoSanctionDraft.noSanction)} onChange={event => { const checked = event.target.checked; setAssettoSanctionDraft(current => ({ ...current, noSanction: checked, ...(checked ? { type: 'DENUNCIA', dq: false, time: 0, positions: 0, warnings: 0, ballast: 0, description: String(current.description || '').toLocaleUpperCase('es-AR') } : {}) })); if (checked) setAssettoRepositionTarget(''); }} className="h-5 w-5 accent-emerald-400" />
                         </label>
                       </div>
                       <label className="block">
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Descripción</span>
-                        <textarea value={assettoSanctionDraft.description} onChange={event => setAssettoSanctionDraft(current => ({ ...current, description: event.target.value }))} maxLength={500} rows={4} placeholder="Descripción o fundamento de la resolución" className="input-field mt-2 min-h-28 resize-y text-sm" />
+                        <textarea value={assettoSanctionDraft.description} onChange={event => { const value = event.target.value; setAssettoSanctionDraft(current => ({ ...current, description: current.noSanction ? value.toLocaleUpperCase('es-AR') : value })); }} maxLength={500} rows={4} placeholder="Descripción o fundamento de la resolución" className="input-field mt-2 min-h-28 resize-y text-sm" />
                       </label>
                     </div>
 

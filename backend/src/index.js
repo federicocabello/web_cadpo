@@ -31,6 +31,7 @@ const complaintsRouter = require('./routes/complaints');
 const projectsRouter = require('./routes/projects');
 const importerRouter = require('./routes/importer');
 const pollsRouter = require('./routes/polls');
+const clubRouter = require('./routes/club');
 const liveTimingMonitor = require('./services/liveTimingMonitor');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -95,6 +96,7 @@ app.use('/api/complaints', complaintsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/importer', importerRouter);
 app.use('/api/polls', pollsRouter);
+app.use('/api/club', clubRouter);
 
 // Servir el frontend desde Hostinger, desde el paquete de producción o desde Vite local.
 const hostingerPublicPath = path.join(__dirname, '../../public_html');

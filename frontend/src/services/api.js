@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,6 +12,19 @@ const api = axios.create({
 api.interceptors.request.use(config => {
   const adminToken = typeof localStorage !== 'undefined' ? localStorage.getItem('cadpo_admin_token') : '';
   if (adminToken) config.headers.Authorization = `Bearer ${adminToken}`;
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      let voterId = localStorage.getItem('cadpo_voter_id');
+      if (!voterId) {
+        voterId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem('cadpo_voter_id', voterId);
+      }
+      config.headers['X-CADPO-Voter-ID'] = voterId;
+    } catch {
+      // La votación mantiene la validación por IP si el navegador bloquea el almacenamiento local.
+    }
+  }
 
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     delete config.headers['Content-Type'];
@@ -199,6 +213,16 @@ export const statisticsApi = {
 
 export const liveTimingApi = {
   get: championshipId => api.get('/live-timing', { params: { championshipId }, timeout: 12000 }),
+};
+
+export const clubApi = {
+  get: () => api.get('/club'),
+  getLiveTiming: id => api.get(id ? `/club/live-timing/${id}` : '/club/live-timing', { timeout: 16000 }),
+  getAdmin: () => api.get('/club/admin'),
+  discover: () => api.get('/club/admin/discover', { timeout: 30000 }),
+  create: data => api.post('/club/admin', data),
+  update: (id, data) => api.put(`/club/admin/${id}`, data),
+  remove: id => api.delete(`/club/admin/${id}`),
 };
 
 export const monitorApi = {

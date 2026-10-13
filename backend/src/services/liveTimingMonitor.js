@@ -4,21 +4,29 @@ const pool = require('../config/db');
 const LIVE_TIMING_HOST = process.env.LIVE_TIMING_HOST || 'rh.servegame.com';
 const CHECK_INTERVAL_MS = Math.max(10000, Number(process.env.LIVE_MONITOR_INTERVAL_MS) || 15000);
 const OUTAGE_THRESHOLD_MS = Math.max(60000, Number(process.env.LIVE_MONITOR_OUTAGE_MS) || 60000);
-const REQUEST_TIMEOUT_MS = Math.max(12000, Number(process.env.LIVE_MONITOR_TIMEOUT_MS) || 12000);
+const REQUEST_TIMEOUT_MS = Math.max(20000, Number(process.env.LIVE_MONITOR_TIMEOUT_MS) || 25000);
 const CONFIRMATION_ATTEMPTS = 3;
-const CONFIRMATION_DELAY_MS = 2000;
+const CONFIRMATION_DELAY_MS = 5000;
+const MIN_FAILURES_BEFORE_ALERT = 3;
+const RECOVERY_SUCCESSES = 3;
+const ALERT_COOLDOWN_MS = Math.max(
+  30 * 60 * 1000,
+  Number(process.env.LIVE_MONITOR_ALERT_COOLDOWN_MS) || 30 * 60 * 1000,
+);
+const MONITOR_LOCK_NAME = 'cadpo_live_timing_monitor_v2';
 const ALERT_RECIPIENT = process.env.LIVE_MONITOR_EMAIL || 'fede.cabello@hotmail.com';
 
 const outages = new Map();
+const lastAlerts = new Map();
 let interval;
 let checkInProgress = false;
+let leaderConnection;
 
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+const getServerKey = server => `${Number(server.puerto)}:${Number(server.n_server)}`;
 
 const getEnabled = async () => {
-  const [[row]] = await pool.query(
-    'SELECT smtp FROM auth LIMIT 1'
-  );
+  const [[row]] = await pool.query('SELECT smtp FROM auth LIMIT 1');
   return Number(row?.smtp) === 1;
 };
 
@@ -73,7 +81,40 @@ const getServersToMonitor = async () => {
       AND cal.fecha >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
       AND cal.fecha < DATE_ADD(NOW(), INTERVAL 7 DAY)
   `);
-  return rows;
+
+  const uniqueServers = new Map();
+  rows.forEach(server => {
+    const key = getServerKey(server);
+    if (!uniqueServers.has(key)) uniqueServers.set(key, server);
+  });
+  return [...uniqueServers.values()];
+};
+
+const ensureMonitorLeadership = async () => {
+  if (leaderConnection) {
+    try {
+      await leaderConnection.query('SELECT 1');
+      return true;
+    } catch (_error) {
+      try { leaderConnection.release(); } catch (_releaseError) { /* Conexion perdida. */ }
+      leaderConnection = undefined;
+    }
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    const [[row]] = await connection.query('SELECT GET_LOCK(?, 0) AS acquired', [MONITOR_LOCK_NAME]);
+    if (Number(row?.acquired) !== 1) {
+      connection.release();
+      return false;
+    }
+    leaderConnection = connection;
+    console.log('Monitor de live timing activo en este proceso.');
+    return true;
+  } catch (error) {
+    connection.release();
+    throw error;
+  }
 };
 
 const probeServer = async server => {
@@ -89,6 +130,19 @@ const probeServer = async server => {
   }
 };
 
+const probeLiveTimingPage = async server => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const url = `http://${LIVE_TIMING_HOST}:${Number(server.puerto)}/live-timing?server=${Number(server.n_server)}`;
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await response.body?.cancel();
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const confirmOutage = async server => {
   let lastError;
   for (let attempt = 1; attempt <= CONFIRMATION_ATTEMPTS; attempt += 1) {
@@ -97,6 +151,12 @@ const confirmOutage = async server => {
       return { down: false, attempt };
     } catch (error) {
       lastError = error;
+      try {
+        await probeLiveTimingPage(server);
+        return { down: false, attempt, fallback: true };
+      } catch (fallbackError) {
+        lastError = fallbackError;
+      }
       if (attempt < CONFIRMATION_ATTEMPTS) await wait(CONFIRMATION_DELAY_MS);
     }
   }
@@ -104,19 +164,31 @@ const confirmOutage = async server => {
 };
 
 const registerFailure = async (server, error) => {
-  const key = String(server.id);
+  const key = getServerKey(server);
   const now = Date.now();
-  const current = outages.get(key) || { failureSince: now, alertSent: false };
+  const current = outages.get(key) || {
+    failureSince: now,
+    alertSent: false,
+    consecutiveFailures: 0,
+    consecutiveSuccesses: 0,
+  };
+  current.consecutiveFailures += 1;
+  current.consecutiveSuccesses = 0;
   current.lastError = error.name === 'AbortError' ? 'Tiempo de espera agotado' : error.message;
   outages.set(key, current);
 
-  if (current.alertSent || now - current.failureSince < OUTAGE_THRESHOLD_MS) return;
+  if (current.alertSent
+    || current.consecutiveFailures < MIN_FAILURES_BEFORE_ALERT
+    || now - current.failureSince < OUTAGE_THRESHOLD_MS
+    || now - Number(lastAlerts.get(key) || 0) < ALERT_COOLDOWN_MS) return;
+
   const confirmation = await confirmOutage(server);
   if (!confirmation.down) {
     outages.delete(key);
-    console.warn(`Fallo transitorio descartado para el campeonato ${server.id}; el servidor respondió en la verificación ${confirmation.attempt}.`);
+    console.warn(`Fallo transitorio descartado para ${key}; el servidor respondio en la verificacion ${confirmation.attempt}${confirmation.fallback ? ' mediante la pagina de live timing' : ''}.`);
     return;
   }
+
   current.lastError = confirmation.error?.name === 'AbortError'
     ? 'Tiempo de espera agotado'
     : confirmation.error?.message || current.lastError;
@@ -132,13 +204,37 @@ const registerFailure = async (server, error) => {
     ].join('\n'),
   });
   current.alertSent = true;
-  console.warn(`Alerta de live timing enviada para el campeonato ${server.id}`);
+  lastAlerts.set(key, Date.now());
+  outages.set(key, current);
+  console.warn(`Alerta de live timing enviada para ${key}`);
+};
+
+const registerSuccess = server => {
+  const key = getServerKey(server);
+  const current = outages.get(key);
+  if (!current) return;
+
+  // Antes de una alerta, una sola respuesta correcta corta la supuesta caida.
+  if (!current.alertSent) {
+    outages.delete(key);
+    return;
+  }
+
+  // Despues de alertar exigimos estabilidad para evitar ciclos de correo por
+  // una conexion que alterna brevemente entre disponible y no disponible.
+  current.consecutiveSuccesses = Number(current.consecutiveSuccesses || 0) + 1;
+  current.consecutiveFailures = 0;
+  if (current.consecutiveSuccesses >= RECOVERY_SUCCESSES) outages.delete(key);
+  else outages.set(key, current);
 };
 
 const runCheck = async () => {
   if (checkInProgress) return;
   checkInProgress = true;
   try {
+    // Passenger puede levantar mas de un proceso. El lock de MySQL garantiza
+    // que solamente uno de ellos ejecute el monitor y envie correos.
+    if (!await ensureMonitorLeadership()) return;
     if (!await getEnabled()) {
       outages.clear();
       return;
@@ -149,7 +245,7 @@ const runCheck = async () => {
     }
 
     const servers = await getServersToMonitor();
-    const activeIds = new Set(servers.map(server => String(server.id)));
+    const activeIds = new Set(servers.map(getServerKey));
     for (const key of outages.keys()) {
       if (!activeIds.has(key)) outages.delete(key);
     }
@@ -157,12 +253,12 @@ const runCheck = async () => {
     await Promise.all(servers.map(async server => {
       try {
         await probeServer(server);
-        outages.delete(String(server.id));
+        registerSuccess(server);
       } catch (error) {
         try {
           await registerFailure(server, error);
         } catch (emailError) {
-          console.error(`No se pudo enviar la alerta del campeonato ${server.id}:`, emailError.message);
+          console.error(`No se pudo enviar la alerta del servidor ${getServerKey(server)}:`, emailError.message);
         }
       }
     }));
@@ -181,6 +277,9 @@ const getStatus = async () => ({
   checkIntervalSeconds: Math.round(CHECK_INTERVAL_MS / 1000),
   requestTimeoutSeconds: Math.round(REQUEST_TIMEOUT_MS / 1000),
   confirmationAttempts: CONFIRMATION_ATTEMPTS,
+  minimumFailures: MIN_FAILURES_BEFORE_ALERT,
+  recoverySuccesses: RECOVERY_SUCCESSES,
+  alertCooldownMinutes: Math.round(ALERT_COOLDOWN_MS / 60000),
   monitoredOutages: outages.size,
 });
 

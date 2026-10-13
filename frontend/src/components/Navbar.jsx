@@ -143,7 +143,7 @@ function SocialCarousel({ links }) {
   const carouselLinks = [...links, links[0]]
 
   return (
-    <div className="social-carousel h-10 w-[5.75rem] overflow-hidden rounded-lg border border-white/10 bg-black shadow-racing min-[360px]:w-[6.5rem] sm:w-[10rem] md:w-[12rem] lg:w-[15rem]" aria-label="Redes de CADPO">
+    <div className="social-carousel h-10 w-[5.75rem] overflow-hidden rounded-lg border border-white/10 bg-black shadow-racing min-[360px]:w-[6.5rem] sm:w-[10rem] md:w-[12rem] lg:w-[5rem] min-[1200px]:w-[6rem] min-[1400px]:w-[7rem] min-[1800px]:w-[15rem]" aria-label="Redes de CADPO">
       <div className="social-carousel-track-two">
         {carouselLinks.map(({ href, label, text, shortText, Icon, accent, textClassName, iconClassName }, index) => (
           <a key={`${href}-${index}`} href={href} target="_blank" rel="noreferrer" tabIndex={index === links.length ? -1 : undefined} className={`group flex h-10 w-full items-center justify-center gap-1.5 border-l-2 bg-black/95 px-2 transition-colors hover:bg-racing-card sm:justify-start sm:gap-2.5 sm:px-3 ${accent}`} aria-label={label}>
@@ -175,7 +175,7 @@ function ChampionshipTicker() {
 
   useEffect(() => {
     const tickerVisible = Boolean(championship?.standings?.length)
-    document.documentElement.style.setProperty('--cadpo-header-height', tickerVisible ? '6.25rem' : '4rem')
+    document.documentElement.style.setProperty('--cadpo-header-height', tickerVisible ? '8.75rem' : '6.5rem')
     return () => document.documentElement.style.setProperty('--cadpo-header-height', '4rem')
   }, [championship])
 
@@ -223,6 +223,24 @@ function ChampionshipTicker() {
         {tickerContent(1)}
       </div>
     </div>
+  )
+}
+
+function ClubBanner() {
+  return (
+    <NavLink to="/club" className="group relative flex min-h-10 w-full items-center justify-center overflow-hidden border-y border-blue-300/40 bg-gradient-to-r from-[#04142b] via-[#0b4d88] to-[#04142b] px-14 py-2 text-center shadow-[inset_0_1px_0_rgba(147,197,253,0.2),0_4px_20px_rgba(2,22,48,0.58)] transition-colors duration-300 hover:via-[#0967ad] sm:px-24" aria-label="Ingresar a CADPO CLUB, servidor abierto y gratuito">
+      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 left-0 w-10 opacity-90 sm:w-16"/>
+      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 right-0 w-10 opacity-90 sm:w-16"/>
+      <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/4 -skew-x-12 bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[650%]"/>
+      <span className="relative flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 sm:gap-x-3">
+        <strong className="font-racing text-sm font-black uppercase tracking-[0.16em] text-white sm:text-base sm:tracking-[0.22em]">CADPO CLUB</strong>
+        <span className="rounded-full border border-emerald-200/70 bg-emerald-400 px-2 py-1 text-[8px] font-black uppercase leading-none tracking-wider text-black">Gratis</span>
+        <span className="relative hidden h-4 w-[31rem] overflow-hidden text-[9px] font-bold uppercase tracking-[0.15em] lg:inline-block">
+          <span className="absolute inset-0 flex items-center justify-center text-blue-50 transition-all duration-300 group-hover:-translate-y-full group-hover:opacity-0">Servidor abierto • 7 minutos de clasificación • 7 minutos de carrera</span>
+          <span className="absolute inset-0 flex translate-y-full items-center justify-center font-black tracking-[0.28em] text-white opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">¡Unite ya!</span>
+        </span>
+      </span>
+    </NavLink>
   )
 }
 
@@ -340,14 +358,21 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="ml-6 hidden min-w-0 flex-1 items-center justify-end gap-2 min-[1800px]:flex">
+          <div className="ml-3 hidden min-w-0 flex-1 items-center justify-end gap-1 lg:flex min-[1800px]:ml-6 min-[1800px]:gap-2">
             {visibleNavLinks.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={to === '/'}
+                title={label}
+                onClick={event => {
+                  if (to === '/') {
+                    event.preventDefault()
+                    window.location.assign('/')
+                  }
+                }}
                 className={({ isActive }) =>
-                  `group relative inline-flex h-9 items-center gap-1.5 rounded-md border px-2 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing ${
+                  `group relative inline-flex h-9 w-9 items-center justify-center rounded-md border px-0 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing min-[1800px]:w-auto min-[1800px]:gap-1.5 min-[1800px]:px-2 ${
                     isActive
                       ? 'border-racing-red bg-racing-red/12 text-racing-red'
                       : 'border-racing-border bg-racing-card/55 text-gray-300 hover:border-racing-red/60 hover:bg-racing-red/5 hover:text-white'
@@ -355,12 +380,13 @@ export default function Navbar() {
                 }
               >
                 <Icon className="h-4 w-4 shrink-0 text-racing-red transition-transform duration-200 group-hover:scale-110" />
-                <span className="leading-none">{label}</span>
-                {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-2 -top-2 rounded-full border border-red-300/70 bg-red-600 px-1.5 py-0.5 text-[8px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.75)]">NUEVO</span> : null}
-                {to === '/campeonatos' && hasActivePoll ? <span className="absolute -right-2 -top-2 rounded-full border border-red-300/70 bg-red-600 px-1.5 py-0.5 text-[8px] font-black leading-none tracking-wide text-white shadow-[0_0_12px_rgba(220,38,38,0.75)]">NUEVO</span> : null}
+                <span className="hidden leading-none min-[1800px]:inline">{label}</span>
+                <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.4rem)] z-[70] -translate-x-1/2 translate-y-1 whitespace-nowrap rounded border border-racing-border bg-black/95 px-2 py-1 text-[9px] font-bold tracking-wider text-white opacity-0 shadow-xl transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 min-[1800px]:hidden">{label}</span>
+                {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full border border-red-300/70 bg-red-600 font-black leading-none tracking-wide text-white shadow-[0_0_9px_rgba(220,38,38,0.7)] min-[1800px]:-right-2 min-[1800px]:-top-2 min-[1800px]:h-auto min-[1800px]:w-auto min-[1800px]:px-1.5 min-[1800px]:py-0.5 min-[1800px]:text-[8px]"><span className="hidden min-[1800px]:inline">NUEVO</span></span> : null}
+                {to === '/campeonatos' && hasActivePoll ? <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full border border-red-300/70 bg-red-600 font-black leading-none tracking-wide text-white shadow-[0_0_9px_rgba(220,38,38,0.7)] min-[1800px]:-right-2 min-[1800px]:-top-2 min-[1800px]:h-auto min-[1800px]:w-auto min-[1800px]:px-1.5 min-[1800px]:py-0.5 min-[1800px]:text-[8px]"><span className="hidden min-[1800px]:inline">NUEVO</span></span> : null}
               </NavLink>
             ))}
-            <div className="ml-1 flex items-center gap-2 border-l border-white/15 pl-3">
+            <div className="ml-1 flex items-center gap-1 border-l border-white/15 pl-2 min-[1800px]:gap-2 min-[1800px]:pl-3">
               {resourceLinks.map(({ href, label, shortLabel, Icon, download, target, className }) => (
                 <a
                   key={href}
@@ -368,19 +394,19 @@ export default function Navbar() {
                   download={download || undefined}
                   target={target}
                   rel={target ? 'noreferrer' : undefined}
-                  className={`group inline-flex h-9 w-9 items-center overflow-hidden whitespace-nowrap rounded-md border px-2.5 font-racing text-[10px] font-bold tracking-wide transition-[width,transform,background-color,border-color] duration-300 hover:w-40 hover:-translate-y-0.5 ${className}`}
+                  className={`group inline-flex h-9 w-9 items-center justify-center overflow-hidden whitespace-nowrap rounded-md border px-2.5 font-racing text-[10px] font-bold tracking-wide transition-[width,transform,background-color,border-color] duration-300 hover:-translate-y-0.5 min-[1800px]:justify-start min-[1800px]:hover:w-40 ${className}`}
                   aria-label={label}
                   title={label}
                 >
                   <Icon className="h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-110" />
-                  <span className="max-w-0 overflow-hidden opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100">{shortLabel}</span>
+                  <span className="hidden max-w-0 overflow-hidden opacity-0 transition-all duration-300 min-[1800px]:block min-[1800px]:group-hover:ml-1 min-[1800px]:group-hover:max-w-32 min-[1800px]:group-hover:opacity-100">{shortLabel}</span>
                 </a>
               ))}
             </div>
           </div>
 
           <button
-            className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-racing-card hover:text-white min-[1800px]:hidden"
+            className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-racing-card hover:text-white lg:hidden"
             onClick={() => setOpen(!open)}
             aria-label="Abrir menú"
           >
@@ -389,19 +415,30 @@ export default function Navbar() {
         </div>
       </div>
 
-      {location.pathname === '/' ? <ChampionshipTicker /> : null}
+      {location.pathname === '/' ? (
+        <>
+          <ClubBanner />
+          <ChampionshipTicker />
+        </>
+      ) : null}
 
       {open && (
-        <div className="animate-fade-in border-t border-racing-border bg-racing-gray min-[1800px]:hidden">
+        <div className="animate-fade-in border-t border-racing-border bg-racing-gray lg:hidden">
           <div className="max-h-[calc(100vh-4rem)] overflow-y-auto px-4 py-3 space-y-1">
             {visibleNavLinks.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={to === '/'}
-                onClick={() => setOpen(false)}
+                onClick={event => {
+                  setOpen(false)
+                  if (to === '/') {
+                    event.preventDefault()
+                    window.location.assign('/')
+                  }
+                }}
                 className={({ isActive }) =>
-                  `flex w-full items-center gap-3 px-4 py-2.5 rounded-lg font-racing text-sm font-medium tracking-wide transition-all duration-200 ${
+                  `relative flex w-full items-center gap-3 overflow-hidden px-4 py-2.5 rounded-lg font-racing text-sm font-medium tracking-wide transition-all duration-200 ${
                     isActive
                       ? 'text-racing-red bg-racing-card border border-racing-red/35'
                       : 'text-gray-300 hover:text-white hover:bg-racing-card border border-transparent'

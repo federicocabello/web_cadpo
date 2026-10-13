@@ -49,6 +49,7 @@ const TEXT_FIELDS = new Set([
   'desc_sancion_final',
 ]);
 const DECIMAL_FIELDS = new Set(['pts_sprint', 'pts_final']);
+const BALLAST_FIELDS = new Set(['kg_sprint', 'kg_sancion_sprint', 'kg_final', 'kg_sancion_final']);
 const BOOLEAN_FIELDS = new Set(['pole_sprint', 'ganador_sprint', 'pole_final', 'ganador_final', 'campeon']);
 
 const normalizeValue = (field, value) => {
@@ -66,7 +67,8 @@ const normalizeValue = (field, value) => {
     ? String(value ?? 0).replace(',', '.')
     : value;
   const number = Number(normalizedValue ?? 0);
-  return Number.isFinite(number) ? number : 0;
+  if (!Number.isFinite(number)) return 0;
+  return BALLAST_FIELDS.has(field) ? Math.trunc(number) : number;
 };
 
 const getAll = async (req, res, next) => {

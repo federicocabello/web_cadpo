@@ -9,7 +9,7 @@ export function CountryFlag({ country, className = '' }) {
   return <span className={`fi fi-${code} shrink-0 ${className}`} aria-label={getCountryName(code)} title={getCountryName(code)} />;
 }
 
-export function CountrySelect({ value, onChange, disabled = false, className = '', options = countries, allowEmpty = false }) {
+export function CountrySelect({ value, onChange, disabled = false, className = '', options = countries, allowEmpty = false, emptyLabel = 'Sin especificar', emptyIcon = '' }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef(null);
@@ -55,7 +55,8 @@ export function CountrySelect({ value, onChange, disabled = false, className = '
       >
         <span className="flex items-center gap-3">
           {selectedCode ? <CountryFlag country={selectedCode} className="text-xl" /> : null}
-          <span className={selected ? '' : 'text-gray-500'}>{selected?.name || 'Seleccionar país'}</span>
+          {!selectedCode && allowEmpty && emptyIcon ? <span className="flex h-5 w-6 shrink-0 items-center justify-center rounded-sm bg-gray-700 text-xs font-black text-white">{emptyIcon}</span> : null}
+          <span className={selected || (!selectedCode && allowEmpty) ? '' : 'text-gray-500'}>{selected?.name || (!selectedCode && allowEmpty ? emptyLabel : 'Seleccionar país')}</span>
         </span>
         <ChevronDownIcon className={`h-4 w-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -73,7 +74,7 @@ export function CountrySelect({ value, onChange, disabled = false, className = '
             />
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {allowEmpty ? <button type="button" onClick={() => { onChange(''); setOpen(false); setSearch(''); }} className="flex w-full items-center px-3 py-2 text-left text-sm text-gray-400 hover:bg-racing-red/10 hover:text-white">Sin especificar</button> : null}
+            {allowEmpty ? <button type="button" onClick={() => { onChange(''); setOpen(false); setSearch(''); }} className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-racing-red/10 hover:text-white ${!selectedCode ? 'bg-racing-red/10 text-racing-red' : 'text-gray-400'}`}>{emptyIcon ? <span className="flex h-5 w-6 shrink-0 items-center justify-center rounded-sm bg-gray-700 text-xs font-black text-white">{emptyIcon}</span> : null}{emptyLabel}</button> : null}
             {filteredCountries.map(country => (
               <button
                 key={country.code}

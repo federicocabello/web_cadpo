@@ -35,16 +35,23 @@ const ensureSchema = () => {
       const [manualPercentageColumn] = await pool.query("SHOW COLUMNS FROM votacion_opciones LIKE 'porcentaje_manual'");
       if (!manualPercentageColumn.length) await pool.query('ALTER TABLE votacion_opciones ADD COLUMN porcentaje_manual DECIMAL(5,2) NULL AFTER imagen');
       await pool.query(`CREATE TABLE IF NOT EXISTS votacion_votos (
-        idvotacion INT UNSIGNED NOT NULL, idopcion INT UNSIGNED NOT NULL, ip_hash CHAR(64) NOT NULL,
+        idvotacion INT UNSIGNED NOT NULL, idopcion INT UNSIGNED NOT NULL, ip_hash CHAR(64) NOT NULL, voter_hash CHAR(64) NULL,
         creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (idvotacion, ip_hash, idopcion),
-        KEY idx_votacion_votos_opcion (idopcion)
+        KEY idx_votacion_votos_opcion (idopcion), UNIQUE KEY uq_votacion_votos_voter_option (idvotacion, voter_hash, idopcion)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      const [voteColumns] = await pool.query('SHOW COLUMNS FROM votacion_votos');
+      if (!voteColumns.some(column => column.Field === 'voter_hash')) {
+        await pool.query('ALTER TABLE votacion_votos ADD COLUMN voter_hash CHAR(64) NULL AFTER ip_hash');
+      }
       const [voteIndexes] = await pool.query('SHOW INDEX FROM votacion_votos');
       const primaryVoteKey = voteIndexes
         .filter(index => index.Key_name === 'PRIMARY')
         .sort((first, second) => Number(first.Seq_in_index) - Number(second.Seq_in_index));
       if (primaryVoteKey.length === 2) {
         await pool.query('ALTER TABLE votacion_votos DROP PRIMARY KEY, ADD PRIMARY KEY (idvotacion, ip_hash, idopcion)');
+      }
+      if (!voteIndexes.some(index => index.Key_name === 'uq_votacion_votos_voter_option')) {
+        await pool.query('ALTER TABLE votacion_votos ADD UNIQUE KEY uq_votacion_votos_voter_option (idvotacion, voter_hash, idopcion)');
       }
     })().catch(error => { schemaPromise = null; throw error; });
   }
@@ -98,10 +105,16 @@ const toDate = value => {
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(normalized)
     ? (normalized.length === 16 ? `${normalized}:00` : normalized) : '';
 };
-const requestIpHash = req => {
+const requestVoterIdentity = req => {
   const ip = String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '').trim();
   const secret = process.env.POLL_IP_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.DB_PASSWORD || 'cadpo-polls';
-  return crypto.createHmac('sha256', secret).update(ip || 'unknown').digest('hex');
+  const voterId = String(req.get('x-cadpo-voter-id') || '').trim();
+  return {
+    ipHash: crypto.createHmac('sha256', secret).update(ip || 'unknown').digest('hex'),
+    voterHash: /^[a-z0-9-]{20,100}$/i.test(voterId)
+      ? crypto.createHmac('sha256', secret).update(`voter:${voterId}`).digest('hex')
+      : '',
+  };
 };
 const filesForOption = (files, index) => (files || []).filter(file => file.fieldname === `imagenes_${index}` || file.fieldname === `imagen_${index}`);
 
@@ -120,7 +133,7 @@ const removeImage = async image => {
 };
 const removeImages = async images => Promise.all([...new Set(images.filter(Boolean))].map(removeImage));
 
-const loadPolls = async ({ includeHidden = false, ipHash = '' } = {}) => {
+const loadPolls = async ({ includeHidden = false, identity = null } = {}) => {
   await ensureSchema();
   const [polls] = await pool.query(`SELECT id, titulo, dias, descripcion, fecha_inicio, fecha_cierre, max_opciones, visible, creado, actualizado,
     CASE WHEN NOW() < fecha_inicio THEN 'proxima' WHEN NOW() > fecha_cierre THEN 'cerrada' ELSE 'abierta' END AS estado
@@ -132,12 +145,14 @@ const loadPolls = async ({ includeHidden = false, ipHash = '' } = {}) => {
   const [options] = await pool.query(`SELECT o.id, o.idvotacion, o.titulo, o.descripcion, o.imagen, o.imagenes, o.porcentaje_manual, o.orden, COUNT(v.idopcion) AS votos
     FROM votacion_opciones o LEFT JOIN votacion_votos v ON v.idopcion = o.id WHERE o.idvotacion IN (?)
     GROUP BY o.id, o.idvotacion, o.titulo, o.descripcion, o.imagen, o.imagenes, o.porcentaje_manual, o.orden ORDER BY o.idvotacion, o.orden, o.id`, [ids]);
-  const [ballotCounts] = await pool.query(`SELECT idvotacion, COUNT(DISTINCT ip_hash) AS total_votos
+  const [ballotCounts] = await pool.query(`SELECT idvotacion, COUNT(DISTINCT COALESCE(voter_hash, ip_hash)) AS total_votos
     FROM votacion_votos WHERE idvotacion IN (?) GROUP BY idvotacion`, [ids]);
   const ballotCountByPoll = new Map(ballotCounts.map(row => [String(row.idvotacion), Number(row.total_votos || 0)]));
   let voted = new Map();
-  if (ipHash) {
-    const [rows] = await pool.query('SELECT idvotacion, idopcion FROM votacion_votos WHERE idvotacion IN (?) AND ip_hash = ?', [ids, ipHash]);
+  if (identity?.ipHash) {
+    const identityCondition = identity.voterHash ? '(ip_hash = ? OR voter_hash = ?)' : 'ip_hash = ?';
+    const identityParams = identity.voterHash ? [identity.ipHash, identity.voterHash] : [identity.ipHash];
+    const [rows] = await pool.query(`SELECT idvotacion, idopcion FROM votacion_votos WHERE idvotacion IN (?) AND ${identityCondition}`, [ids, ...identityParams]);
     voted = rows.reduce((map, row) => {
       const key = String(row.idvotacion);
       if (!map.has(key)) map.set(key, []);
@@ -186,7 +201,7 @@ const validatePayload = body => {
 };
 
 const getPublic = async (req, res, next) => {
-  try { const data = await loadPolls({ ipHash: requestIpHash(req) }); res.json({ data, total: data.length }); } catch (error) { next(error); }
+  try { const data = await loadPolls({ identity: requestVoterIdentity(req) }); res.json({ data, total: data.length }); } catch (error) { next(error); }
 };
 const getAdmin = async (req, res, next) => {
   try { const data = await loadPolls({ includeHidden: true }); res.json({ data, total: data.length }); } catch (error) { next(error); }
@@ -295,16 +310,18 @@ const vote = async (req, res, next) => {
     if (optionIds.length > maxOptions) return res.status(400).json({ error: `Podés elegir como máximo ${maxOptions} opción${maxOptions === 1 ? '' : 'es'}` });
     const [validOptions] = await pool.query('SELECT id FROM votacion_opciones WHERE idvotacion = ? AND id IN (?)', [pollId, optionIds]);
     if (validOptions.length !== optionIds.length) return res.status(400).json({ error: 'Una de las opciones elegidas no pertenece a esta votación' });
-    const ipHash = requestIpHash(req);
-    const [currentVotes] = await pool.query('SELECT idopcion FROM votacion_votos WHERE idvotacion = ? AND ip_hash = ? ORDER BY idopcion', [pollId, ipHash]);
+    const identity = requestVoterIdentity(req);
+    const identityCondition = identity.voterHash ? '(ip_hash = ? OR voter_hash = ?)' : 'ip_hash = ?';
+    const identityParams = identity.voterHash ? [identity.ipHash, identity.voterHash] : [identity.ipHash];
+    const [currentVotes] = await pool.query(`SELECT DISTINCT idopcion FROM votacion_votos WHERE idvotacion = ? AND ${identityCondition} ORDER BY idopcion`, [pollId, ...identityParams]);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      await connection.query('DELETE FROM votacion_votos WHERE idvotacion = ? AND ip_hash = ?', [pollId, ipHash]);
-      for (const optionId of optionIds) await connection.query('INSERT INTO votacion_votos (idvotacion, idopcion, ip_hash) VALUES (?, ?, ?)', [pollId, optionId, ipHash]);
+      await connection.query(`DELETE FROM votacion_votos WHERE idvotacion = ? AND ${identityCondition}`, [pollId, ...identityParams]);
+      for (const optionId of optionIds) await connection.query('INSERT INTO votacion_votos (idvotacion, idopcion, ip_hash, voter_hash) VALUES (?, ?, ?, ?)', [pollId, optionId, identity.ipHash, identity.voterHash || null]);
       await connection.commit();
     } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
-    const updated = (await loadPolls({ ipHash })).find(item => Number(item.id) === pollId);
+    const updated = (await loadPolls({ identity })).find(item => Number(item.id) === pollId);
     const previousIds = currentVotes.map(row => Number(row.idopcion)).sort((a, b) => a - b);
     const nextIds = [...optionIds].sort((a, b) => a - b);
     const hadVote = previousIds.length > 0;

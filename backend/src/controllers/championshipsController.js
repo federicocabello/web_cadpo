@@ -138,8 +138,8 @@ const saveDebutBallasts = async (req, res, next) => {
   const submittedRows = Array.isArray(req.body.lastres) ? req.body.lastres : [];
   if (!Number.isInteger(championshipId) || championshipId < 1) return res.status(400).json({ error: 'Campeonato inválido' });
   const rows = submittedRows.map(row => ({ idpiloto: Number(row.idpiloto), kilos: Number(String(row.kilos ?? 0).replace(',', '.')) }));
-  if (rows.some(row => !Number.isInteger(row.idpiloto) || row.idpiloto < 1 || !Number.isFinite(row.kilos) || row.kilos < 0)) {
-    return res.status(400).json({ error: 'El lastre debut debe ser un número igual o mayor que cero' });
+  if (rows.some(row => !Number.isInteger(row.idpiloto) || row.idpiloto < 1 || !Number.isInteger(row.kilos) || row.kilos < 0)) {
+    return res.status(400).json({ error: 'El lastre debut debe ser un número entero igual o mayor que cero' });
   }
   if (new Set(rows.map(row => row.idpiloto)).size !== rows.length) return res.status(400).json({ error: 'No puede repetirse un piloto' });
 

@@ -142,7 +142,7 @@ const buildSingleAssettoSanctionLabel = sanction => {
   const description = String(sanction.description || '').trim();
   const moment = `${Math.max(0, Math.trunc(toFiniteNumber(sanction.minute)))}:${String(Math.min(59, Math.max(0, Math.trunc(toFiniteNumber(sanction.second))))).padStart(2, '0')}`;
   if (sanction.noSanction) {
-    return [sanction.type || 'DENUNCIA', `MINUTO ${moment}`, 'NO HAY SANCIÓN', description].filter(Boolean).join(' · ');
+    return [sanction.type || 'DENUNCIA', `MINUTO ${moment}`, 'NO HAY SANCIÓN', description.toLocaleUpperCase('es-AR')].filter(Boolean).join(' · ');
   }
 
   const measures = [];

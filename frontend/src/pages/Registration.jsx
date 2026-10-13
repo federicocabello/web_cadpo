@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BanknotesIcon, CalendarDaysIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, DocumentTextIcon, ExclamationTriangleIcon, MagnifyingGlassIcon, MapPinIcon, PlayCircleIcon, TrophyIcon, UserGroupIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
-import { driverCountries } from '../data/countries';
+import { registrationCountries } from '../data/countries';
 import ChampionshipPrizes from '../components/ChampionshipPrizes';
 import { championshipsApi, mediaApi, registrationFormsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -468,7 +468,7 @@ export default function Registration() {
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Usuario de Instagram <span className="text-gray-600">(opcional)</span></span><input name="ig" value={driver.ig} onChange={changeDriver} className={clsx('input-field', 'mt-2')} placeholder="@usuario o enlace de Instagram" autoComplete="off"/><span className={clsx('mt-1.5', 'block', 'text-xs', 'leading-relaxed', 'text-gray-500')}>Lo usamos para etiquetarte en las fotos de la liga.</span></label>
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Localidad <span className="text-gray-600">(opcional)</span></span><input name="localidad" value={driver.localidad} onChange={changeDriver} className={clsx('input-field', 'mt-2')}/></label>
                 <label><span className={clsx('text-sm', 'text-gray-300')}>Provincia <span className="text-gray-600">(opcional)</span></span><input name="provincia" value={driver.provincia} onChange={changeDriver} className={clsx('input-field', 'mt-2')}/></label>
-                <label><span className={clsx('text-sm', 'text-gray-300')}>País</span><CountrySelect value={driver.nacionalidad} onChange={value => setDriver(current => ({ ...current, nacionalidad: value }))} options={driverCountries} className="mt-2"/></label>
+                <label><span className={clsx('text-sm', 'text-gray-300')}>País de nacionalidad <span className="text-gray-600">(opcional)</span></span><CountrySelect value={driver.nacionalidad} onChange={value => setDriver(current => ({ ...current, nacionalidad: value }))} options={registrationCountries} allowEmpty emptyLabel="Otro" emptyIcon="?" className="mt-2"/></label>
               </div>
             </section>
 

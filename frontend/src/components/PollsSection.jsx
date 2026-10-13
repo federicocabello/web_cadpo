@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ChartBarIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, TrophyIcon } from '@heroicons/react/24/outline';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ChartBarIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, TrophyIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { pollsApi } from '../services/api';
 import { formatCalendarDate } from '../utils/calendarDate';
 
@@ -8,7 +9,7 @@ const pollTime = value => new Date(String(value || '').replace(' ', 'T')).getTim
 const normalizeOptionIds = values => [...new Set((values || []).map(value => String(value)))].sort();
 const sameOptionIds = (first, second) => JSON.stringify(normalizeOptionIds(first)) === JSON.stringify(normalizeOptionIds(second));
 
-function PollOptionCarousel({ images, title }) {
+function PollOptionCarousel({ images, title, onOpen }) {
   const [activeIndex, setActiveIndex] = useState(0);
   useEffect(() => {
     setActiveIndex(0);
@@ -23,7 +24,7 @@ function PollOptionCarousel({ images, title }) {
     setActiveIndex(current => (current + direction + images.length) % images.length);
   };
   return <>
-    {activeImage ? <img key={activeImage} src={activeImage} alt={`${title} · imagen ${activeIndex + 1}`} className="animate-fade-in h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : null}
+    {activeImage ? <img key={activeImage} src={activeImage} alt={`${title} · imagen ${activeIndex + 1}`} onClick={event => { event.stopPropagation(); onOpen?.(activeIndex); }} className="animate-fade-in h-full w-full cursor-zoom-in object-cover transition duration-500 group-hover:scale-105" /> : null}
     {images.length > 1 ? <><button type="button" onClick={event => changeImage(event, -1)} className="absolute left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/70 text-white transition hover:border-cyan-200 hover:bg-cyan-300 hover:text-black sm:left-3 sm:h-9 sm:w-9" aria-label={`Foto anterior de ${title}`}><ChevronLeftIcon className="h-4 w-4 sm:h-5 sm:w-5"/></button><button type="button" onClick={event => changeImage(event, 1)} className="absolute right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/70 text-white transition hover:border-cyan-200 hover:bg-cyan-300 hover:text-black sm:right-3 sm:h-9 sm:w-9" aria-label={`Foto siguiente de ${title}`}><ChevronRightIcon className="h-4 w-4 sm:h-5 sm:w-5"/></button><div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1 rounded-full bg-black/65 px-2 py-1.5 sm:bottom-3">{images.map((image, index) => <span key={image} className={`h-1.5 rounded-full transition-all duration-300 ${index === activeIndex ? 'w-5 bg-cyan-300' : 'w-1.5 bg-white/55'}`}/>)}</div></> : null}
   </>;
 }
@@ -32,11 +33,26 @@ export default function PollsSection({ polls, onPollUpdated }) {
   const [submitting, setSubmitting] = useState('');
   const [messages, setMessages] = useState({});
   const [selectedOptions, setSelectedOptions] = useState({});
+  const [photoViewer, setPhotoViewer] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const touchStartX = useRef(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15000);
     return () => window.clearInterval(timer);
   }, []);
+  const changeViewerPhoto = direction => setPhotoViewer(current => current ? { ...current, index: (current.index + direction + current.images.length) % current.images.length } : current);
+  useEffect(() => {
+    if (!photoViewer) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') setPhotoViewer(null);
+      if (event.key === 'ArrowLeft' && photoViewer.images.length > 1) changeViewerPhoto(-1);
+      if (event.key === 'ArrowRight' && photoViewer.images.length > 1) changeViewerPhoto(1);
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', handleKeyDown); };
+  }, [photoViewer]);
   if (!polls.length) return null;
 
   const submitVote = async (pollId, optionIds) => {
@@ -64,7 +80,7 @@ export default function PollsSection({ polls, onPollUpdated }) {
     setMessages(current => ({ ...current, [pollId]: '' }));
   };
 
-  return <section>
+  return <><section>
     <header className="mb-5 flex items-end justify-between gap-4 border-l-2 border-cyan-300 pl-4"><div><div className="mb-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300"><ChartBarIcon className="h-4 w-4" /> Tu opinión decide</div><h2 className="font-racing text-2xl font-bold uppercase text-white sm:text-3xl">Próximos campeonatos</h2><p className="mt-1 text-sm text-gray-500">Elegí tus opciones y confirmá el voto.</p></div></header>
     <div className="grid gap-6">
       {polls.map(poll => {
@@ -110,16 +126,17 @@ export default function PollsSection({ polls, onPollUpdated }) {
               const selected = selectedOptionIds.includes(String(option.id));
               const winner = winnerIds.has(String(option.id));
               const optionImages = option.imagenes?.length ? option.imagenes : (option.imagen ? [option.imagen] : []);
-              return <div key={option.id} role="button" tabIndex={disabled || closed ? -1 : 0} aria-disabled={disabled || closed} aria-pressed={selected} onClick={() => { if (!disabled && !closed) toggleOption(poll.id, option.id, selectedOptionIds, maxOptions); }} onKeyDown={event => { if (!disabled && !closed && ['Enter', ' '].includes(event.key)) { event.preventDefault(); toggleOption(poll.id, option.id, selectedOptionIds, maxOptions); } }} className={`group relative grid min-h-[150px] grid-cols-[minmax(105px,36%)_minmax(0,1fr)] overflow-hidden border bg-black/35 text-left transition sm:flex sm:min-h-full sm:flex-col ${disabled || closed ? 'cursor-not-allowed' : 'cursor-pointer'} ${winner ? 'poll-winner-card border-yellow-300 ring-2 ring-yellow-300/35' : closed && winners.length ? 'border-white/10 opacity-60 grayscale-[35%]' : selected ? 'border-cyan-300 ring-2 ring-cyan-300/40' : 'border-white/15 hover:border-cyan-300'}`}>
+              return <div key={option.id} className={`group relative grid min-h-[150px] grid-cols-[minmax(105px,36%)_minmax(0,1fr)] overflow-hidden border text-left transition duration-300 sm:flex sm:min-h-full sm:flex-col ${winner ? 'poll-winner-card border-yellow-300 bg-black/35 ring-2 ring-yellow-300/35' : closed && winners.length ? 'border-white/10 bg-black/35 opacity-60 grayscale-[35%]' : selected ? 'border-cyan-200 bg-cyan-300/5 ring-2 ring-cyan-300/45' : 'border-white/15 bg-black/35 hover:border-cyan-300/65'}`}>
                 <div className="relative h-full min-h-[150px] w-full overflow-hidden bg-gray-900 sm:aspect-[16/10] sm:h-auto sm:min-h-0">
-                  <PollOptionCarousel images={optionImages} title={option.titulo}/>
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
-                  {winner ? <span className="poll-winner-badge absolute left-2 top-2 inline-flex items-center gap-1.5 bg-yellow-300 px-2 py-1.5 text-[8px] font-black uppercase tracking-[0.12em] text-black shadow-xl sm:left-4 sm:top-4 sm:gap-2 sm:px-3 sm:py-2 sm:text-[10px] sm:tracking-[0.18em]"><TrophyIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Ganador</span> : null}
-                  {!closed && !upcoming ? <span className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center border shadow-lg sm:right-4 sm:top-4 sm:h-8 sm:w-8 ${maxOptions === 1 ? 'rounded-full' : 'rounded-sm'} ${selected ? 'border-cyan-200 bg-cyan-300' : 'border-white/70 bg-black/55'}`}>{selected ? <CheckCircleIcon className="h-5 w-5 text-black" /> : null}</span> : null}
+                  <PollOptionCarousel images={optionImages} title={option.titulo} onOpen={index => setPhotoViewer({ images: optionImages, index, title: option.titulo })}/>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/10" />
+                  {winner ? <span className="poll-winner-badge absolute left-2 top-2 z-20 inline-flex items-center gap-1.5 bg-yellow-300 px-2 py-1.5 text-[8px] font-black uppercase tracking-[0.12em] text-black shadow-xl sm:left-4 sm:top-4 sm:gap-2 sm:px-3 sm:py-2 sm:text-[10px] sm:tracking-[0.18em]"><TrophyIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Ganador</span> : null}
+                  {!closed && !upcoming ? <button type="button" disabled={disabled} aria-pressed={selected} onClick={() => toggleOption(poll.id, option.id, selectedOptionIds, maxOptions)} className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center border transition sm:right-3 sm:top-3 sm:h-8 sm:w-8 ${maxOptions === 1 ? 'rounded-full' : 'rounded-sm'} ${selected ? 'border-white bg-cyan-300' : 'border-white/70 bg-black/70 hover:border-cyan-200 hover:bg-cyan-300/20'} disabled:cursor-not-allowed`} aria-label={selected ? `Desmarcar ${option.titulo}` : `Seleccionar ${option.titulo}`}>{selected ? <CheckCircleIcon className="h-5 w-5 text-black" /> : null}</button> : null}
+                  {selected && !closed ? <span className="pointer-events-none absolute bottom-2 left-2 z-20 bg-cyan-300 px-2 py-1 text-[8px] font-black uppercase tracking-[0.15em] text-black shadow-[0_0_18px_rgba(34,211,238,0.65)] sm:bottom-3 sm:left-3 sm:text-[9px]">Seleccionado</span> : null}
                 </div>
                 <div className="relative flex min-w-0 flex-1 flex-col p-3.5 sm:p-6">
-                  <div className="flex items-start justify-between gap-2 sm:gap-4"><strong className="min-w-0 break-words font-racing text-lg font-bold uppercase leading-tight text-white sm:text-3xl sm:leading-none">{option.titulo}</strong>{showResults ? <span className="animate-fade-in shrink-0 font-racing text-2xl font-bold text-cyan-300 sm:text-4xl">{option.porcentaje}%</span> : null}</div>
-                  {option.descripcion ? <div className="mt-2 border-l-2 border-cyan-300/60 bg-black/30 px-2.5 py-2 sm:mt-4 sm:px-4 sm:py-3"><p className="whitespace-pre-line text-[11px] leading-relaxed text-gray-300 sm:text-sm">{option.descripcion}</p></div> : null}
+                  <div className="flex items-start justify-between gap-2 sm:gap-4"><button type="button" disabled={disabled || closed} aria-pressed={selected} onClick={() => toggleOption(poll.id, option.id, selectedOptionIds, maxOptions)} style={selected ? { WebkitTextStroke: '0.6px rgba(0,0,0,0.95)' } : undefined} className={`min-w-0 origin-left break-words text-left font-racing text-lg font-bold uppercase leading-tight transition duration-200 enabled:hover:scale-[1.035] sm:text-3xl sm:leading-none ${selected ? 'text-cyan-200 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]' : 'text-white'} disabled:cursor-default`}>{option.titulo}</button>{showResults ? <span className="animate-fade-in shrink-0 font-racing text-2xl font-bold text-cyan-300 sm:text-4xl">{option.porcentaje}%</span> : null}</div>
+                  {option.descripcion ? <div className="mt-2 border-l-2 border-cyan-300/60 bg-black/30 px-2.5 py-2 sm:mt-4 sm:px-4 sm:py-3"><p className="whitespace-pre-line text-[10px] leading-relaxed text-gray-300 sm:text-xs">{option.descripcion}</p></div> : null}
                   {showResults ? <div className="animate-fade-in mt-auto pt-3 sm:pt-4"><div className="h-1.5 overflow-hidden bg-white/10 sm:h-2"><div className="poll-result-fill h-full origin-left bg-cyan-300" style={{ width: `${option.porcentaje}%` }} /></div></div> : null}
                 </div>
               </div>;
@@ -130,5 +147,14 @@ export default function PollsSection({ polls, onPollUpdated }) {
         </article>;
       })}
     </div>
-  </section>;
+  </section>{photoViewer ? createPortal(<div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-2 backdrop-blur-md sm:p-6" role="dialog" aria-modal="true" aria-label={`Galería de ${photoViewer.title}`} onMouseDown={event => { if (event.target === event.currentTarget) setPhotoViewer(null); }}>
+    <div className="relative flex h-full w-full max-w-7xl flex-col items-center justify-center overflow-hidden">
+      <div className="absolute left-3 top-3 z-20 max-w-[calc(100%-5rem)] bg-black/70 px-3 py-2 sm:left-5 sm:top-5 sm:px-4"><p className="truncate font-racing text-sm font-bold uppercase text-white sm:text-lg">{photoViewer.title}</p><p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-cyan-300">Foto {photoViewer.index + 1} de {photoViewer.images.length}</p></div>
+      <button type="button" onClick={() => setPhotoViewer(null)} className="absolute right-3 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/80 text-white transition hover:border-cyan-300 hover:text-cyan-300 sm:right-5 sm:top-5" aria-label="Cerrar foto"><XMarkIcon className="h-6 w-6"/></button>
+      <div className="flex h-full w-full touch-pan-y items-center justify-center" onTouchStart={event => { touchStartX.current = event.changedTouches[0]?.clientX ?? null; }} onTouchEnd={event => { const endX = event.changedTouches[0]?.clientX; if (touchStartX.current !== null && Number.isFinite(endX) && photoViewer.images.length > 1) { const movement = endX - touchStartX.current; if (Math.abs(movement) > 45) changeViewerPhoto(movement > 0 ? -1 : 1); } touchStartX.current = null; }}>
+        <img key={photoViewer.images[photoViewer.index]} src={photoViewer.images[photoViewer.index]} alt={`${photoViewer.title} · foto ${photoViewer.index + 1}`} className="animate-fade-in max-h-full max-w-full select-none object-contain" draggable="false"/>
+      </div>
+      {photoViewer.images.length > 1 ? <><button type="button" onClick={() => changeViewerPhoto(-1)} className="absolute left-2 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white transition hover:border-cyan-300 hover:bg-cyan-300 hover:text-black sm:left-5 sm:h-14 sm:w-14" aria-label="Foto anterior"><ChevronLeftIcon className="h-7 w-7"/></button><button type="button" onClick={() => changeViewerPhoto(1)} className="absolute right-2 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white transition hover:border-cyan-300 hover:bg-cyan-300 hover:text-black sm:right-5 sm:h-14 sm:w-14" aria-label="Foto siguiente"><ChevronRightIcon className="h-7 w-7"/></button></> : null}
+    </div>
+  </div>, document.body) : null}</>;
 }
