@@ -96,6 +96,84 @@ const replaceIniValue = (content, targetSection, targetKey, nextValue) => {
   return { content: lines.join(''), replaced };
 };
 
+const syncDrivetrainGears = (content, ratios, finalKey, finalDrive) => {
+  const source = String(content || '');
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const lines = source.split(/\r?\n/);
+  const sectionStart = lines.findIndex(line => line.trim().toUpperCase() === '[GEARS]');
+  if (sectionStart < 0) return { content: source, replaced: false };
+
+  let sectionEnd = lines.findIndex((line, index) => index > sectionStart && /^\s*\[[^\]]+]\s*$/.test(line));
+  if (sectionEnd < 0) sectionEnd = lines.length;
+
+  const normalizedRatios = ratios.map(ratio => positiveNumber(ratio).toFixed(3));
+  const foundGears = new Set();
+  let foundCount = false;
+  let foundFinal = false;
+
+  for (let index = sectionStart + 1; index < sectionEnd;) {
+    const match = lines[index].match(/^(\s*)([A-Z0-9_]+)(\s*=\s*)([^;]*?)(\s*(?:;.*)?)$/i);
+    if (!match) {
+      index += 1;
+      continue;
+    }
+
+    const key = match[2].toUpperCase();
+    const rewrite = value => `${match[1]}${match[2]}${match[3]}${value}${match[5]}`;
+    if (key === 'COUNT' || key === 'GEARS') {
+      lines[index] = rewrite(normalizedRatios.length);
+      foundCount = true;
+      index += 1;
+      continue;
+    }
+    if (key === String(finalKey || 'FINAL').toUpperCase()) {
+      lines[index] = rewrite(positiveNumber(finalDrive).toFixed(3));
+      foundFinal = true;
+      index += 1;
+      continue;
+    }
+
+    const gearMatch = key.match(/^GEAR_(\d+)$/);
+    if (!gearMatch) {
+      index += 1;
+      continue;
+    }
+
+    const gearNumber = Number(gearMatch[1]);
+    if (gearNumber > normalizedRatios.length) {
+      lines.splice(index, 1);
+      sectionEnd -= 1;
+      continue;
+    }
+    if (gearNumber > 0) {
+      lines[index] = rewrite(normalizedRatios[gearNumber - 1]);
+      foundGears.add(gearNumber);
+    }
+    index += 1;
+  }
+
+  if (!foundCount) {
+    lines.splice(sectionStart + 1, 0, `COUNT=${normalizedRatios.length}`);
+    sectionEnd += 1;
+  }
+
+  let insertAt = lines.findIndex((line, index) => {
+    if (index <= sectionStart || index >= sectionEnd) return false;
+    return new RegExp(`^\\s*${String(finalKey || 'FINAL').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`, 'i').test(line);
+  });
+  if (insertAt < 0) insertAt = sectionEnd;
+  normalizedRatios.forEach((ratio, index) => {
+    const gearNumber = index + 1;
+    if (foundGears.has(gearNumber)) return;
+    lines.splice(insertAt, 0, `GEAR_${gearNumber}=${ratio}`);
+    insertAt += 1;
+    sectionEnd += 1;
+  });
+
+  if (!foundFinal) lines.splice(sectionEnd, 0, `${finalKey || 'FINAL'}=${positiveNumber(finalDrive).toFixed(3)}`);
+  return { content: lines.join(newline), replaced: true };
+};
+
 const downloadBlobFile = (filename, blob) => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -518,9 +596,9 @@ export default function GearRatioCalculator() {
     && positiveNumber(setup.revLimit) !== positiveNumber(referenceSetup.revLimit));
   const tyresChanged = Boolean(sourceFiles['tyres.ini'] && referenceSetup && importMetadata.tyreSection
     && positiveNumber(setup.wheelDiameter) !== positiveNumber(referenceSetup.wheelDiameter));
-  const sameGearCount = Boolean(referenceSetup && setup.gears.length === referenceSetup.gears.length);
-  const drivetrainChanged = Boolean(sourceFiles['drivetrain.ini'] && referenceSetup && sameGearCount && (
-    positiveNumber(setup.finalDrive) !== positiveNumber(referenceSetup.finalDrive)
+  const drivetrainChanged = Boolean(sourceFiles['drivetrain.ini'] && referenceSetup && (
+    setup.gears.length !== referenceSetup.gears.length
+    || positiveNumber(setup.finalDrive) !== positiveNumber(referenceSetup.finalDrive)
     || setup.gears.some((ratio, index) => positiveNumber(ratio) !== positiveNumber(referenceSetup.gears[index]))
   ));
 
@@ -576,21 +654,13 @@ export default function GearRatioCalculator() {
     setBulkSaveMessage(`Preparando ${requestedFilename}…`);
     const detail = { files: [] };
     if (drivetrainChanged) {
-      let content = sourceFiles['drivetrain.ini'];
-      const finalResult = replaceIniValue(content, 'GEARS', importMetadata.finalKey, positiveNumber(setup.finalDrive).toFixed(3));
-      if (finalResult.replaced) {
-        content = finalResult.content;
-        let valid = true;
-        for (let index = 0; index < setup.gears.length; index += 1) {
-          const gearResult = replaceIniValue(content, 'GEARS', `GEAR_${index + 1}`, positiveNumber(setup.gears[index]).toFixed(3));
-          if (!gearResult.replaced) {
-            valid = false;
-            break;
-          }
-          content = gearResult.content;
-        }
-        if (valid) detail.files.push({ name: 'drivetrain.ini', content });
-      }
+      const drivetrainResult = syncDrivetrainGears(
+        sourceFiles['drivetrain.ini'],
+        setup.gears,
+        importMetadata.finalKey,
+        setup.finalDrive,
+      );
+      if (drivetrainResult.replaced) detail.files.push({ name: 'drivetrain.ini', content: drivetrainResult.content });
     }
     if (tyresChanged) {
       const originalDecimals = String(importMetadata.tyreRadiusRaw).split('.')[1]?.length || 3;
@@ -681,7 +751,6 @@ export default function GearRatioCalculator() {
           </div>
           <label className="block"><span className="text-xs font-semibold text-gray-300">Diámetro de rueda</span><div className="relative mt-1.5"><input type="number" min="100" step="1" value={setup.wheelDiameter} onChange={event => updateField('wheelDiameter', event.target.value)} className="input-field pr-10"/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-600">MM</span></div></label>
           <p className="border-l-2 border-cyan-400 bg-cyan-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-gray-400">En <strong className="text-white">tyres.ini</strong>, tomá el valor <strong className="text-white">RADIUS</strong> de la rueda motriz y multiplicalo por 2000. Ejemplo: 0.330 = 660 mm.</p>
-          {dataLoaded && !sameGearCount ? <p className="border border-yellow-400/25 bg-yellow-400/[0.05] px-3 py-2 text-[10px] leading-relaxed text-yellow-300">Para generar drivetrain.ini mantené la misma cantidad de marchas que el archivo original.</p> : null}
         </div>
 
         {dataLoaded ? <div className="min-w-0 space-y-4">

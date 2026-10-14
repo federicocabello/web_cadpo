@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, ChevronDownIcon, ChevronUpIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { championshipsApi, eventsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -27,6 +27,22 @@ const ballastColor = value => {
   return 'text-gray-600';
 };
 const roundBallastColor = value => parseBallast(value) !== 0 ? 'text-emerald-300' : 'text-gray-600';
+const getAppealStatus = (value, now) => {
+  const deadline = parseCalendarDate(value);
+  if (!deadline) return null;
+  const difference = deadline.getTime() - now;
+  if (difference <= 0) return { expired: true, countdown: 'Plazo finalizado', deadline };
+
+  const totalMinutes = Math.max(1, Math.ceil(difference / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} ${days === 1 ? 'día' : 'días'}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hora' : 'horas'}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`);
+  return { expired: false, countdown: parts.join(' · '), deadline };
+};
 const numericPosition = value => {
   const normalized = String(value ?? '').trim();
   return /^\d+$/.test(normalized) && Number(normalized) > 0 ? Number(normalized) : null;
@@ -163,6 +179,12 @@ export default function Results() {
   const [showBallastTable, setShowBallastTable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -243,14 +265,20 @@ export default function Results() {
       grouped.get(key).push(result);
     });
     return [...grouped.entries()]
-      .filter(([, items]) => items.some(hasResultData))
+      .filter(([round, items]) => {
+        const event = events.find(item => selectedChampionship
+          && String(item.idcampeonato) === String(selectedChampionship.id)
+          && String(item.ronda) === String(round));
+        const hiddenWithSavedRows = items.length > 0 && Number(event?.resultados_visibles) === 0;
+        return hiddenWithSavedRows || items.some(hasResultData);
+      })
       .sort(([a], [b]) => Number(b) - Number(a))
       .map(([round, items]) => ({
         round,
         items: [...items].sort((a, b) => resultOrder(a) - resultOrder(b)
           || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' })),
       }));
-  }, [selectedResults]);
+  }, [events, selectedChampionship, selectedResults]);
 
   useEffect(() => {
     if (!rounds.length) { setSelectedRound(''); return; }
@@ -261,6 +289,9 @@ export default function Results() {
   const selectedEvent = useMemo(() => events.find(event => selectedChampionship
     && String(event.idcampeonato) === String(selectedChampionship.id)
     && String(event.ronda) === String(selectedRoundData?.round)) || null, [events, selectedChampionship, selectedRoundData?.round]);
+  const resultDetailsVisible = selectedEvent?.resultados_visibles == null
+    || Number(selectedEvent.resultados_visibles) === 1;
+  const appealStatus = getAppealStatus(selectedEvent?.limite_apelaciones, now);
 
   useEffect(() => setSelectedPilotId(null), [selectedChampionship?.id, selectedRound]);
   useEffect(() => setShowBallastTable(false), [selectedChampionship?.id]);
@@ -409,16 +440,34 @@ export default function Results() {
               {selectedRoundData.items[0].circuito_trazado ? <img src={selectedRoundData.items[0].circuito_trazado} alt={`Trazado de ${selectedRoundData.items[0].circuito}`} className="h-24 w-28 shrink-0 object-contain drop-shadow-[0_12px_25px_rgba(0,0,0,0.95)] sm:h-32 sm:w-44" onError={event => { event.currentTarget.style.display = 'none'; }}/> : null}
             </div>
           </header>
-          <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
-          <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
-            <SessionSection title="Clasificación Sprint" sessionKey="qualy_sprint" items={selectedRoundData.items} positionField="pos_qualy_sprint" pointsField="pts_qualy_sprint" sanctionField="desc_sancion_qualy_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-            <SessionSection title="Sprint" sessionKey="sprint" items={selectedRoundData.items} positionField="pos_sprint" pointsField="pts_sprint" sanctionField="desc_sancion_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-            <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-            <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-          </div>
+          {appealStatus && resultDetailsVisible ? <div className={`flex flex-col gap-2 border-b px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${appealStatus.expired ? 'border-red-400/25 bg-red-500/[0.06]' : 'border-amber-300/25 bg-amber-300/[0.07]'}`}>
+            <div className="flex items-center gap-3">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${appealStatus.expired ? 'border-red-400/40 bg-red-500/10 text-red-300' : 'border-amber-300/40 bg-amber-300/10 text-amber-200'}`}><ClockIcon className="h-4 w-4" /></span>
+              <div><p className={`text-[9px] font-bold uppercase tracking-[0.22em] ${appealStatus.expired ? 'text-red-300' : 'text-amber-200'}`}>Apelaciones y reclamos</p><p className="mt-1 text-sm text-gray-300">{appealStatus.expired ? 'El período finalizó y ya no se reciben reclamos.' : 'Tiempo disponible para presentar una apelación.'}</p></div>
+            </div>
+            <div className="shrink-0 sm:text-right">
+              <p className={`font-racing text-lg font-bold uppercase tabular-nums sm:text-xl ${appealStatus.expired ? 'text-red-300' : 'text-white'}`}>{appealStatus.countdown}</p>
+            </div>
+          </div> : null}
+          {resultDetailsVisible ? <>
+            <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
+            <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
+              <SessionSection title="Clasificación Sprint" sessionKey="qualy_sprint" items={selectedRoundData.items} positionField="pos_qualy_sprint" pointsField="pts_qualy_sprint" sanctionField="desc_sancion_qualy_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
+              <SessionSection title="Sprint" sessionKey="sprint" items={selectedRoundData.items} positionField="pos_sprint" pointsField="pts_sprint" sanctionField="desc_sancion_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
+              <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
+              <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
+            </div>
+          </> : <div className="flex min-h-64 flex-col items-center justify-center border-t border-[#3030a1]/60 bg-[linear-gradient(180deg,rgba(48,48,161,0.24),rgba(10,10,35,0.3))] px-6 py-10 text-center">
+            <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
+              <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-r-[#3030a1] border-t-[#8585ff] shadow-[0_0_26px_rgba(48,48,161,0.48)]" />
+              <span className="absolute inset-2 animate-[spin_2.8s_linear_infinite_reverse] rounded-full border border-transparent border-b-[#6666d6]/70 border-l-[#3030a1]/60" />
+              <img src="/torre-de-control.png" alt="Torre de control" className="relative z-10 h-20 w-20 object-contain drop-shadow-[0_0_16px_rgba(48,48,161,0.5)] sm:h-24 sm:w-24" />
+            </div>
+            <p className="mt-6 font-racing text-xl font-bold uppercase tracking-[0.24em] text-[#9898ff] drop-shadow-[0_0_12px_rgba(48,48,161,0.65)] sm:text-2xl">Resultados en proceso</p>
+          </div>}
         </section> : null}
 
-        <section className="!mt-16 overflow-hidden rounded-lg border border-racing-border border-t-2 border-t-yellow-300/40 bg-racing-card">
+        <section className="overflow-hidden rounded-lg border border-racing-border border-t-2 border-t-yellow-300/40 bg-racing-card">
           <header className="flex flex-wrap items-center justify-between gap-4 border-b border-racing-border bg-racing-gray px-5 py-5 sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-yellow-300">Posiciones del campeonato</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">Tabla total</h2></div><div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-2 border border-white/10 bg-black/30 px-3 py-2 text-xs text-gray-400"><FlagIcon className="h-4 w-4 text-racing-red"/>{rounds.length} fecha{rounds.length === 1 ? '' : 's'} disputada{rounds.length === 1 ? '' : 's'}</span><span className={`flex items-center gap-2 border px-3 py-2 text-xs font-bold uppercase ${championshipFinished ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-yellow-300/30 bg-yellow-300/10 text-yellow-200'}`}>{championshipFinished ? 'Campeonato finalizado' : `${remainingRounds} fecha${remainingRounds === 1 ? '' : 's'} restante${remainingRounds === 1 ? '' : 's'}`}</span><span className="flex items-center gap-2 border border-white/10 bg-black/30 px-3 py-2 text-xs text-gray-400"><UserGroupIcon className="h-4 w-4 text-racing-red"/>{standings.length} pilotos</span></div></header>
           <div className="overflow-x-auto">
             <table className="w-max min-w-full border-collapse text-xs">

@@ -8,6 +8,8 @@ import {
   BoltIcon,
   BuildingOffice2Icon,
   ExclamationTriangleIcon,
+  EyeIcon,
+  EyeSlashIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
@@ -28,6 +30,7 @@ import {
   WrenchIcon,
   RectangleStackIcon,
   ChartBarIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
@@ -134,11 +137,27 @@ const resultGridColumns = [
   { key: 'piloto', label: 'Piloto', type: 'pilot' },
   ...resultSpreadsheetColumns,
 ];
+const getResultSpreadsheetColumnWidth = column => {
+  if (column.type === 'pilot') return 'w-36 min-w-36 max-w-36';
+  if (column.type === 'attendance') return 'w-[44px] min-w-[44px] max-w-[44px]';
+  if (column.type === 'position') return 'w-14 min-w-14 max-w-14';
+  if (column.type === 'integer' || column.type === 'decimal') return 'w-12 min-w-12 max-w-12';
+  if (column.type === 'signed') return 'w-14 min-w-14 max-w-14';
+  return 'w-14 min-w-14 max-w-14';
+};
 const resultScoringFields = [
   { positionField: 'pos_qualy_sprint', pointsField: 'pts_qualy_sprint', label: 'Clasificación Sprint', shortLabel: 'QS', integer: true },
-  { positionField: 'pos_sprint', pointsField: 'pts_sprint', label: 'Sprint', shortLabel: 'S' },
+  { positionField: 'pos_sprint', pointsField: 'pts_sprint', ballastField: 'kg_sprint', label: 'Sprint', shortLabel: 'S' },
   { positionField: 'pos_qualy_final', pointsField: 'pts_qualy_final', label: 'Clasificación Final', shortLabel: 'QF', integer: true },
-  { positionField: 'pos_final', pointsField: 'pts_final', label: 'Final', shortLabel: 'F' },
+  { positionField: 'pos_final', pointsField: 'pts_final', ballastField: 'kg_final', label: 'Final', shortLabel: 'F' },
+];
+const resultChampionshipScaleFields = [
+  { key: 'pts_qualy_sprint', label: 'Puntos Clasificación Sprint', shortLabel: 'PTS QS', integer: true },
+  { key: 'pts_sprint', label: 'Puntos Sprint', shortLabel: 'PTS S' },
+  { key: 'kg_sprint', label: 'Lastre Sprint', shortLabel: 'KG S', integer: true, ballast: true },
+  { key: 'pts_qualy_final', label: 'Puntos Clasificación Final', shortLabel: 'PTS QF', integer: true },
+  { key: 'pts_final', label: 'Puntos Final', shortLabel: 'PTS F' },
+  { key: 'kg_final', label: 'Lastre Final', shortLabel: 'KG F', integer: true, ballast: true },
 ];
 const resultScoringByPosition = Object.fromEntries(resultScoringFields.map(field => [field.positionField, field]));
 const toScoringInputValue = value => Number(value || 0) === 0 ? '' : String(value);
@@ -770,7 +789,7 @@ function ResultSpreadsheetCell({
         }
       }}
       title={error || undefined}
-      className={`flex h-10 min-w-full items-center pl-2 ${withAction === 'double' ? 'pr-[76px]' : withAction ? 'pr-10' : 'pr-2'} text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-racing-red ${type === 'pilot' ? 'justify-start font-semibold' : 'justify-center font-racing'} ${error ? 'bg-red-500/25 ring-2 ring-inset ring-red-500' : modified ? `bg-amber-400/20 ring-1 ring-inset ${selected ? 'ring-sky-400' : 'ring-amber-300/70'}` : selected ? 'bg-sky-500/20 ring-1 ring-inset ring-sky-400' : 'focus:bg-racing-dark'} ${disabled ? 'cursor-cell text-transparent' : type === 'attendance' ? 'cursor-cell font-bold text-violet-200' : 'cursor-cell text-white'}`}
+      className={`flex h-10 min-w-full items-center overflow-hidden whitespace-nowrap pl-1.5 ${withAction === 'double' ? 'pr-[76px]' : withAction ? 'pr-9' : 'pr-1.5'} outline-none focus:ring-1 focus:ring-inset focus:ring-racing-red ${type === 'pilot' ? 'justify-start text-xs font-semibold' : 'justify-center font-racing text-sm'} ${error ? 'bg-red-500/25 ring-2 ring-inset ring-red-500' : modified ? `bg-amber-400/20 ring-1 ring-inset ${selected ? 'ring-sky-400' : 'ring-amber-300/70'}` : selected ? 'bg-sky-500/20 ring-1 ring-inset ring-sky-400' : 'focus:bg-racing-dark'} ${disabled ? 'cursor-cell text-transparent' : type === 'attendance' ? 'cursor-cell font-bold text-violet-200' : 'cursor-cell text-white'}`}
     />
   );
 }
@@ -870,6 +889,10 @@ export default function Admin() {
   const [resultSprintMultiplier, setResultSprintMultiplier] = useState('1');
   const [resultFinalMultiplier, setResultFinalMultiplier] = useState('1');
   const [savingResultMultipliers, setSavingResultMultipliers] = useState(false);
+  const [savingResultVisibility, setSavingResultVisibility] = useState(false);
+  const [resultAppealDeadline, setResultAppealDeadline] = useState('');
+  const [savingResultAppealDeadline, setSavingResultAppealDeadline] = useState(false);
+  const [resultAppealDeadlineMessage, setResultAppealDeadlineMessage] = useState('');
   const [resultMultiplierMessage, setResultMultiplierMessage] = useState('');
   const [resultImportSession, setResultImportSession] = useState('sprint');
   const [resultImportedSessions, setResultImportedSessions] = useState({});
@@ -1075,12 +1098,69 @@ export default function Admin() {
     [resultRound, savedResults]
   );
 
+  const resultPreviousBallastByDriver = useMemo(() => {
+    if (!resultRound) return new Map();
+
+    const currentRound = Number(resultRound.ronda);
+    const applicableRounds = new Set(resultBallastRounds.map(round => Number(round.ronda)));
+    const driverById = new Map(resultRegisteredDrivers.map(driver => [String(driver.id), driver]));
+    const totalsBeforeRound = new Map();
+
+    const ensureDriverTotal = (driverId, fallbackName = '') => {
+      const driver = driverById.get(String(driverId));
+      const name = driver?.nombre || fallbackName;
+      const key = normalizeAssettoDriverName(name);
+      if (!key) return null;
+      if (!totalsBeforeRound.has(key)) {
+        totalsBeforeRound.set(key, parseResultBallast(resultDebutBallasts[String(driverId)]));
+      }
+      return key;
+    };
+
+    resultRegisteredDrivers.forEach(driver => ensureDriverTotal(driver.id, driver.nombre));
+    savedResults
+      .filter(result => !result._delete && Number(result.ronda) < currentRound && applicableRounds.has(Number(result.ronda)))
+      .forEach(result => {
+        const key = ensureDriverTotal(result.idpiloto, result.piloto);
+        if (!key) return;
+        const delta = parseResultBallast(result.kg_sprint)
+          + parseResultBallast(result.kg_sancion_sprint)
+          + parseResultBallast(result.kg_final)
+          + parseResultBallast(result.kg_sancion_final);
+        totalsBeforeRound.set(key, (totalsBeforeRound.get(key) || 0) + delta);
+      });
+
+    return totalsBeforeRound;
+  }, [resultBallastRounds, resultDebutBallasts, resultRegisteredDrivers, resultRound, savedResults]);
+
+  const resultProjectedBallastByDriver = useMemo(() => {
+    const projected = new Map(resultPreviousBallastByDriver);
+    if (!resultRound) return projected;
+
+    resultRoundResults.forEach(result => {
+      const sprintKey = normalizeAssettoDriverName(result.piloto_sprint || '');
+      if (sprintKey) {
+        const sprintDelta = parseResultBallast(result.kg_sprint) + parseResultBallast(result.kg_sancion_sprint);
+        projected.set(sprintKey, (projected.get(sprintKey) || 0) + sprintDelta);
+      }
+      const finalKey = normalizeAssettoDriverName(result.piloto_final || '');
+      if (finalKey) {
+        const finalDelta = parseResultBallast(result.kg_final) + parseResultBallast(result.kg_sancion_final);
+        projected.set(finalKey, (projected.get(finalKey) || 0) + finalDelta);
+      }
+    });
+
+    return projected;
+  }, [resultPreviousBallastByDriver, resultRound, resultRoundResults]);
+
   useEffect(() => {
     if (!resultRound) {
       setResultAttendancePoints('');
       setResultSprintMultiplier('1');
       setResultFinalMultiplier('1');
       setResultMultiplierMessage('');
+      setResultAppealDeadline('');
+      setResultAppealDeadlineMessage('');
       return;
     }
     const savedValues = [...new Set(savedResultRoundResults.map(result => Number(result.presentismo || 0)))];
@@ -1088,6 +1168,8 @@ export default function Admin() {
     setResultSprintMultiplier(String(Number(resultRound.multiplicador_sprint ?? 1)));
     setResultFinalMultiplier(String(Number(resultRound.multiplicador_final ?? 1)));
     setResultMultiplierMessage('');
+    setResultAppealDeadline(toDateTimeInputValue(resultRound.limite_apelaciones));
+    setResultAppealDeadlineMessage('');
   }, [resultRound, savedResultRoundResults]);
 
   const resultSheetRows = useMemo(() => {
@@ -1279,7 +1361,7 @@ export default function Admin() {
         if (!active) return;
         setChampionshipScoringRows((response.data.data || []).map(row => ({
           posicion: String(row.posicion),
-          ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, toScoringInputValue(row[field.pointsField])])),
+          ...Object.fromEntries(resultChampionshipScaleFields.map(field => [field.key, toScoringInputValue(row[field.key])])),
         })));
       })
       .catch(error => {
@@ -1774,6 +1856,16 @@ export default function Admin() {
         const loadedResults = res.data.data ?? [];
         setResults(buildEditableResultRows(loadedResults));
         setSavedResults(loadedResults);
+        const roundsWithResults = new Set(
+          loadedResults
+            .filter(result => !result._delete)
+            .map(result => String(result.ronda))
+        );
+        const latestRoundWithResults = [...resultRounds]
+          .reverse()
+          .find(round => roundsWithResults.has(String(round.ronda)));
+        const initialRound = latestRoundWithResults || resultRounds[0] || null;
+        setResultRoundId(initialRound ? String(initialRound.id) : '');
         setDirtyResults({});
         setDirtyResultCells({});
       } catch (err) {
@@ -1785,7 +1877,7 @@ export default function Admin() {
     };
 
     fetchResults();
-  }, [authorized, resultChampionshipId]);
+  }, [authorized, resultChampionshipId, resultRounds]);
 
   const handleCircuitChange = event => {
     const { name, value } = event.target;
@@ -2622,11 +2714,14 @@ export default function Admin() {
       },
     }[sessionKey];
 
-    const pointsField = resultScoringByPosition[session.positionField]?.pointsField;
+    const scoringConfig = resultScoringByPosition[session.positionField];
+    const pointsField = scoringConfig?.pointsField;
+    const ballastField = scoringConfig?.ballastField;
 
     canonicalByDriver.forEach(canonical => {
       const clearPatch = { ...sessionConfig.clear };
       if (preservePoints && pointsField) delete clearPatch[pointsField];
+      if (preservePoints && ballastField) delete clearPatch[ballastField];
       Object.assign(canonical, clearPatch);
       canonical.sanciones_detalle = {
         ...parseResultSanctionDetails(canonical.sanciones_detalle),
@@ -2677,6 +2772,7 @@ export default function Admin() {
       const resultKey = result._key || `id-${result.id}`;
       modifiedCells[`${resultKey}:${session.positionField}`] = true;
       if (!preservePoints && pointsField) modifiedCells[`${resultKey}:${pointsField}`] = true;
+      if (!preservePoints && ballastField) modifiedCells[`${resultKey}:${ballastField}`] = true;
     });
     setResults(nextResults);
     setDirtyResults(current => ({ ...current, ...dirty }));
@@ -2809,7 +2905,7 @@ export default function Admin() {
       _basePosition: Number(existingItems[0]?._basePosition) || getAssettoBasePosition(imported, sessionKey, entryKey),
       minute: Math.max(0, Math.trunc(Number(assettoSanctionDraft.minute) || 0)),
       second: Math.min(59, Math.max(0, Math.trunc(Number(assettoSanctionDraft.second) || 0))),
-      time: Math.max(0, Number(assettoSanctionDraft.time) || 0),
+      time: Math.max(0, Math.trunc(Number(assettoSanctionDraft.time) || 0)),
       positions: Math.max(0, Math.trunc(Number(assettoSanctionDraft.positions) || 0)),
       warnings: Math.max(0, Math.trunc(Number(assettoSanctionDraft.warnings) || 0)),
       ballast: Math.max(0, Math.trunc(Number(assettoSanctionDraft.ballast) || 0)),
@@ -2979,7 +3075,7 @@ export default function Admin() {
       type: assettoSanctionEdit.type === 'SANCIÓN DE OFICIO' ? 'SANCIÓN DE OFICIO' : 'DENUNCIA',
       minute: Math.max(0, Math.trunc(Number(assettoSanctionEdit.minute) || 0)),
       second: Math.min(59, Math.max(0, Math.trunc(Number(assettoSanctionEdit.second) || 0))),
-      time: Math.max(0, Number(assettoSanctionEdit.time) || 0),
+      time: Math.max(0, Math.trunc(Number(assettoSanctionEdit.time) || 0)),
       positions: Math.max(0, Math.trunc(Number(assettoSanctionEdit.positions) || 0)),
       warnings: Math.max(0, Math.trunc(Number(assettoSanctionEdit.warnings) || 0)),
       ballast: Math.max(0, Math.trunc(Number(assettoSanctionEdit.ballast) || 0)),
@@ -3088,7 +3184,7 @@ export default function Admin() {
     }
   };
 
-  const getScoringPatch = (positionField, value, multiplierOverride = null) => {
+  const getScoringPatch = (positionField, value, multiplierOverride = null, { includeBallast = true } = {}) => {
     const scoringField = resultScoringByPosition[positionField];
     const normalizedPosition = String(value ?? '').trim().toLocaleUpperCase('es-AR');
     if (!scoringField) return { [positionField]: normalizedPosition };
@@ -3103,17 +3199,23 @@ export default function Admin() {
         : 1;
     const basePoints = configuredRow ? parseResultPoints(configuredRow[scoringField.pointsField]) : 0;
     const multipliedPoints = Math.round((basePoints * (Number.isFinite(multiplier) ? multiplier : 1)) * 1000) / 1000;
-    return {
+    const patch = {
       [positionField]: normalizedPosition,
       [scoringField.pointsField]: configuredRow ? String(multipliedPoints) : '',
     };
+    if (includeBallast && scoringField.ballastField) {
+      patch[scoringField.ballastField] = configuredRow
+        ? String(parseResultBallast(configuredRow[scoringField.ballastField]))
+        : '';
+    }
+    return patch;
   };
 
   const addChampionshipScoringRow = () => {
     const nextPosition = Math.max(0, ...championshipScoringRows.map(row => Number(row.posicion) || 0)) + 1;
     setChampionshipScoringRows(current => [...current, {
       posicion: String(nextPosition),
-      ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, ''])),
+      ...Object.fromEntries(resultChampionshipScaleFields.map(field => [field.key, ''])),
     }]);
     setChampionshipScoringMessage('');
   };
@@ -3156,7 +3258,7 @@ export default function Admin() {
       const response = await championshipsApi.saveScoring(resultChampionshipId, championshipScoringRows);
       setChampionshipScoringRows((response.data.data || []).map(row => ({
         posicion: String(row.posicion),
-        ...Object.fromEntries(resultScoringFields.map(field => [field.pointsField, toScoringInputValue(row[field.pointsField])])),
+        ...Object.fromEntries(resultChampionshipScaleFields.map(field => [field.key, toScoringInputValue(row[field.key])])),
       })));
       setChampionshipScoringMessage(response.data.message || 'Escala guardada correctamente.');
     } catch (error) {
@@ -3555,8 +3657,8 @@ export default function Admin() {
         return {
           ...result,
           _key: resultKey,
-          ...getScoringPatch('pos_sprint', result.pos_sprint, { sprint, final }),
-          ...getScoringPatch('pos_final', result.pos_final, { sprint, final }),
+          ...getScoringPatch('pos_sprint', result.pos_sprint, { sprint, final }, { includeBallast: false }),
+          ...getScoringPatch('pos_final', result.pos_final, { sprint, final }, { includeBallast: false }),
         };
       }));
       if (targetKeys.size) {
@@ -3579,6 +3681,51 @@ export default function Admin() {
       setResultMultiplierMessage(error.response?.data?.error || 'No se pudieron guardar los multiplicadores de la fecha.');
     } finally {
       setSavingResultMultipliers(false);
+    }
+  };
+
+  const toggleResultRoundVisibility = async () => {
+    if (!resultRound || savingResultVisibility) return;
+    const nextVisible = Number(resultRound.resultados_visibles) !== 1;
+    setSavingResultVisibility(true);
+    setResultMessage('');
+    try {
+      const response = await eventsApi.updateResultsVisibility(resultChampionshipId, resultRound.ronda, nextVisible);
+      setEvents(current => current.map(event => (
+        String(event.idcampeonato) === String(resultChampionshipId) && String(event.ronda) === String(resultRound.ronda)
+          ? { ...event, resultados_visibles: nextVisible ? 1 : 0 }
+          : event
+      )));
+      setResultMessage(response.data.message || (nextVisible ? 'Resultados publicados.' : 'Resultados ocultados.'));
+    } catch (error) {
+      setResultMessage(error.response?.data?.error || 'No se pudo cambiar la visibilidad de los resultados.');
+    } finally {
+      setSavingResultVisibility(false);
+    }
+  };
+
+  const saveResultAppealDeadline = async () => {
+    if (!resultRound || savingResultAppealDeadline) return;
+    setSavingResultAppealDeadline(true);
+    setResultAppealDeadlineMessage('');
+    try {
+      const response = await eventsApi.updateAppealDeadline(
+        resultChampionshipId,
+        resultRound.ronda,
+        resultAppealDeadline
+      );
+      const savedDeadline = response.data.data?.limite_apelaciones || null;
+      setEvents(current => current.map(event => (
+        String(event.idcampeonato) === String(resultChampionshipId) && String(event.ronda) === String(resultRound.ronda)
+          ? { ...event, limite_apelaciones: savedDeadline }
+          : event
+      )));
+      setResultAppealDeadline(toDateTimeInputValue(savedDeadline));
+      setResultAppealDeadlineMessage(response.data.message || 'Límite de apelaciones guardado.');
+    } catch (error) {
+      setResultAppealDeadlineMessage(error.response?.data?.error || 'No se pudo guardar el límite de apelaciones.');
+    } finally {
+      setSavingResultAppealDeadline(false);
     }
   };
 
@@ -5810,7 +5957,7 @@ export default function Admin() {
                       onClick={() => setShowChampionshipScoring(true)}
                       className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-cyan-400/50 bg-cyan-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400 hover:text-black"
                     >
-                      <TrophyIcon className="h-4 w-4" /> Puntajes
+                      <TrophyIcon className="h-4 w-4" /> Puntos y lastres
                     </button>
                   ) : null}
                   {resultChampionshipId ? (
@@ -5820,6 +5967,21 @@ export default function Admin() {
                       className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-amber-400/50 bg-amber-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400 hover:text-black"
                     >
                       <BellAlertIcon className="h-4 w-4" /> Apercibimientos
+                    </button>
+                  ) : null}
+                  {resultRound ? (
+                    <button
+                      type="button"
+                      onClick={toggleResultRoundVisibility}
+                      disabled={savingResultVisibility || savingResults}
+                      className={`inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border px-3 text-[9px] font-bold uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${Number(resultRound.resultados_visibles) === 1
+                        ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400 hover:text-black'
+                        : 'border-gray-500/60 bg-black/25 text-gray-400 hover:border-white/50 hover:text-white'
+                      }`}
+                      title={Number(resultRound.resultados_visibles) === 1 ? 'Ocultar el detalle público de esta fecha' : 'Publicar el detalle de esta fecha'}
+                    >
+                      {Number(resultRound.resultados_visibles) === 1 ? <EyeIcon className="h-4 w-4" /> : <EyeSlashIcon className="h-4 w-4" />}
+                      {savingResultVisibility ? 'Actualizando...' : Number(resultRound.resultados_visibles) === 1 ? 'Resultados visibles' : 'Resultados ocultos'}
                     </button>
                   ) : null}
                   <button
@@ -5837,6 +5999,33 @@ export default function Admin() {
 
           {resultRound ? (
             <div className="border-b border-racing-border bg-black/20 px-4 py-3 lg:px-6">
+              <section className="mb-4 border border-amber-300/25 bg-amber-300/[0.04] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <ClockIcon className="mt-0.5 h-6 w-6 shrink-0 text-amber-300" />
+                    <div>
+                      <h3 className="font-racing text-lg font-bold uppercase text-white">Apelaciones y reclamos · Fecha {resultRound.ronda}</h3>
+                      <p className="mt-1 text-xs text-gray-500">Definí hasta qué día y hora se aceptarán apelaciones. Dejalo vacío y guardá para eliminar el plazo.</p>
+                    </div>
+                  </div>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-auto">
+                    <label className="min-w-0 sm:w-72">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Fecha y hora límite</span>
+                      <input
+                        type="datetime-local"
+                        value={resultAppealDeadline}
+                        onChange={event => { setResultAppealDeadline(event.target.value); setResultAppealDeadlineMessage(''); }}
+                        className="input-field mt-1 h-11 py-0"
+                        disabled={savingResultAppealDeadline}
+                      />
+                    </label>
+                    <button type="button" onClick={saveResultAppealDeadline} disabled={savingResultAppealDeadline} className="inline-flex h-11 items-center justify-center border border-amber-300/50 px-4 text-[10px] font-bold uppercase tracking-wider text-amber-200 transition hover:bg-amber-300 hover:text-black disabled:cursor-not-allowed disabled:opacity-40">
+                      {savingResultAppealDeadline ? 'Guardando...' : 'Guardar plazo'}
+                    </button>
+                  </div>
+                </div>
+                {resultAppealDeadlineMessage ? <p className="mt-3 text-xs font-semibold text-amber-200">{resultAppealDeadlineMessage}</p> : null}
+              </section>
               <section className="mb-4 border border-racing-border bg-racing-dark/70 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-start gap-3">
@@ -5913,30 +6102,32 @@ export default function Admin() {
             <table className="w-max min-w-full table-fixed border-collapse text-sm">
               <thead className="sticky top-0 z-30">
                 <tr className="bg-racing-dark">
-                  <th className="sticky left-0 z-40 w-16 border border-racing-border bg-racing-dark px-2 py-3 text-center text-[10px] uppercase tracking-wider text-gray-400">#</th>
-                  <th className="sticky left-16 z-40 w-64 border border-racing-border bg-racing-dark px-3 py-3 text-left text-[10px] uppercase tracking-wider text-gray-400">Piloto</th>
+                  <th className="sticky left-0 z-40 w-12 min-w-12 max-w-12 border border-racing-border bg-racing-dark px-1 py-3 text-center text-[9px] uppercase tracking-wider text-gray-400">#</th>
+                  <th className="sticky left-12 z-40 w-40 min-w-40 max-w-40 border border-racing-border bg-racing-dark px-2 py-3 text-left text-[9px] uppercase tracking-wider text-gray-400">Piloto</th>
                   {resultSpreadsheetColumns.map(column => (
-                    <th key={column.key} className={`${column.type === 'pilot' ? 'w-64 text-left' : column.type === 'attendance' ? 'w-16 text-center' : 'w-24 text-center'} border px-2 py-3 text-[10px] uppercase tracking-wider ${column.type === 'attendance' ? 'border-violet-400/40 bg-violet-500/15 font-bold text-violet-200' : 'border-racing-border bg-racing-dark text-gray-400'}`} title={column.title || column.label}>
+                    <th key={column.key} className={`${getResultSpreadsheetColumnWidth(column)} ${column.type === 'pilot' ? 'text-left' : 'text-center'} border px-1 py-3 text-[8px] leading-tight uppercase tracking-wide ${column.type === 'attendance' ? 'border-l-2 border-violet-400/60 bg-[#1b1530] font-bold text-violet-200' : 'border-racing-border bg-racing-dark text-gray-400'}`} title={column.title || column.label}>
                       {column.label}
                     </th>
                   ))}
+                  <th className="w-16 min-w-16 max-w-16 border border-orange-400/40 bg-[#241b12] px-1 py-2 text-center font-bold uppercase tracking-wide text-orange-200" title="Lastre acumulado con el que el piloto llega a esta fecha; no incluye los KG de la fecha seleccionada"><span className="block text-[8px]">KG previo</span><span className="mt-0.5 block text-[6px] font-normal text-orange-300/60">F. anterior</span></th>
+                  <th className="w-20 min-w-20 max-w-20 border border-cyan-400/40 bg-[#102326] px-1 py-2 text-center font-bold uppercase tracking-wide text-cyan-200" title="Lastre resultante al sumar Sprint, Final y sanciones de la fecha seleccionada"><span className="block text-[8px]">KG result.</span><span className="mt-0.5 block text-[6px] font-normal text-cyan-300/60">Con esta fecha</span></th>
                 </tr>
               </thead>
               <tbody>
                 {loadingResults ? (
-                  <tr><td colSpan={resultSpreadsheetColumns.length + 2} className="border border-racing-border px-6 py-14 text-center text-gray-500">Cargando resultados...</td></tr>
+                  <tr><td colSpan={resultSpreadsheetColumns.length + 4} className="border border-racing-border px-6 py-14 text-center text-gray-500">Cargando resultados...</td></tr>
                 ) : !resultRound ? (
-                  <tr><td colSpan={resultSpreadsheetColumns.length + 2} className="border border-racing-border px-6 py-14 text-center text-gray-500">Seleccioná un campeonato y una fecha para abrir la planilla.</td></tr>
+                  <tr><td colSpan={resultSpreadsheetColumns.length + 4} className="border border-racing-border px-6 py-14 text-center text-gray-500">Seleccioná un campeonato y una fecha para abrir la planilla.</td></tr>
                 ) : (
                   resultSheetRows.map((row, rowIndex) => {
                     const result = row.result;
                     const resultKey = result?._key || (result?.id ? `id-${result.id}` : `empty-${row.position}`);
                     return (
                       <tr key={row.unpositioned ? `unpositioned-${resultKey}` : `position-${row.position}`} className={rowIndex % 2 ? 'bg-black/10' : 'bg-racing-gray'}>
-                        <td className={`sticky left-0 z-10 h-10 border border-racing-border p-0 text-center font-racing text-base ${row.unpositioned ? 'bg-gray-900 text-gray-500' : row.position <= 3 ? 'bg-racing-dark text-racing-red' : 'bg-racing-dark text-gray-300'}`}>
+                        <td className={`sticky left-0 z-10 h-10 w-12 min-w-12 max-w-12 border border-racing-border p-0 text-center font-racing text-sm ${row.unpositioned ? 'bg-gray-900 text-gray-500' : row.position <= 3 ? 'bg-racing-dark text-racing-red' : 'bg-racing-dark text-gray-300'}`}>
                           {row.unpositioned ? '—' : row.position}
                         </td>
-                        <td className="sticky left-16 z-10 h-10 w-64 max-w-64 border border-racing-border bg-racing-gray p-0 font-semibold text-white">
+                        <td className="sticky left-12 z-10 h-10 w-40 min-w-40 max-w-40 border border-racing-border bg-racing-gray p-0 font-semibold text-white">
                           <div className="relative">
                           <ResultSpreadsheetCell
                             value={result?.piloto || ''}
@@ -5976,7 +6167,7 @@ export default function Admin() {
                           const gridColumnIndex = columnIndex + 1;
                           if (column.type === 'pilot') {
                             return (
-                              <td key={column.key} className="h-10 w-64 max-w-64 border border-racing-border p-0 font-semibold text-white">
+                              <td key={column.key} className={`h-10 ${getResultSpreadsheetColumnWidth(column)} border border-racing-border p-0 font-semibold text-white`}>
                                 <ResultSpreadsheetCell
                                   value={result?.[column.key] ?? result?.piloto ?? ''}
                                   type="pilot"
@@ -5998,7 +6189,7 @@ export default function Admin() {
                           }
                           const value = result?.[column.key] ?? '';
                           return (
-                            <td key={column.key} className={`h-10 border p-0 ${column.type === 'attendance' ? 'w-16 border-violet-400/30 bg-violet-500/[0.08]' : 'w-24 border-racing-border'}`}>
+                            <td key={column.key} className={`h-10 ${getResultSpreadsheetColumnWidth(column)} border p-0 ${column.type === 'attendance' ? 'border-l-2 border-violet-400/50 bg-[#171326]' : 'border-racing-border'}`}>
                               <ResultSpreadsheetCell
                                 value={value}
                                 type={column.type}
@@ -6018,6 +6209,20 @@ export default function Admin() {
                             </td>
                           );
                         })}
+                        {(() => {
+                          const ballastDriverName = result?.piloto_final || result?.piloto || '';
+                          const previousBallast = resultPreviousBallastByDriver.get(normalizeAssettoDriverName(ballastDriverName));
+                          const projectedBallast = resultProjectedBallastByDriver.get(normalizeAssettoDriverName(ballastDriverName));
+                          if (!result || !ballastDriverName || previousBallast === undefined) {
+                            return <><td className="h-10 w-16 min-w-16 max-w-16 border border-orange-400/20 bg-black/10 text-center text-gray-700">—</td><td className="h-10 w-20 min-w-20 max-w-20 border border-cyan-400/20 bg-black/10 text-center text-gray-700">—</td></>;
+                          }
+                          return (
+                            <>
+                              <td className="h-10 w-16 min-w-16 max-w-16 border border-orange-400/30 bg-orange-400/[0.06] px-1 text-center font-racing" title={`${ballastDriverName}: ${formatResultBallast(previousBallast)} acumulados hasta la fecha anterior`}><strong className={`text-[11px] ${getResultBallastClass(previousBallast)}`}>{formatResultBallast(previousBallast)}</strong></td>
+                              <td className={`h-10 w-20 min-w-20 max-w-20 border px-1 text-center font-racing ${parseResultBallast(projectedBallast) !== parseResultBallast(previousBallast) ? 'border-cyan-300/70 bg-cyan-400/15 ring-1 ring-inset ring-cyan-300/50' : 'border-cyan-400/30 bg-cyan-400/[0.05]'}`} title={`${ballastDriverName}: ${formatResultBallast(previousBallast)} previos + ${formatResultBallast(parseResultBallast(projectedBallast) - parseResultBallast(previousBallast))} de esta fecha = ${formatResultBallast(projectedBallast)}`}><strong className={`text-xs ${getResultBallastClass(projectedBallast)}`}>{formatResultBallast(projectedBallast)}</strong></td>
+                            </>
+                          );
+                        })()}
                       </tr>
                     );
                   })
@@ -6220,14 +6425,40 @@ export default function Admin() {
 
           {showChampionshipScoring && resultChampionshipId ? (
             <div className="fixed inset-0 z-[116] flex items-start justify-center overflow-hidden bg-black/90 px-3 py-3 sm:px-4 sm:py-6" onMouseDown={event => { if (event.target === event.currentTarget) setShowChampionshipScoring(false); }}>
-              <section role="dialog" aria-modal="true" aria-labelledby="championship-scoring-title" className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden border border-cyan-400/40 bg-racing-dark shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-3rem)]">
+              <section role="dialog" aria-modal="true" aria-labelledby="championship-scoring-title" className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden border border-cyan-400/40 bg-racing-dark shadow-2xl shadow-black/70 sm:max-h-[calc(100vh-3rem)]">
                 <div className="flex items-start justify-between gap-4 border-b border-racing-border px-4 py-4 sm:px-5">
-                  <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300">Configuración por campeonato</p><h3 id="championship-scoring-title" className="mt-1 font-racing text-2xl font-bold text-white">Escala de posiciones y puntajes</h3><p className="mt-1 text-xs leading-relaxed text-gray-500">{resultChampionship?.categoria} · Temporada {resultChampionship?.temporada}. Solo las posiciones enteras reciben puntaje automático.</p></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300">Configuración por campeonato</p><h3 id="championship-scoring-title" className="mt-1 font-racing text-2xl font-bold text-white">Escala de puntos y lastres</h3><p className="mt-1 text-xs leading-relaxed text-gray-500">{resultChampionship?.categoria} · Temporada {resultChampionship?.temporada}. Las posiciones enteras reciben automáticamente sus puntos y los KG configurados.</p></div>
                   <button type="button" onClick={() => setShowChampionshipScoring(false)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-400 transition hover:border-cyan-300 hover:text-white" aria-label="Cerrar configuración de puntajes"><XMarkIcon className="h-5 w-5"/></button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-racing text-xl font-bold text-white">Puntaje automático</h4><p className="mt-1 text-xs text-gray-500">Al importar o modificar una posición, la planilla completa el valor configurado. Después podés editarlo manualmente.</p></div><button type="button" onClick={addChampionshipScoringRow} className="border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black">Agregar posición</button></div>
-                  {loadingChampionshipScoring ? <p className="py-14 text-center text-sm text-gray-500">Cargando escala...</p> : <div className="mt-3 max-h-[58vh] overflow-auto border border-racing-border"><table className="w-full min-w-[620px] border-collapse text-xs"><thead className="sticky top-0 z-10"><tr className="bg-racing-gray text-[9px] uppercase tracking-wider text-gray-500"><th className="w-24 border border-racing-border px-2 py-2 text-center">Posición</th>{resultScoringFields.map(field => <th key={field.pointsField} className="border border-racing-border px-2 py-2 text-center" title={field.label}>{field.shortLabel}</th>)}<th className="w-10 border border-racing-border"/></tr></thead><tbody>{championshipScoringRows.map((row, index) => <tr key={index} className={index % 2 ? 'bg-black/10' : 'bg-transparent'}><td className="h-8 border border-racing-border p-0"><input type="number" min="1" max="999" step="1" value={row.posicion} data-scoring-cell={`${index}:posicion`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, 'posicion')} onChange={event => updateChampionshipScoringRow(index, 'posicion', event.target.value)} className="h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base font-bold text-white outline-none focus:bg-cyan-400/10 focus:ring-1 focus:ring-inset focus:ring-cyan-400"/></td>{resultScoringFields.map(field => <td key={field.pointsField} className="h-8 border border-racing-border p-0"><input type="number" min="0" step={field.integer ? '1' : '0.01'} value={row[field.pointsField]} data-scoring-cell={`${index}:${field.pointsField}`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, field.pointsField)} onChange={event => updateChampionshipScoringRow(index, field.pointsField, event.target.value)} className="h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base text-cyan-300 outline-none focus:bg-cyan-400/10 focus:ring-1 focus:ring-inset focus:ring-cyan-400" placeholder="" aria-label={`${field.label}, posición ${row.posicion}`}/></td>)}<td className="h-8 border border-racing-border p-0 text-center"><button type="button" onClick={() => removeChampionshipScoringRow(index)} className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar posición ${row.posicion}`}><TrashIcon className="h-3.5 w-3.5"/></button></td></tr>)}{!championshipScoringRows.length ? <tr><td colSpan={resultScoringFields.length + 2} className="border border-dashed border-racing-border px-5 py-10 text-center text-sm text-gray-500">Todavía no configuraste posiciones. Agregá la primera para comenzar.</td></tr> : null}</tbody></table></div>}
+                  <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-racing text-xl font-bold text-white">Asignación automática</h4><p className="mt-1 text-xs text-gray-500">Al importar o recalcular una tanda, la planilla completa los puntos y lastres de Sprint y Final. Después podés modificar cada celda manualmente sin que se sobrescriba al editar otros datos.</p></div><button type="button" onClick={addChampionshipScoringRow} className="border border-cyan-400/50 bg-cyan-400/10 px-4 py-2 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black">Agregar posición</button></div>
+                  {loadingChampionshipScoring ? <p className="py-14 text-center text-sm text-gray-500">Cargando escala...</p> : (
+                    <div className="mt-3 max-h-[58vh] overflow-auto border border-racing-border">
+                      <table className="w-full min-w-[760px] border-collapse text-xs">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-racing-gray text-[9px] uppercase tracking-wider text-gray-500">
+                            <th className="w-24 border border-racing-border px-2 py-2 text-center">Posición</th>
+                            {resultChampionshipScaleFields.map(field => <th key={field.key} className={`border px-2 py-2 text-center ${field.ballast ? 'border-orange-400/30 bg-orange-400/[0.08] text-orange-200' : 'border-racing-border'}`} title={field.label}>{field.shortLabel}</th>)}
+                            <th className="w-10 border border-racing-border" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {championshipScoringRows.map((row, index) => (
+                            <tr key={index} className={index % 2 ? 'bg-black/10' : 'bg-transparent'}>
+                              <td className="h-8 border border-racing-border p-0"><input type="number" min="1" max="999" step="1" value={row.posicion} data-scoring-cell={`${index}:posicion`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, 'posicion')} onChange={event => updateChampionshipScoringRow(index, 'posicion', event.target.value)} className="h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base font-bold text-white outline-none focus:bg-cyan-400/10 focus:ring-1 focus:ring-inset focus:ring-cyan-400" /></td>
+                              {resultChampionshipScaleFields.map(field => (
+                                <td key={field.key} className={`h-8 border p-0 ${field.ballast ? 'border-orange-400/25 bg-orange-400/[0.035]' : 'border-racing-border'}`}>
+                                  <input type="number" min={field.ballast ? undefined : '0'} step={field.integer ? '1' : '0.01'} value={row[field.key]} data-scoring-cell={`${index}:${field.key}`} onKeyDown={event => handleChampionshipScoringKeyDown(event, index, field.key)} onChange={event => updateChampionshipScoringRow(index, field.key, event.target.value)} className={`h-8 w-full border-0 bg-transparent px-2 text-center font-racing text-base outline-none focus:ring-1 focus:ring-inset ${field.ballast ? 'text-orange-300 focus:bg-orange-400/10 focus:ring-orange-400' : 'text-cyan-300 focus:bg-cyan-400/10 focus:ring-cyan-400'}`} placeholder="" aria-label={`${field.label}, posición ${row.posicion}`} />
+                                </td>
+                              ))}
+                              <td className="h-8 border border-racing-border p-0 text-center"><button type="button" onClick={() => removeChampionshipScoringRow(index)} className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar posición ${row.posicion}`}><TrashIcon className="h-3.5 w-3.5" /></button></td>
+                            </tr>
+                          ))}
+                          {!championshipScoringRows.length ? <tr><td colSpan={resultChampionshipScaleFields.length + 2} className="border border-dashed border-racing-border px-5 py-10 text-center text-sm text-gray-500">Todavía no configuraste posiciones. Agregá la primera para comenzar.</td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <div className="mt-5 flex flex-col-reverse gap-3 border-t border-racing-border pt-4 sm:flex-row sm:items-center sm:justify-between"><p className={`text-sm ${championshipScoringMessage.toLocaleLowerCase('es-AR').includes('correctamente') ? 'text-emerald-300' : 'text-amber-300'}`}>{championshipScoringMessage}</p><button type="button" onClick={saveChampionshipScoring} disabled={savingChampionshipScoring || loadingChampionshipScoring} className="bg-cyan-400 px-6 py-3 text-xs font-bold uppercase text-black transition hover:bg-cyan-300 disabled:opacity-40">{savingChampionshipScoring ? 'Guardando...' : 'Guardar escala'}</button></div>
                 </div>
               </section>
@@ -6352,9 +6583,11 @@ export default function Admin() {
             const applyRepositionTarget = targetKey => {
               const targetIndex = repositionBaseRows.findIndex(entry => entry.key === targetKey);
               if (repositionPilotIndex < 0 || targetIndex <= repositionPilotIndex) return;
+              const requiredTotalPositions = targetIndex - repositionPilotIndex;
+              const alreadyAppliedPositions = Math.max(0, Math.trunc(Number(accumulatedSanction.positions) || 0));
               setAssettoSanctionDraft(current => ({
                 ...current,
-                positions: targetIndex - repositionPilotIndex,
+                positions: Math.max(0, requiredTotalPositions - alreadyAppliedPositions),
                 dq: false,
                 noSanction: false,
               }));
@@ -6397,7 +6630,7 @@ export default function Admin() {
                                 {[
                                   ['minute', 'Minuto', 1],
                                   ['second', 'Segundo', 1],
-                                  ['time', 'Tiempo seg.', 0.1],
+                                  ['time', 'Tiempo seg.', 1],
                                   ['positions', 'Puestos', 1],
                                   ['warnings', 'AP', 1],
                                   ['ballast', 'Lastre KG', 5],
@@ -6426,7 +6659,7 @@ export default function Admin() {
                         {[
                           ['minute', 'Minuto', 1],
                           ['second', 'Segundo', 1],
-                          ['time', 'Tiempo seg.', 0.1],
+                          ['time', 'Tiempo seg.', 1],
                           ['positions', 'Puestos', 1],
                           ['warnings', 'AP', 1],
                           ['ballast', 'Lastre KG', 5],
@@ -6468,7 +6701,7 @@ export default function Admin() {
                             {repositionTargets.map(entry => <option key={entry.key} value={entry.key}>{entry.positionLabel} · {entry.driverName}</option>)}
                           </select>
                         </label>
-                        <p className="mt-2 text-[10px] leading-relaxed text-gray-500">Al elegir un piloto se calcula automáticamente el recargo para ubicar al sancionado justo detrás. Volver a «Seleccionar piloto» no modifica la posición.</p>
+                        <p className="mt-2 text-[10px] leading-relaxed text-gray-500">Al elegir un piloto se calculan solamente los puestos adicionales necesarios para ubicar al sancionado justo detrás, descontando los recargos que ya tenga aplicados. Volver a «Seleccionar piloto» no modifica la posición.</p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className={`flex items-center justify-between border px-4 py-3 ${assettoSanctionDraft.noSanction ? 'cursor-not-allowed border-racing-border text-gray-700 opacity-40' : assettoSanctionDraft.dq ? 'cursor-pointer border-red-400 bg-red-500/10 text-red-300' : 'cursor-pointer border-racing-border text-gray-400'}`}>
@@ -6523,23 +6756,8 @@ export default function Admin() {
                     </aside>
                   </div>
 
-                  <div className="flex flex-col-reverse gap-2 border-t border-racing-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <button type="button" onClick={() => setAssettoSanctionDraft(emptyAssettoSanction())} className="btn-secondary justify-center">Limpiar sanción</button>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssettoSanctionModal(null);
-                          handleSaveResults();
-                        }}
-                        disabled={!Object.keys(dirtyResults).length || savingResults || Boolean(assettoSanctionEdit) || draftHasValue}
-                        className="btn-secondary justify-center disabled:cursor-not-allowed disabled:opacity-35"
-                        title={assettoSanctionEdit || draftHasValue ? 'Primero aplicá o descartá la edición actual' : 'Guardar los resultados de la fecha'}
-                      >
-                        {savingResults ? 'Guardando...' : 'Guardar resultados'}
-                      </button>
-                      <button type="button" onClick={applyAssettoSanction} className="btn-primary justify-center">Aplicar y recalcular</button>
-                    </div>
+                  <div className="flex justify-end border-t border-racing-border px-5 py-4">
+                    <button type="button" onClick={applyAssettoSanction} className="btn-primary justify-center">Aplicar y recalcular</button>
                   </div>
                 </section>
               </div>
@@ -6650,7 +6868,7 @@ export default function Admin() {
                 </label>
                 <label className="block">
                   <span className="text-sm text-gray-300">Rec. tiempo</span>
-                  <input name="recargo_tiempo" type="number" min="0" value={resultForm.recargo_tiempo} onChange={handleResultChange} className="input-field mt-2" />
+                  <input name="recargo_tiempo" type="number" min="0" step="1" value={resultForm.recargo_tiempo} onChange={handleResultChange} className="input-field mt-2" />
                 </label>
                 <label className="block">
                   <span className="text-sm text-gray-300">Rec. pos.</span>

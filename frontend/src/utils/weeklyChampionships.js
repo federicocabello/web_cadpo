@@ -2,6 +2,10 @@ import { parseCalendarDate } from './calendarDate';
 
 const parseDate = value => parseCalendarDate(value);
 const ACTIVE_WINDOW_MS = 60 * 60 * 1000;
+// Una fecha completa puede extenderse bastante más que la hora informada en
+// el calendario (práctica, clasificación y carreras). Esta ventana evita que
+// Tiempos en vivo salte al circuito siguiente mientras la jornada sigue activa.
+const LIVE_TIMING_ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
 const calendarDaysUntil = (value, now) => {
   const date = parseDate(value);
   const currentDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
@@ -77,7 +81,40 @@ const hasLiveTimingConfiguration = event => {
 };
 
 export const getLiveTimingEvents = (events, now = new Date()) =>
-  getWeeklyChampionshipEvents(
-    (Array.isArray(events) ? events : []).filter(hasLiveTimingConfiguration),
-    now,
-  );
+  (() => {
+    const current = now.getTime();
+    const configuredEvents = (Array.isArray(events) ? events : [])
+      .filter(hasLiveTimingConfiguration)
+      .filter(event => Number.isFinite(parseDate(event.fecha)?.getTime()))
+      .filter(event => parseDate(event.fecha).getTime() + LIVE_TIMING_ACTIVE_WINDOW_MS > current);
+
+    if (!configuredEvents.length) return [];
+
+    const isActive = event => {
+      const start = parseDate(event.fecha).getTime();
+      return start <= current && current < start + LIVE_TIMING_ACTIVE_WINDOW_MS;
+    };
+    const comparePriority = (a, b) => {
+      const aActive = isActive(a);
+      const bActive = isActive(b);
+      if (aActive !== bActive) return aActive ? -1 : 1;
+
+      // Si dos fechas se superponen, la que comenzó primero también es la
+      // que está más cerca de terminar y debe conservar la prioridad.
+      return parseDate(a.fecha).getTime() - parseDate(b.fecha).getTime();
+    };
+
+    const orderedEvents = [...configuredEvents].sort(comparePriority);
+    const [weekStart, weekEnd] = getWeekBounds(parseDate(orderedEvents[0].fecha));
+    const eventsInPriorityWeek = orderedEvents.filter(event => {
+      const timestamp = parseDate(event.fecha).getTime();
+      return timestamp >= weekStart && timestamp < weekEnd;
+    });
+
+    const byChampionship = new Map();
+    eventsInPriorityWeek.forEach(event => {
+      if (!byChampionship.has(event.idcampeonato)) byChampionship.set(event.idcampeonato, event);
+    });
+
+    return [...byChampionship.values()].sort(comparePriority);
+  })();

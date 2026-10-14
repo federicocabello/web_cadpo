@@ -14,7 +14,7 @@ import {
 import { authApi, championshipsApi, driversApi, eventsApi, liveTimingApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
-import { getLiveTimingEvents, getWeeklyChampionshipEvents } from '../utils/weeklyChampionships';
+import { getLiveTimingEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
@@ -55,17 +55,17 @@ function SectorMiniTable({ sectors, fastestSectors, leaderSectors }) {
   if (!sectors?.length) return null;
 
   return (
-    <div className="grid shrink-0 gap-x-2 font-racing tabular-nums" style={{ gridTemplateColumns: `repeat(${sectors.length}, minmax(0, 1fr))` }}>
+    <div className="grid shrink-0 gap-x-2 font-racing tabular-nums md:gap-x-1 2xl:gap-x-2" style={{ gridTemplateColumns: `repeat(${sectors.length}, minmax(0, 1fr))` }}>
       {sectors.map(sector => (
-        <span key={`label-${sector.index}`} className="flex items-baseline gap-1 text-left text-[11px] font-bold uppercase text-white">
+        <span key={`label-${sector.index}`} className="flex items-baseline gap-1 text-left text-[11px] font-bold uppercase text-white md:text-[9px] 2xl:text-[11px]">
           S{sector.index + 1}
-          <strong className={`text-xs ${sectorDeltaColor(sector, fastestSectors, leaderSectors)}`}>
+          <strong className={`text-xs md:text-[10px] 2xl:text-xs ${sectorDeltaColor(sector, fastestSectors, leaderSectors)}`}>
             {formatSectorDelta(sector, leaderSectors)}
           </strong>
         </span>
       ))}
       {sectors.map(sector => (
-        <span key={`time-${sector.index}`} className={`text-left text-lg font-bold leading-none ${sectorColor(sector, fastestSectors)}`}>
+        <span key={`time-${sector.index}`} className={`text-left text-lg font-bold leading-none md:text-sm xl:text-base 2xl:text-lg ${sectorColor(sector, fastestSectors)}`}>
           {formatSectorTime(sector.time)}
         </span>
       ))}
@@ -183,12 +183,8 @@ export default function LiveTiming() {
   const hasRenderedRowsRef = useRef(false);
   const timingRequestInFlightRef = useRef(false);
   const weeklyEvents = useMemo(() => getLiveTimingEvents(calendarEvents, new Date(now)), [calendarEvents, now]);
-  const calendarSchedule = useMemo(
-    () => getWeeklyChampionshipEvents(calendarEvents, new Date(now)),
-    [calendarEvents, now],
-  );
-  const raceEvent = calendarSchedule.find(event => event.idcampeonato === selectedChampionshipId)
-    || calendarSchedule[0]
+  const raceEvent = weeklyEvents.find(event => event.idcampeonato === selectedChampionshipId)
+    || weeklyEvents[0]
     || null;
 
   const loadTiming = useCallback(async (manual = false) => {
@@ -284,8 +280,12 @@ export default function LiveTiming() {
         const activeEvents = getLiveTimingEvents(loadedEvents);
         setCalendarError(false);
         setCalendarEvents(loadedEvents);
+        const priorityEvent = activeEvents[0];
+        const priorityAlreadyStarted = (parseCalendarDate(priorityEvent?.fecha)?.getTime() || Infinity) <= Date.now();
         const requestedEvent = activeEvents.find(event => String(event.idcampeonato) === String(requestedChampionshipId));
-        setSelectedChampionshipId(requestedEvent?.idcampeonato || activeEvents[0]?.idcampeonato || null);
+        setSelectedChampionshipId(priorityAlreadyStarted
+          ? priorityEvent?.idcampeonato || null
+          : requestedEvent?.idcampeonato || priorityEvent?.idcampeonato || null);
       } catch (err) {
         console.error('No se pudo cargar la fecha del calendario:', err);
         setCalendarError(true);
@@ -301,8 +301,11 @@ export default function LiveTiming() {
 
   useEffect(() => {
     if (weeklyEvents.length) {
-      if (!weeklyEvents.some(event => event.idcampeonato === selectedChampionshipId)) {
-        setSelectedChampionshipId(weeklyEvents[0].idcampeonato);
+      const priorityEvent = weeklyEvents[0];
+      const priorityAlreadyStarted = (parseCalendarDate(priorityEvent.fecha)?.getTime() || Infinity) <= now;
+      const selectedStillAvailable = weeklyEvents.some(event => event.idcampeonato === selectedChampionshipId);
+      if (!selectedStillAvailable || (priorityAlreadyStarted && priorityEvent.idcampeonato !== selectedChampionshipId)) {
+        setSelectedChampionshipId(priorityEvent.idcampeonato);
       }
       return;
     }
@@ -312,7 +315,7 @@ export default function LiveTiming() {
       setTiming(null);
       setLoading(false);
     }
-  }, [calendarLoaded, selectedChampionshipId, weeklyEvents]);
+  }, [calendarLoaded, now, selectedChampionshipId, weeklyEvents]);
 
   useEffect(() => {
     const loadDriverCountries = async () => {
@@ -916,18 +919,18 @@ export default function LiveTiming() {
             </div>
 
             <div className="scrollbar-hidden hidden overflow-x-auto md:block">
-              <table className={`w-full table-fixed border-collapse text-left text-base ${qualifyingSession ? 'min-w-[1500px]' : 'min-w-[1780px]'}`}>
+              <table className={`w-full table-fixed border-collapse text-left text-sm 2xl:text-base ${qualifyingSession ? 'min-w-[1080px]' : 'min-w-[1260px]'}`}>
                 <thead className="bg-black text-[10px] font-bold uppercase tracking-widest text-gray-500">
                   <tr>
-                    <th className="w-16 px-4 py-3 text-center">Pos.</th>
-                    <th className="w-[340px] px-4 py-3">Piloto</th>
-                    <th className="w-[340px] px-4 py-3">Auto</th>
-                    <th className="w-[260px] px-4 py-3">Sectores</th>
-                    <th className="w-[160px] px-4 py-3 text-right">Mejor vuelta</th>
-                    <th className="w-[120px] px-4 py-3 text-right">Diferencia</th>
-                    <th className="w-[90px] px-4 py-3 text-center">Vueltas</th>
-                    <th className="w-[130px] px-4 py-3 text-right">Vel. máx.</th>
-                    {!qualifyingSession && <th className="w-[280px] px-4 py-3 text-center">Habilitación</th>}
+                    <th className="w-12 px-2 py-2.5 text-center 2xl:w-16 2xl:px-4 2xl:py-3">Pos.</th>
+                    <th className="w-[230px] px-2.5 py-2.5 2xl:w-[340px] 2xl:px-4 2xl:py-3">Piloto</th>
+                    <th className="w-[230px] px-2.5 py-2.5 2xl:w-[340px] 2xl:px-4 2xl:py-3">Auto</th>
+                    <th className="w-[200px] px-2.5 py-2.5 2xl:w-[260px] 2xl:px-4 2xl:py-3">Sectores</th>
+                    <th className="w-[125px] px-2.5 py-2.5 text-right 2xl:w-[160px] 2xl:px-4 2xl:py-3">Mejor vuelta</th>
+                    <th className="w-[95px] px-2 py-2.5 text-right 2xl:w-[120px] 2xl:px-4 2xl:py-3">Diferencia</th>
+                    <th className="w-[65px] px-2 py-2.5 text-center 2xl:w-[90px] 2xl:px-4 2xl:py-3">Vueltas</th>
+                    <th className="w-[95px] px-2 py-2.5 text-right 2xl:w-[130px] 2xl:px-4 2xl:py-3">Vel. máx.</th>
+                    {!qualifyingSession && <th className="w-[172px] px-2 py-2.5 text-center 2xl:w-[280px] 2xl:px-4 2xl:py-3">Habilitación</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
@@ -957,21 +960,21 @@ export default function LiveTiming() {
                         className={`timing-driver-row ${qualifyingSession ? 'timing-driver-row-compact' : ''} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                         style={{ '--row-shift': `${positionChange * 54}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                       >
-                        <td className="px-4 py-3 text-center font-racing text-xl font-bold text-white">
+                        <td className="px-2 py-2 text-center font-racing text-lg font-bold text-white 2xl:px-4 2xl:py-3 2xl:text-xl">
                           <span className="inline-flex items-center justify-center gap-1">
                             {index + 1}
                             {positionChange > 0 ? <ArrowUpIcon className="timing-position-arrow h-4 w-4 text-green-400" /> : null}
                             {positionChange < 0 ? <ArrowDownIcon className="timing-position-arrow h-4 w-4 text-red-400" /> : null}
                           </span>
                         </td>
-                        <td className="w-[340px] px-4 py-3">
+                        <td className="w-[230px] px-2.5 py-2 2xl:w-[340px] 2xl:px-4 2xl:py-3">
                           <div className="min-w-0">
                             <div className="min-w-0">
                               <div className="flex min-w-0 items-center gap-2">
-                                <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-lg" />
+                                <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-base 2xl:text-lg" />
                                 <p className="min-w-0 flex-1 truncate font-semibold text-white" title={driver.name}>{driver.name}</p>
                                 {driver.ballast > 0 ? (
-                                  <span className="shrink-0 font-racing text-base font-bold text-yellow-300">
+                                  <span className="shrink-0 font-racing text-sm font-bold text-yellow-300 2xl:text-base">
                                     {formatBallast(driver.ballast)}
                                   </span>
                                 ) : null}
@@ -989,31 +992,31 @@ export default function LiveTiming() {
                             </div>
                           </div>
                         </td>
-                        <td className="h-[70px] w-[340px] px-4 py-3">
-                          <div className="flex min-w-0 items-center gap-4">
+                        <td className="h-[58px] w-[230px] px-2.5 py-2 2xl:h-[70px] 2xl:w-[340px] 2xl:px-4 2xl:py-3">
+                          <div className="flex min-w-0 items-center gap-2 2xl:gap-4">
                           {driver.carBrandLogo ? (
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="h-12 w-24 shrink-0 object-contain"
+                              className="h-9 w-14 shrink-0 object-contain xl:w-16 2xl:h-12 2xl:w-24"
                             />
                           ) : null}
-                          <span className="min-w-0 break-words text-base font-bold uppercase leading-tight text-white">
+                          <span className="min-w-0 break-words text-sm font-bold uppercase leading-tight text-white 2xl:text-base">
                             {driver.displayCarModel}
                           </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-2.5 py-2 2xl:px-4 2xl:py-3">
                           <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
                         </td>
-                        <td className="px-4 py-3">
-                          <p className={`shrink-0 text-right font-racing text-xl font-bold tabular-nums ${driver.bestLap && driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
+                        <td className="px-2.5 py-2 2xl:px-4 2xl:py-3">
+                          <p className={`shrink-0 text-right font-racing text-base font-bold tabular-nums 2xl:text-xl ${driver.bestLap && driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
                         </td>
-                        <td className="px-4 py-3 text-right font-racing text-lg font-bold tabular-nums text-racing-red">{formatGap(driver.bestLap, bestLap)}</td>
-                        <td className="px-4 py-3 text-center text-gray-300">{driver.laps}</td>
-                        <td className="px-4 py-3 text-right text-gray-300">{driver.topSpeed ? `${driver.topSpeed.toFixed(1)} km/h` : '--'}</td>
-                        {!qualifyingSession && <td className="px-4 py-3 text-center">
-                          {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-3 py-1 text-sm font-bold uppercase text-green-400">Habilitado</span> : <span className="inline-flex bg-red-500/15 px-3 py-1 text-xs font-bold uppercase text-red-300">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
+                        <td className="px-2 py-2 text-right font-racing text-base font-bold tabular-nums text-racing-red 2xl:px-4 2xl:py-3 2xl:text-lg">{formatGap(driver.bestLap, bestLap)}</td>
+                        <td className="px-2 py-2 text-center text-gray-300 2xl:px-4 2xl:py-3">{driver.laps}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right text-xs text-gray-300 2xl:px-4 2xl:py-3 2xl:text-base">{driver.topSpeed ? `${driver.topSpeed.toFixed(1)} km/h` : '--'}</td>
+                        {!qualifyingSession && <td className="px-2 py-2 text-center 2xl:px-4 2xl:py-3">
+                          {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-2 py-1 text-xs font-bold uppercase text-green-400 2xl:px-3 2xl:text-sm">Habilitado</span> : <span className="inline-flex bg-red-500/15 px-2 py-1 text-[10px] font-bold uppercase text-red-300 2xl:px-3 2xl:text-xs">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
                         </td>}
                       </tr>
                       </Fragment>

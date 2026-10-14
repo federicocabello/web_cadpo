@@ -89,6 +89,7 @@ const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
          cal.especialidad, cal.coronacion, cal.transmision,
          cal.multiplicador_sprint, cal.multiplicador_final,
+         cal.resultados_visibles, cal.limite_apelaciones,
          CONCAT(cal.idcampeonato, '-', cal.ronda) AS id,
          CASE
            WHEN cal.fecha >= NOW() THEN 'upcoming'
@@ -318,6 +319,63 @@ const updateMultipliers = async (req, res, next) => {
   }
 };
 
+const updateResultsVisibility = async (req, res, next) => {
+  try {
+    await ensureEventMultipliers();
+    const championshipId = Number(req.params.idcampeonato);
+    const round = Number(req.params.ronda);
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+      return res.status(400).json({ error: 'Campeonato o fecha inválidos' });
+    }
+
+    const visible = req.body.visible === true || Number(req.body.visible) === 1 ? 1 : 0;
+    const [result] = await pool.query(
+      'UPDATE calendario SET resultados_visibles = ? WHERE idcampeonato = ? AND ronda = ?',
+      [visible, championshipId, round]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+
+    res.json({
+      message: visible ? 'Resultados publicados' : 'Resultados ocultados',
+      data: { idcampeonato: championshipId, ronda: round, resultados_visibles: visible },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateAppealDeadline = async (req, res, next) => {
+  try {
+    await ensureEventMultipliers();
+    const championshipId = Number(req.params.idcampeonato);
+    const round = Number(req.params.ronda);
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+      return res.status(400).json({ error: 'Campeonato o fecha inválidos' });
+    }
+
+    const rawDeadline = String(req.body.limite_apelaciones || '').trim();
+    let deadline = null;
+    if (rawDeadline) {
+      const match = rawDeadline.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+      if (!match) return res.status(400).json({ error: 'Ingresá una fecha y hora válidas para el cierre de apelaciones' });
+      deadline = `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6] || '00'}`;
+    }
+
+    const [result] = await pool.query(
+      'UPDATE calendario SET limite_apelaciones = ? WHERE idcampeonato = ? AND ronda = ?',
+      [deadline, championshipId, round]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+
+    res.json({
+      message: deadline ? 'Límite de apelaciones guardado' : 'Límite de apelaciones eliminado',
+      data: { idcampeonato: championshipId, ronda: round, limite_apelaciones: deadline },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getBanners = async (req, res, next) => {
   try {
     const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
@@ -360,4 +418,4 @@ const removeBanner = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, remove, getBanners, uploadBanners, removeBanner };
+module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, updateResultsVisibility, updateAppealDeadline, remove, getBanners, uploadBanners, removeBanner };

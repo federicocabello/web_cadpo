@@ -10,6 +10,8 @@ router.get('/:idcampeonato/:ronda/banners', c.getBanners);
 router.post('/:idcampeonato/:ronda/banners', requireAdmin, uploadRegistrationImages.array('banners', 10), c.uploadBanners);
 router.delete('/:idcampeonato/:ronda/banners/:filename', requireAdmin, c.removeBanner);
 router.patch('/:idcampeonato/:ronda/multipliers', requireAdmin, c.updateMultipliers);
+router.patch('/:idcampeonato/:ronda/results-visibility', requireAdmin, c.updateResultsVisibility);
+router.patch('/:idcampeonato/:ronda/appeal-deadline', requireAdmin, c.updateAppealDeadline);
 router.post('/batch',     c.createBatch);
 router.post('/',          c.create);
 router.put('/:oldIdcampeonato/:oldRonda', c.update);

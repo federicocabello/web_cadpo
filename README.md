@@ -12,10 +12,25 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Inscripciones, pilotos, autos, marcas y circuitos.
 - Resultados, posiciones de campeonato y estadísticas.
 - Consulta de tiempos en vivo desde un servidor externo.
+- CADPO CLUB con hasta tres servidores gratuitos, estado de tanda y pilotos conectados en tiempo real.
 - Panel administrativo para gestionar el contenido.
 - Carga de imágenes, logos y reglamentos PDF.
 - Importador de escritorio para cargas masivas en MySQL.
 - Pantalla automática de mantenimiento cuando la API o la base de datos no están disponibles.
+
+### Gestión deportiva y resultados
+
+El panel de resultados permite importar tandas de Assetto Corsa, trabajar sobre una planilla editable y publicar cada fecha cuando la revisión deportiva está terminada. Entre las funciones principales se incluyen:
+
+- clasificación Sprint, Sprint, clasificación Final y Final administradas por separado;
+- sanciones múltiples por piloto, recargos de tiempo o posiciones, DQ, apercibimientos y lastre;
+- recálculo de posiciones y puntajes al aplicar sanciones deportivas;
+- escalas configurables por campeonato para puntos y lastres de Sprint y Final;
+- lastre debut, lastre por fecha, lastre por sanciones y total proyectado antes de guardar;
+- resultados visibles u ocultos por fecha y plazo configurable para apelaciones;
+- tabla general del campeonato, estadísticas e imágenes exportables de posiciones.
+
+Las correcciones manuales permanecen editables antes del guardado definitivo. Los cambios pendientes se identifican visualmente en la planilla.
 
 ### Tecnologías
 
@@ -246,6 +261,8 @@ Actualizá este archivo cuando cambien:
 
 Mantené sincronizadas las secciones en español e inglés.
 
+Como criterio del proyecto, documentá solamente cambios funcionales, estructurales o de operación relevantes. Las correcciones visuales menores y ajustes internos no necesitan una entrada individual.
+
 ---
 
 ## English
@@ -258,10 +275,25 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Registrations, drivers, cars, manufacturers, and circuits.
 - Results, championship standings, and statistics.
 - Live timing retrieved from an external server.
+- CADPO CLUB with up to three free servers, current session status, and live connected-driver counts.
 - Administration panel for content management.
 - Image, logo, and PDF regulation uploads.
 - Desktop importer for bulk MySQL operations.
 - Automatic maintenance screen when the API or database is unavailable.
+
+### Sporting management and results
+
+The results administration panel can import Assetto Corsa sessions, edit them in a spreadsheet-like workspace, and publish each event after the sporting review is complete. Its main capabilities include:
+
+- separate Sprint qualifying, Sprint, Final qualifying, and Final sessions;
+- multiple sanctions per driver, time or position penalties, disqualifications, warnings, and ballast;
+- automatic position and point recalculation when sporting penalties are applied;
+- championship-specific scoring and Sprint/Final ballast scales;
+- debut ballast, event ballast, sanction ballast, and a projected total before saving;
+- per-event result visibility and configurable appeal deadlines;
+- championship standings, statistics, and exportable standings images.
+
+Manual corrections remain editable until the final save. Pending changes are visually identified in the worksheet.
 
 ### Technology stack
 
@@ -491,6 +523,8 @@ Update this document whenever any of the following changes:
 - required migrations.
 
 Keep the Spanish and English sections synchronized.
+
+As a project convention, document relevant functional, structural, and operational changes. Minor visual corrections and internal adjustments do not require individual changelog-style entries.
 
 ## License
 

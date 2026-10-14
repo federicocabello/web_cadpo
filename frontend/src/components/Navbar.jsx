@@ -143,7 +143,7 @@ function SocialCarousel({ links }) {
   const carouselLinks = [...links, links[0]]
 
   return (
-    <div className="social-carousel h-10 w-[5.75rem] overflow-hidden rounded-lg border border-white/10 bg-black shadow-racing min-[360px]:w-[6.5rem] sm:w-[10rem] md:w-[12rem] lg:w-[5rem] min-[1200px]:w-[6rem] min-[1400px]:w-[7rem] min-[1800px]:w-[15rem]" aria-label="Redes de CADPO">
+    <div className="social-carousel h-10 w-[5.75rem] overflow-hidden rounded-lg border border-white/10 bg-black shadow-racing min-[360px]:w-[6.5rem] sm:w-[10rem] md:w-[12rem] lg:w-[15rem]" aria-label="Redes de CADPO">
       <div className="social-carousel-track-two">
         {carouselLinks.map(({ href, label, text, shortText, Icon, accent, textClassName, iconClassName }, index) => (
           <a key={`${href}-${index}`} href={href} target="_blank" rel="noreferrer" tabIndex={index === links.length ? -1 : undefined} className={`group flex h-10 w-full items-center justify-center gap-1.5 border-l-2 bg-black/95 px-2 transition-colors hover:bg-racing-card sm:justify-start sm:gap-2.5 sm:px-3 ${accent}`} aria-label={label}>
@@ -358,7 +358,7 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="ml-3 hidden min-w-0 flex-1 items-center justify-end gap-1 lg:flex min-[1800px]:ml-6 min-[1800px]:gap-2">
+          <div className="ml-3 hidden min-w-0 flex-1 items-center justify-end gap-1 xl:flex min-[1800px]:ml-6 min-[1800px]:gap-2">
             {visibleNavLinks.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
@@ -406,7 +406,7 @@ export default function Navbar() {
           </div>
 
           <button
-            className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-racing-card hover:text-white lg:hidden"
+            className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-racing-card hover:text-white xl:hidden"
             onClick={() => setOpen(!open)}
             aria-label="Abrir menú"
           >
@@ -423,7 +423,7 @@ export default function Navbar() {
       ) : null}
 
       {open && (
-        <div className="animate-fade-in border-t border-racing-border bg-racing-gray lg:hidden">
+        <div className="animate-fade-in border-t border-racing-border bg-racing-gray xl:hidden">
           <div className="max-h-[calc(100vh-4rem)] overflow-y-auto px-4 py-3 space-y-1">
             {visibleNavLinks.map(({ to, label, Icon }) => (
               <NavLink

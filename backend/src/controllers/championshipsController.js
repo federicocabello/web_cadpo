@@ -55,12 +55,13 @@ const normalizePercentageRule = value => {
 };
 
 const scoringFields = ['pts_qualy_sprint', 'pts_sprint', 'pts_qualy_final', 'pts_final'];
+const ballastScoringFields = ['kg_sprint', 'kg_final'];
 
 const getScoring = async (req, res, next) => {
   try {
     await ensureChampionshipScoring();
     const [rows] = await pool.query(
-      `SELECT posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final
+      `SELECT posicion, pts_qualy_sprint, pts_sprint, kg_sprint, pts_qualy_final, pts_final, kg_final
        FROM campeonato_puntajes WHERE idcampeonato = ? ORDER BY posicion ASC`,
       [req.params.id]
     );
@@ -76,6 +77,7 @@ const saveScoring = async (req, res, next) => {
   const rows = submittedRows.map(row => ({
     posicion: Number(row.posicion),
     ...Object.fromEntries(scoringFields.map(field => [field, Number(String(row[field] ?? 0).replace(',', '.'))])),
+    ...Object.fromEntries(ballastScoringFields.map(field => [field, Number(String(row[field] ?? 0).replace(',', '.'))])),
   }));
   if (rows.some(row => !Number.isInteger(row.posicion) || row.posicion < 1 || row.posicion > 999)) {
     return res.status(400).json({ error: 'Cada posición debe ser un número entero entre 1 y 999' });
@@ -85,6 +87,10 @@ const saveScoring = async (req, res, next) => {
   }
   if (rows.some(row => scoringFields.some(field => !Number.isFinite(row[field]) || row[field] < 0))) {
     return res.status(400).json({ error: 'Los puntajes deben ser números iguales o mayores que cero' });
+  }
+
+  if (rows.some(row => ballastScoringFields.some(field => !Number.isInteger(row[field]) || row[field] < -32768 || row[field] > 32767))) {
+    return res.status(400).json({ error: 'Los kilos de lastre deben ser números enteros entre -32768 y 32767' });
   }
 
   let connection;
@@ -98,18 +104,18 @@ const saveScoring = async (req, res, next) => {
     for (const row of rows) {
       await connection.query(
         `INSERT INTO campeonato_puntajes
-          (idcampeonato, posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [championshipId, row.posicion, row.pts_qualy_sprint, row.pts_sprint, row.pts_qualy_final, row.pts_final]
+          (idcampeonato, posicion, pts_qualy_sprint, pts_sprint, kg_sprint, pts_qualy_final, pts_final, kg_final)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [championshipId, row.posicion, row.pts_qualy_sprint, row.pts_sprint, row.kg_sprint, row.pts_qualy_final, row.pts_final, row.kg_final]
       );
     }
     await connection.commit();
     const [savedRows] = await pool.query(
-      `SELECT posicion, pts_qualy_sprint, pts_sprint, pts_qualy_final, pts_final
+      `SELECT posicion, pts_qualy_sprint, pts_sprint, kg_sprint, pts_qualy_final, pts_final, kg_final
        FROM campeonato_puntajes WHERE idcampeonato = ? ORDER BY posicion ASC`,
       [championshipId]
     );
-    res.json({ data: savedRows, message: 'Escala de puntajes guardada correctamente' });
+    res.json({ data: savedRows, message: 'Escala de puntajes y lastres guardada correctamente' });
   } catch (error) {
     if (connection) await connection.rollback();
     next(error);
