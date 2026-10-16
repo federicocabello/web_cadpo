@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const ensureChampionshipExclusions = require('../utils/ensureChampionshipExclusions');
 
 let readyColumnPromise;
 const ensureReadyColumn = () => {
@@ -134,7 +135,7 @@ const assertPaymentCapacity = async (connection, championshipId, driverId, carId
 // ── GET /api/inscriptos?idcampeonato=X ────────────────────────────────────────
 const getAll = async (req, res, next) => {
   try {
-    await ensureReadyColumn();
+    await Promise.all([ensureReadyColumn(), ensureChampionshipExclusions()]);
     const { idcampeonato } = req.query;
     let query = `
       SELECT i.numero, i.pago, i.listo, i.tipo_inscripcion,
@@ -147,7 +148,8 @@ const getAll = async (req, res, next) => {
              CASE WHEN official.id IS NOT NULL OR inferred_official.id IS NOT NULL THEN 1 ELSE 0 END AS es_diseno_oficial,
              detail.modalidad_diseno, detail.plan_id, detail.plan_titulo,
              COALESCE(detail.precio_total, i.precio_inscripcion) AS total_abonar,
-             c.temporada, c.anio, c.idcategoria, cat.categoria
+             c.temporada, c.anio, c.idcategoria, cat.categoria,
+             CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido
       FROM inscriptos i
       JOIN pilotos p ON i.idpiloto = p.id
       JOIN autos a   ON i.idauto   = a.id
@@ -160,6 +162,8 @@ const getAll = async (req, res, next) => {
        AND inferred_official.numero = i.numero
       LEFT JOIN inscripciones_detalle detail
         ON detail.idcampeonato = i.idcampeonato AND detail.idpiloto = i.idpiloto
+      LEFT JOIN campeonato_pilotos_excluidos exclusion
+        ON exclusion.idcampeonato = i.idcampeonato AND exclusion.idpiloto = i.idpiloto
       JOIN campeonatos c ON i.idcampeonato = c.id
       JOIN categorias cat ON c.idcategoria = cat.id
     `;

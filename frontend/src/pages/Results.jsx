@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, CheckBadgeIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { championshipsApi, eventsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -110,7 +110,11 @@ const isFulfilledWarning = value => value === true
   || Number(value) === 1
   || ['TRUE', 'CUMPLIDA', 'CUMPLIDO'].includes(String(value || '').trim().toLocaleUpperCase('es-AR'));
 
+const StopwatchIcon = ({ className = '' }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M9 2h6M12 2v3M18.4 6.6l1.4-1.4"/><circle cx="12" cy="14" r="7"/><path d="M12 10v4l2.7 1.7"/></svg>;
+const CheckeredFlagIcon = ({ className = '' }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M5 21V4M5 5h14l-2 4 2 4H5"/><path d="M5 5h3.5v4H5zM12 5h3.5v4H12zM8.5 9H12v4H8.5zM15.5 9H19v4h-3.5z" fill="currentColor" stroke="none"/></svg>;
+
 const SessionSection = ({ title, sessionKey, items, positionField, pointsField, sanctionField, selectedPilotId, onSelectPilot }) => {
+  const isClassification = sessionKey.startsWith('qualy');
   const sortedItems = [...items].sort((a, b) => {
     if (!positionField) return resultOrder(a) - resultOrder(b);
     const positionA = numericPosition(a[positionField]);
@@ -128,8 +132,8 @@ const SessionSection = ({ title, sessionKey, items, positionField, pointsField, 
 
   return (
     <section className="overflow-hidden border border-racing-border bg-black/20">
-      <header className="border-b border-racing-border bg-racing-red/[0.08] px-4 py-3">
-        <h3 className="font-racing text-lg font-bold uppercase tracking-wide text-white">{title}</h3>
+      <header className="border-b border-violet-950/35 bg-gradient-to-r from-[#1b1025] via-[#09070c] to-black px-4 py-3">
+        <h3 className="flex items-center gap-2 font-racing text-lg font-bold uppercase tracking-wide text-white">{isClassification ? <StopwatchIcon className="h-5 w-5 shrink-0 text-violet-300"/> : <CheckeredFlagIcon className="h-5 w-5 shrink-0 text-violet-300"/>}<span>{title}</span></h3>
       </header>
       <table className="w-full text-xs sm:text-sm">
         <thead className="bg-black/25 text-[9px] uppercase tracking-wider text-gray-500"><tr>{positionField ? <th className="w-20 min-w-20 px-2 py-2 text-center sm:w-24 sm:min-w-24">Pos.</th> : null}<th className="px-2 py-2 text-left sm:px-3">Piloto</th><th className="w-16 px-2 py-2 text-right sm:w-20 sm:px-3">Puntos</th></tr></thead>
@@ -165,6 +169,15 @@ const EventBannerGallery = ({ banners = [], round }) => {
   </div>;
 };
 
+const AppealColumn = ({ title, items, onOpenVideo }) => <div className="overflow-hidden border border-blue-400/20 bg-black/25">
+  <h4 className="border-b border-blue-400/20 bg-blue-400/[0.07] px-4 py-2 font-racing text-sm font-bold uppercase tracking-wider text-blue-200">{title}</h4>
+  <div className="divide-y divide-racing-border">{items.map(appeal => <article key={appeal.id} className="px-4 py-3">
+    <div className="inline-flex min-w-0 items-center gap-1.5"><img src="/casco.png" alt="" className="h-5 w-5 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{appeal.piloto}</strong></div>
+    <p className="mt-2 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{appeal.motivo}</span></p>
+    {appeal.video ? <button type="button" onClick={event => onOpenVideo(appeal, event.currentTarget)} className="mt-3 border border-blue-300/35 bg-blue-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-200 transition hover:border-blue-200 hover:bg-blue-400/20 hover:text-white">Ver video</button> : null}
+  </article>)}</div>
+</div>;
+
 export default function Results() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedChampionshipId = searchParams.get('campeonato') || '';
@@ -177,6 +190,8 @@ export default function Results() {
   const [debutBallasts, setDebutBallasts] = useState({});
   const [enrolledDrivers, setEnrolledDrivers] = useState([]);
   const [showBallastTable, setShowBallastTable] = useState(false);
+  const [appeals, setAppeals] = useState([]);
+  const [activeAppealVideo, setActiveAppealVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -292,6 +307,34 @@ export default function Results() {
   const resultDetailsVisible = selectedEvent?.resultados_visibles == null
     || Number(selectedEvent.resultados_visibles) === 1;
   const appealStatus = getAppealStatus(selectedEvent?.limite_apelaciones, now);
+  const sprintAppeals = appeals.filter(appeal => ['qualy_sprint', 'sprint'].includes(appeal.tanda));
+  const finalAppeals = appeals.filter(appeal => ['qualy_final', 'final'].includes(appeal.tanda));
+  const openAppealVideo = (appeal, button) => {
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(520, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    const roomBelow = window.innerHeight - rect.bottom;
+    setActiveAppealVideo({
+      ...appeal,
+      placement: roomBelow >= 330 ? 'below' : 'above',
+      left,
+      top: rect.bottom + 8,
+      bottom: window.innerHeight - rect.top + 8,
+      width,
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedChampionship?.id || !selectedRoundData?.round) {
+      setAppeals([]);
+      return undefined;
+    }
+    resultsApi.getAppeals({ idcampeonato: selectedChampionship.id, ronda: selectedRoundData.round })
+      .then(response => { if (active) setAppeals(response.data.data || []); })
+      .catch(() => { if (active) setAppeals([]); });
+    return () => { active = false; };
+  }, [selectedChampionship?.id, selectedRoundData?.round]);
 
   useEffect(() => setSelectedPilotId(null), [selectedChampionship?.id, selectedRound]);
   useEffect(() => setShowBallastTable(false), [selectedChampionship?.id]);
@@ -311,6 +354,7 @@ export default function Results() {
         puntosPorFecha: {},
         detallePorFecha: {},
         campeon: false,
+        excluido: Boolean(Number(driver.excluido)),
       });
     });
     rounds.flatMap(round => round.items).forEach(result => {
@@ -327,12 +371,14 @@ export default function Results() {
         puntosPorFecha: {},
         detallePorFecha: {},
         campeon: false,
+        excluido: Boolean(Number(result.excluido)),
       };
       current.piloto = result.piloto || current.piloto;
       current.ig = result.ig || current.ig;
       current.auto_logo = result.auto_logo || current.auto_logo;
       current.marca = result.marca || current.marca;
       current.modelo = result.modelo || current.modelo;
+      current.excluido = current.excluido || Boolean(Number(result.excluido));
       const roundPoints = getPoints(result);
       current.puntos += roundPoints;
       current.fechas += 1;
@@ -349,9 +395,13 @@ export default function Results() {
       current.campeon = current.campeon || Boolean(Number(result.campeon));
       totals.set(key, current);
     });
+    let classifiedPosition = 0;
     return [...totals.values()]
-      .sort((a, b) => b.puntos - a.puntos || String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' }))
-      .map((standing, index) => ({ ...standing, posicion: index + 1 }));
+      .map(standing => ({ ...standing, puntosOriginales: standing.puntos, puntos: standing.excluido ? 0 : standing.puntos }))
+      .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || b.puntos - a.puntos
+        || String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' }))
+      .map(standing => ({ ...standing, posicion: standing.excluido ? null : ++classifiedPosition }));
   }, [enrolledDrivers, rounds]);
 
   const ballastRounds = useMemo(() => {
@@ -362,7 +412,7 @@ export default function Results() {
   }, [rounds, selectedChampionship?.rondas]);
 
   const ballastStandings = useMemo(() => {
-    return standings.map(standing => {
+    return standings.filter(standing => !standing.excluido).map(standing => {
       const ballastByRound = {};
       const debutBallast = parseBallast(debutBallasts[String(standing.idpiloto)]);
       let total = debutBallast;
@@ -400,11 +450,12 @@ export default function Results() {
         && String(item.ronda) === String(round.round));
       return {
         ...round,
-        location: round.items[0]?.circuito_localidad || event?.localidad || round.items[0]?.circuito || '',
+        location: round.items[0]?.circuito_localidad || event?.localidad || 'Sin localidad',
       };
     }), [events, rounds, selectedChampionship?.id]);
   const remainingRounds = Math.max(0, Number(selectedChampionship?.rondas || 0) - rounds.length);
   const championshipFinished = selectedChampionship?.status === 'completed' || (Number(selectedChampionship?.rondas || 0) > 0 && remainingRounds === 0);
+  const championshipLeaderPoints = standings.find(standing => !standing.excluido)?.puntos || 0;
   const togglePilot = pilotId => setSelectedPilotId(current => String(current) === String(pilotId) ? null : pilotId);
 
   const changeChampionship = event => {
@@ -440,7 +491,8 @@ export default function Results() {
               {selectedRoundData.items[0].circuito_trazado ? <img src={selectedRoundData.items[0].circuito_trazado} alt={`Trazado de ${selectedRoundData.items[0].circuito}`} className="h-24 w-28 shrink-0 object-contain drop-shadow-[0_12px_25px_rgba(0,0,0,0.95)] sm:h-32 sm:w-44" onError={event => { event.currentTarget.style.display = 'none'; }}/> : null}
             </div>
           </header>
-          {appealStatus && resultDetailsVisible ? <div className={`flex flex-col gap-2 border-b px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${appealStatus.expired ? 'border-red-400/25 bg-red-500/[0.06]' : 'border-amber-300/25 bg-amber-300/[0.07]'}`}>
+          {Number(selectedEvent?.resultados_confirmados) === 1 && resultDetailsVisible ? <div className="flex items-center gap-3 border-b border-emerald-300/30 bg-emerald-400/[0.08] px-5 py-3 sm:px-6"><CheckBadgeIcon className="h-7 w-7 shrink-0 text-emerald-300"/><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300">Resultados confirmados</p><p className="mt-0.5 text-xs text-gray-300 sm:text-sm">Los resultados de esta fecha son definitivos y ya no habrá más modificaciones.</p></div></div> : null}
+          {appealStatus && resultDetailsVisible && Number(selectedEvent?.resultados_confirmados) !== 1 ? <><div className={`flex flex-col gap-2 border-b px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${appealStatus.expired ? 'border-red-400/25 bg-red-500/[0.06]' : 'border-amber-300/25 bg-amber-300/[0.07]'}`}>
             <div className="flex items-center gap-3">
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${appealStatus.expired ? 'border-red-400/40 bg-red-500/10 text-red-300' : 'border-amber-300/40 bg-amber-300/10 text-amber-200'}`}><ClockIcon className="h-4 w-4" /></span>
               <div><p className={`text-[9px] font-bold uppercase tracking-[0.22em] ${appealStatus.expired ? 'text-red-300' : 'text-amber-200'}`}>Apelaciones y reclamos</p><p className="mt-1 text-sm text-gray-300">{appealStatus.expired ? 'El período finalizó y ya no se reciben reclamos.' : 'Tiempo disponible para presentar una apelación.'}</p></div>
@@ -448,7 +500,7 @@ export default function Results() {
             <div className="shrink-0 sm:text-right">
               <p className={`font-racing text-lg font-bold uppercase tabular-nums sm:text-xl ${appealStatus.expired ? 'text-red-300' : 'text-white'}`}>{appealStatus.countdown}</p>
             </div>
-          </div> : null}
+          </div><div className="w-full border-b border-orange-400/35 bg-orange-500/10 px-5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-300 sm:px-6 sm:text-xs">Los resultados aún no están confirmados; se están evaluando revisiones y apelaciones.</div></> : null}
           {resultDetailsVisible ? <>
             <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
             <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
@@ -457,6 +509,7 @@ export default function Results() {
               <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
               <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
             </div>
+            {sprintAppeals.length || finalAppeals.length ? <section className="border-t border-blue-400/25 bg-blue-400/[0.035] p-4 sm:p-5"><header className="mb-4"><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-blue-300">Revisión deportiva</p><h3 className="font-racing text-xl font-bold uppercase text-white sm:text-2xl">Apelaciones de la fecha</h3></header><div className="grid gap-3 md:grid-cols-2">{sprintAppeals.length ? <AppealColumn title="Sprint" items={sprintAppeals} onOpenVideo={openAppealVideo}/> : null}{finalAppeals.length ? <AppealColumn title="Final" items={finalAppeals} onOpenVideo={openAppealVideo}/> : null}</div></section> : null}
           </> : <div className="flex min-h-64 flex-col items-center justify-center border-t border-[#3030a1]/60 bg-[linear-gradient(180deg,rgba(48,48,161,0.24),rgba(10,10,35,0.3))] px-6 py-10 text-center">
             <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
               <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-r-[#3030a1] border-t-[#8585ff] shadow-[0_0_26px_rgba(48,48,161,0.48)]" />
@@ -475,7 +528,7 @@ export default function Results() {
                 <tr className="bg-black/45 uppercase tracking-wider text-gray-500">
                   <th rowSpan={2} className="w-16 whitespace-nowrap border border-racing-border px-2 py-3 text-center">Pos.</th>
                   <th rowSpan={2} className="min-w-64 border border-racing-border px-4 py-3 text-left">Piloto</th>
-                  {totalRounds.map(round => <th key={round.round} colSpan={4} title={`Fecha ${round.round} · ${round.items[0]?.circuito || ''}`} className="whitespace-nowrap border border-racing-border px-3 py-3 text-center font-racing text-sm text-gray-300"><span>Fecha {round.round} <span className="text-gray-600">•</span> {round.location}</span></th>)}
+                  {totalRounds.map(round => <th key={round.round} colSpan={4} title={`Fecha ${round.round} · ${round.location}`} className="whitespace-nowrap border border-racing-border px-2 py-3 text-center font-racing text-sm text-gray-300"><span>Fecha {round.round} <span className="text-gray-600">•</span> {round.location}</span></th>)}
                   <th rowSpan={2} className="min-w-24 border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-center text-cyan-300">Total</th>
                   <th rowSpan={2} className="min-w-28 border border-racing-border px-4 py-3 text-center">Diferencia</th>
                 </tr>
@@ -489,17 +542,17 @@ export default function Results() {
                 </tr>
               </thead>
               <tbody>{standings.map(standing => {
-            const difference = Math.max(0, (standings[0]?.puntos || 0) - standing.puntos);
+            const difference = standing.excluido ? 0 : Math.max(0, championshipLeaderPoints - standing.puntos);
             const selected = String(selectedPilotId) === String(standing.idpiloto);
             const pendingWarnings = pendingWarningsByDriver.get(String(standing.idpiloto)) || [];
             const warningTotal = warningTotalsByDriver.get(String(standing.idpiloto)) || 0;
             const ballastTotal = ballastTotalsByDriver.get(String(standing.idpiloto)) || 0;
-            return <tr key={standing.idpiloto} className={pendingWarnings.length ? 'bg-gradient-to-r from-red-500/[0.09] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
-              <td className={`border border-racing-border px-2 py-2 text-center font-racing text-xl font-bold ${standing.posicion === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.posicion === 2 ? 'bg-slate-300/10 text-slate-200' : standing.posicion === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.posicion}°</td>
-              <td className="border border-racing-border p-0"><button type="button" onClick={() => togglePilot(standing.idpiloto)} aria-pressed={selected} className="flex min-w-60 w-full items-center gap-3 px-3 py-2 text-left">{standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-9 w-12 shrink-0 object-contain"/> : <span className="h-9 w-12 shrink-0"/>}<div className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="truncate text-white">{standing.piloto}</strong>{warningTotal ? <span className="shrink-0 border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">{warningTotal} AP</span> : null}{ballastTotal ? <span className="shrink-0 border border-cyan-300/35 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-300">{formatBallast(ballastTotal)}</span> : null}{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[8px] font-bold uppercase text-black">Campeón</span> : null}</span><span className="block truncate text-[11px] uppercase tracking-wide text-gray-500">{standing.modelo || '—'}</span>{pendingWarnings.filter(sanction => !isFulfilledWarning(sanction.cumplida)).map(sanction => <span key={sanction.cantidad} className="mt-1 block text-[10px] font-bold uppercase leading-relaxed text-red-400">Sanción pendiente ({sanction.cantidad} AP): <span className="font-normal normal-case text-red-300">{sanction.sancion}</span></span>)}</div></button></td>
+            return <tr key={standing.idpiloto} className={standing.excluido ? 'bg-black text-gray-600' : pendingWarnings.length ? 'bg-gradient-to-r from-red-500/[0.09] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
+              <td className={`border border-racing-border px-2 py-2 text-center font-racing text-xl font-bold ${standing.excluido ? 'bg-black text-gray-700' : standing.posicion === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.posicion === 2 ? 'bg-slate-300/10 text-slate-200' : standing.posicion === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.excluido ? '—' : `${standing.posicion}°`}</td>
+              <td className="border border-racing-border p-0"><button type="button" onClick={() => togglePilot(standing.idpiloto)} aria-pressed={selected} className="flex min-w-60 w-full items-center gap-3 px-3 py-2 text-left">{standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-9 w-12 shrink-0 object-contain"/> : <span className="h-9 w-12 shrink-0"/>}<div className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className={standing.excluido ? 'truncate text-gray-500' : 'truncate text-white'}>{standing.piloto}</strong>{standing.excluido ? <span className="shrink-0 border border-gray-600 bg-black px-2 py-0.5 text-[8px] font-bold uppercase text-gray-400">Excluido</span> : null}{!standing.excluido && warningTotal ? <span className="shrink-0 border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">{warningTotal} AP</span> : null}{!standing.excluido && ballastTotal ? <span className="shrink-0 border border-cyan-300/35 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-300">{formatBallast(ballastTotal)}</span> : null}{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[8px] font-bold uppercase text-black">Campeón</span> : null}</span><span className="block truncate text-[11px] uppercase tracking-wide text-gray-500">{standing.modelo || '—'}</span>{!standing.excluido && pendingWarnings.filter(sanction => !isFulfilledWarning(sanction.cumplida)).map(sanction => <span key={sanction.cantidad} className="mt-1 block text-[10px] font-bold uppercase leading-relaxed text-red-400">Sanción pendiente ({sanction.cantidad} AP): <span className="font-normal normal-case text-red-300">{sanction.sancion}</span></span>)}</div></button></td>
               {totalRounds.flatMap(round => {
                 const detail = standing.detallePorFecha[String(round.round)];
-                if (!detail || detail.points === 0) return [<td key={`${standing.idpiloto}-${round.round}-absent`} colSpan={4} className="border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] text-red-500">AUSENTE</td>];
+                if (!detail || detail.points === 0) return [<td key={`${standing.idpiloto}-${round.round}-absent`} colSpan={4} className={`border px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] ${standing.excluido ? 'border-racing-border bg-black text-gray-700' : 'border-red-500/20 bg-red-500/[0.06] text-red-500'}`}>AUSENTE</td>];
                 const pointCell = value => Number(value) ? formatPoints(value) : '';
                 return [
                   <td key={`${standing.idpiloto}-${round.round}-p`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.presentismo)}</td>,
@@ -508,8 +561,8 @@ export default function Results() {
                   <td key={`${standing.idpiloto}-${round.round}-f`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.final)}</td>,
                 ];
               })}
-              <td className="border border-cyan-400/30 bg-cyan-400/[0.08] px-4 py-2 text-center"><strong className="font-racing text-xl font-bold text-cyan-300">{formatPoints(standing.puntos)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></td>
-              <td className="border border-racing-border px-4 py-2 text-center">{difference === 0 ? null : <><strong className="font-racing text-lg font-bold text-racing-red">{formatPoints(difference)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></>}</td>
+              <td className={`border px-4 py-2 text-center ${standing.excluido ? 'border-racing-border bg-black' : 'border-cyan-400/30 bg-cyan-400/[0.08]'}`}>{standing.excluido ? <strong className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Excluido</strong> : <><strong className="font-racing text-xl font-bold text-cyan-300">{formatPoints(standing.puntos)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></>}</td>
+              <td className="border border-racing-border px-4 py-2 text-center">{standing.excluido || difference === 0 ? null : <><strong className="font-racing text-lg font-bold text-racing-red">{formatPoints(difference)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></>}</td>
             </tr>;
           })}</tbody>
             </table>
@@ -559,6 +612,15 @@ export default function Results() {
           </div> : null}
         </section>
       </div>}
+      {activeAppealVideo ? <div className="fixed inset-0 z-[80]" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setActiveAppealVideo(null); }}>
+        <section role="dialog" aria-modal="false" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`} style={{ left: activeAppealVideo.left, width: activeAppealVideo.width, ...(activeAppealVideo.placement === 'below' ? { top: activeAppealVideo.top } : { bottom: activeAppealVideo.bottom }) }} className="fixed max-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border border-blue-300/35 bg-[#111827] shadow-[0_24px_80px_rgba(0,0,0,0.75)]">
+          <header className="flex items-center justify-between gap-3 border-b border-blue-300/20 bg-blue-400/[0.08] px-4 py-3">
+            <span className="inline-flex min-w-0 items-center gap-2"><img src="/casco.png" alt="" className="h-6 w-6 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{activeAppealVideo.piloto}</strong></span>
+            <button type="button" onClick={() => setActiveAppealVideo(null)} aria-label="Cerrar video" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-xl leading-none text-gray-300 transition hover:border-white/35 hover:text-white">×</button>
+          </header>
+          <div className="overflow-y-auto p-3 sm:p-4"><p className="mb-3 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{activeAppealVideo.motivo}</span></p><video src={activeAppealVideo.video} controls autoPlay preload="metadata" className="max-h-[42vh] w-full rounded-lg bg-black" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`}>Tu navegador no puede reproducir este video.</video></div>
+        </section>
+      </div> : null}
     </main>
   );
 }

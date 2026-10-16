@@ -12,6 +12,7 @@ router.delete('/:idcampeonato/:ronda/banners/:filename', requireAdmin, c.removeB
 router.patch('/:idcampeonato/:ronda/multipliers', requireAdmin, c.updateMultipliers);
 router.patch('/:idcampeonato/:ronda/results-visibility', requireAdmin, c.updateResultsVisibility);
 router.patch('/:idcampeonato/:ronda/appeal-deadline', requireAdmin, c.updateAppealDeadline);
+router.patch('/:idcampeonato/:ronda/results-confirmation', requireAdmin, c.updateResultsConfirmation);
 router.post('/batch',     c.createBatch);
 router.post('/',          c.create);
 router.put('/:oldIdcampeonato/:oldRonda', c.update);

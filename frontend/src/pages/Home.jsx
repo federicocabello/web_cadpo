@@ -193,8 +193,62 @@ function RulesModal({ event, onClose }) {
   );
 }
 
+function TrackNotesModal({ event, onClose }) {
+  const notes = (event.notas_pista || []).filter(note => note.imagenes?.length);
+  const [activeNoteIndex, setActiveNoteIndex] = useState(0);
+  const [activeImage, setActiveImage] = useState(0);
+  const activeNote = notes[activeNoteIndex];
+  const images = activeNote?.imagenes || [];
+
+  const selectNote = index => {
+    setActiveNoteIndex(index);
+    setActiveImage(0);
+  };
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyboard = keyboardEvent => {
+      if (keyboardEvent.key === 'Escape') onClose();
+      if (keyboardEvent.key === 'ArrowLeft') setActiveImage(current => (current - 1 + images.length) % images.length);
+      if (keyboardEvent.key === 'ArrowRight') setActiveImage(current => (current + 1) % images.length);
+    };
+    window.addEventListener('keydown', handleKeyboard);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyboard);
+    };
+  }, [images.length, onClose]);
+
+  if (!activeNote || !images.length) return null;
+  return createPortal(<div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/95 sm:items-center sm:p-4 lg:p-5" role="dialog" aria-modal="true" aria-labelledby={`track-notes-title-${event.id}`}>
+    <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Cerrar notas de pista" />
+    <section className="relative z-10 flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden border border-yellow-300/40 bg-racing-dark shadow-[0_25px_90px_rgba(0,0,0,0.95)] sm:h-[92dvh] lg:h-[90dvh]">
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-racing-border bg-black/80 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
+        <div className="min-w-0 flex-1"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-yellow-300 sm:text-[10px] sm:tracking-[0.24em]">Notas de pista · {event.circuito}{event.variante ? ` · Variante ${event.variante}` : ''}</p><h2 id={`track-notes-title-${event.id}`} className="mt-1 break-words font-racing text-base font-bold uppercase leading-tight text-white sm:text-xl lg:text-2xl">{activeNote.titulo}</h2></div>
+        <button type="button" onClick={onClose} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-300 transition hover:border-yellow-300 hover:bg-yellow-400 hover:text-black sm:h-10 sm:w-10" aria-label="Cerrar notas de pista"><XMarkIcon className="h-5 w-5" /></button>
+      </header>
+      <div className="flex min-h-0 flex-1">
+        <nav className="w-[96px] shrink-0 overflow-y-auto border-r border-racing-border bg-black/80 p-1.5 sm:w-44 sm:p-2 lg:w-52" aria-label="Seleccionar nota de pista">
+          <p className="px-1.5 pb-2 pt-1 text-[8px] font-bold uppercase tracking-widest text-gray-600 sm:px-2 sm:text-[9px]">Notas</p>
+          <div className="space-y-1.5">{notes.map((note, index) => <button key={note.id} type="button" onClick={() => selectNote(index)} title={note.titulo} className={`flex w-full items-center gap-1.5 border px-1.5 py-2 text-left transition sm:gap-2 sm:px-2.5 sm:py-2.5 ${index === activeNoteIndex ? 'border-yellow-200 bg-gradient-to-r from-yellow-500 to-amber-500 text-black' : 'border-racing-border bg-black text-gray-400 hover:border-yellow-400 hover:text-white'}`}><span className="shrink-0 font-racing text-[9px] font-bold text-current opacity-70 sm:text-[10px]">{String(index + 1).padStart(2, '0')}</span><span className="min-w-0 truncate font-racing text-[9px] font-bold uppercase sm:text-[11px]">{note.titulo}</span></button>)}</div>
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1 bg-black">
+            <img src={images[activeImage].url} alt={`${activeNote.titulo} ${activeImage + 1}`} className="h-full w-full object-contain" />
+            {images.length > 1 ? <><button type="button" onClick={() => setActiveImage(current => (current - 1 + images.length) % images.length)} className="absolute left-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-yellow-300 hover:bg-yellow-400 hover:text-black sm:left-3 sm:h-11 sm:w-11 lg:left-4 lg:h-12 lg:w-12" aria-label="Imagen anterior"><ChevronLeftIcon className="h-5 w-5 sm:h-6 sm:w-6" /></button><button type="button" onClick={() => setActiveImage(current => (current + 1) % images.length)} className="absolute right-1.5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center border border-white/25 bg-black/75 text-white transition hover:border-yellow-300 hover:bg-yellow-400 hover:text-black sm:right-3 sm:h-11 sm:w-11 lg:right-4 lg:h-12 lg:w-12" aria-label="Imagen siguiente"><ChevronRightIcon className="h-5 w-5 sm:h-6 sm:w-6" /></button></> : null}
+            <span className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 text-[9px] font-bold tabular-nums text-gray-200 sm:bottom-3 sm:right-3 sm:px-3 sm:py-1.5 sm:text-[10px]">{activeImage + 1} / {images.length}</span>
+          </div>
+          {images.length > 1 ? <div className="flex shrink-0 gap-1.5 overflow-x-auto border-t border-racing-border bg-black/80 p-1.5 sm:gap-2 sm:p-3">{images.map((image, index) => <button key={image.id || image.url} type="button" onClick={() => setActiveImage(index)} className={`h-11 w-16 shrink-0 overflow-hidden border transition sm:h-16 sm:w-28 ${index === activeImage ? 'border-yellow-300 opacity-100' : 'border-racing-border opacity-50 hover:opacity-90'}`}><img src={image.url} alt="" className="h-full w-full object-cover" /></button>)}</div> : null}
+        </div>
+      </div>
+    </section>
+  </div>, document.body);
+}
+
 function EventSection({ event, now, onShowCalendar, registrationPrompt, votingPrompt, complaintPromptEvent, showLiveTiming }) {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [trackNotesOpen, setTrackNotesOpen] = useState(false);
   const location = [event.localidad, event.provincia, getCountryName(event.pais)].filter(Boolean).join(', ');
   const countdown = getCountdown(event.fecha, now);
   const phase = getEventPhase(event, new Date(now));
@@ -214,9 +268,10 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, votingPr
           <div className="mb-5 inline-flex items-center gap-3 border-l-2 border-racing-red bg-black/55 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-white backdrop-blur-md"><span className="h-2 w-2 animate-pulse rounded-full bg-racing-red"/>Próxima fecha</div>
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-200 sm:text-sm"><span className="bg-racing-red px-3 py-1.5 text-white">{event.categoria}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Temporada {event.temporada}</span><span className="border border-racing-red/25 bg-black/45 px-3 py-1.5">Fecha {event.ronda}</span><button type="button" onClick={() => onShowCalendar(event)} className="event-action-button server-action-button server-action-dark inline-flex items-center gap-2 border border-gray-600 bg-black px-3 py-1.5 font-racing text-xs font-bold uppercase text-white shadow-lg transition-colors hover:border-gray-300 hover:bg-gray-900"><CalendarIcon className="h-4 w-4"/>Ver calendario</button></div>
           <h1 className="font-racing text-5xl font-bold uppercase leading-[0.92] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl xl:text-8xl">{event.circuito}</h1>
-          {event.variante ? <p className="mt-2 font-racing text-2xl font-semibold uppercase text-racing-red sm:text-3xl">Variante {event.variante}</p> : null}
+          {event.variante || event.notas_pista?.some(note => note.imagenes?.length) ? <div className="mt-2 flex flex-wrap items-center gap-3 sm:gap-4">{event.notas_pista?.some(note => note.imagenes?.length) ? <button type="button" onClick={() => setTrackNotesOpen(true)} className="track-notes-button inline-flex shrink-0 items-center border border-yellow-300/70 px-4 py-2 font-racing text-[10px] font-bold uppercase tracking-wider text-white [text-shadow:0_1px_3px_#000] sm:px-5 sm:text-xs"><span className="relative z-10">Notas de pista</span></button> : null}{event.variante ? <p className="font-racing text-2xl font-semibold uppercase text-racing-red sm:text-3xl">Variante {event.variante}</p> : null}</div> : null}
           <div className="mt-6 flex flex-col gap-3 text-gray-100 sm:flex-row sm:flex-wrap sm:gap-6"><p className="flex items-center gap-2 text-sm font-medium capitalize sm:text-base"><CalendarIcon className="h-5 w-5 text-racing-red"/>{formatDate(event.fecha)}</p><p className="flex items-center gap-2 text-sm font-medium sm:text-base"><ClockIcon className="h-5 w-5 text-racing-red"/>{formatTime(event.fecha)} H</p>{location ? <p className="flex items-center gap-2 text-sm text-gray-300 sm:text-base"><CountryFlag country={event.pais} className="text-lg"/><MapPinIcon className="h-5 w-5 text-racing-red"/>{location}</p> : null}</div>
-          <div className="mt-8 max-w-3xl"><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: `repeat(${countdownParts.length}, minmax(0, 1fr))` }}>{countdownParts.map(part => <div key={part.key} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
+          {event.especial ? <div className="mt-4 inline-flex max-w-full border-l-2 border-yellow-400 bg-gradient-to-r from-yellow-400/15 to-black/30 px-3 py-1.5 sm:px-4"><div className="min-w-0"><p className="text-[8px] font-bold uppercase tracking-[0.2em] text-yellow-300 sm:text-[9px]">Fecha especial</p><p className="break-words font-racing text-sm font-bold uppercase leading-tight text-white sm:text-base">{event.especialidad || 'Evento especial'}</p></div></div> : null}
+          <div className={`${event.especial ? 'mt-5' : 'mt-8'} max-w-3xl`}><p className="mb-3 text-xs font-bold uppercase tracking-[0.25em] text-gray-400">{phase === 'active' ? 'La actividad ya comenzó' : 'Faltan para el inicio'}</p>{phase === 'active' ? <div className="inline-flex items-center gap-3 border border-racing-red/60 bg-racing-red/15 px-5 py-4 font-racing text-2xl font-bold uppercase text-white"><FlagIcon className="h-7 w-7 text-racing-red"/>Actividad en curso</div> : <div className="grid gap-2 sm:gap-3" style={{ gridTemplateColumns: `repeat(${countdownParts.length}, minmax(0, 1fr))` }}>{countdownParts.map(part => <div key={part.key} className="countdown-block border border-racing-red/20 bg-black/55 px-2 py-3 text-center backdrop-blur-md sm:px-4 sm:py-4"><span className="block font-racing text-3xl font-bold tabular-nums text-white sm:text-5xl">{String(part.value).padStart(2, '0')}</span><span className="mt-1 block text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-xs">{part.label}</span></div>)}</div>}</div>
           <div className="mt-7 flex flex-wrap gap-3 xl:flex-nowrap xl:gap-2"><ServerJoinButton href={event.servidor} variant="green" steady className="event-action-button w-full justify-center sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"/>{event.transmision ? <a href={event.transmision} target="_blank" rel="noreferrer" className="event-action-button server-action-button server-action-red inline-flex w-full shrink-0 items-center justify-center gap-3 border border-red-400 bg-racing-red px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-racing transition-colors hover:bg-red-600 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><PlayCircleIcon className="h-5 w-7"/>Ver transmisión</a> : null}{showLiveTiming ? <Link to={`/tiempos-en-vivo?campeonato=${event.idcampeonato}`} className="event-action-button server-action-button server-action-blue inline-flex w-full shrink-0 items-center justify-center gap-3 border border-blue-300 bg-blue-600 px-5 py-3 font-racing text-sm font-bold uppercase text-white shadow-[0_0_25px_rgba(37,99,235,0.34)] transition-colors hover:bg-blue-500 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><ClockIcon className="h-5 w-7"/>Ver tiempos en vivo</Link> : null}{event.reglamento ? <button type="button" onClick={() => setRulesOpen(true)} className="event-action-button server-action-button server-action-white inline-flex w-full shrink-0 items-center justify-center gap-3 border border-white bg-white px-5 py-3 font-racing text-sm font-bold uppercase text-black shadow-[0_0_22px_rgba(255,255,255,0.2)] transition-colors hover:bg-gray-200 sm:w-auto xl:gap-2 xl:px-3 xl:text-xs"><DocumentTextIcon className="h-5 w-5"/>Ver reglamento</button> : null}</div>
           {complaintPromptEvent ? <div className="mt-4 md:hidden"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
           {votingPrompt || registrationPrompt ? <div className="mt-3 flex w-full items-stretch gap-2 sm:hidden"><VotingPrompt poll={votingPrompt} mobile/><RegistrationPrompt registration={registrationPrompt} mobile/></div> : null}
@@ -226,6 +281,7 @@ function EventSection({ event, now, onShowCalendar, registrationPrompt, votingPr
       {complaintPromptEvent ? <div className="absolute right-8 top-12 z-30 hidden md:block lg:right-14 2xl:right-20"><ComplaintPrompt event={complaintPromptEvent} now={now}/></div> : null}
       {votingPrompt || registrationPrompt ? <div className="absolute bottom-7 right-8 z-30 hidden items-stretch gap-3 sm:flex lg:right-12"><VotingPrompt poll={votingPrompt}/><RegistrationPrompt registration={registrationPrompt}/></div> : null}
       {rulesOpen ? <RulesModal event={event} onClose={() => setRulesOpen(false)}/> : null}
+      {trackNotesOpen ? <TrackNotesModal event={event} onClose={() => setTrackNotesOpen(false)}/> : null}
       <div className="absolute bottom-0 left-0 right-0 z-20 h-1 bg-gradient-to-r from-transparent via-racing-red to-transparent"/>
     </section>
   );

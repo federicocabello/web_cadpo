@@ -3,6 +3,8 @@ const ensureResultAchievements = require('../utils/ensureResultAchievements');
 const ensureChampionshipWarnings = require('../utils/ensureChampionshipWarnings');
 const ensureChampionshipScoring = require('../utils/ensureChampionshipScoring');
 const ensureChampionshipDebutBallast = require('../utils/ensureChampionshipDebutBallast');
+const ensureChampionshipExclusions = require('../utils/ensureChampionshipExclusions');
+const ensureChampionshipQualifyingBans = require('../utils/ensureChampionshipQualifyingBans');
 
 let percentageRuleColumnPromise;
 const ensurePercentageRuleColumn = () => {
@@ -248,14 +250,18 @@ const getById = async (req, res, next) => {
 
 const getStandings = async (req, res, next) => {
   try {
+    await ensureChampionshipExclusions();
     const [rows] = await pool.query(
       `SELECT t.posicion, t.puntos, t.victorias, t.apercibimientos,
               t.expulsado, t.campeon,
-              p.id AS idpiloto, p.nombre, p.localidad, p.ig
+              p.id AS idpiloto, p.nombre, p.localidad, p.ig,
+              CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido
        FROM tablas t
        JOIN pilotos p ON t.idpiloto = p.id
+       LEFT JOIN campeonato_pilotos_excluidos exclusion
+         ON exclusion.idcampeonato = t.idcampeonato AND exclusion.idpiloto = t.idpiloto
        WHERE t.idcampeonato = ?
-       ORDER BY t.posicion ASC`,
+       ORDER BY excluido ASC, t.posicion ASC`,
       [req.params.id]
     );
     res.json({ data: rows });
@@ -300,7 +306,7 @@ const getPrizes = async (req, res, next) => {
 
 const getLatestActiveStandings = async (req, res, next) => {
   try {
-    await ensureResultAchievements();
+    await Promise.all([ensureResultAchievements(), ensureChampionshipExclusions()]);
     const [[championship]] = await pool.query(
       `SELECT c.id, c.temporada, c.anio,
               cat.categoria, cat.logo AS categoria_logo,
@@ -332,7 +338,9 @@ const getLatestActiveStandings = async (req, res, next) => {
          ON i.idcampeonato = r.idcampeonato AND i.idpiloto = r.idpiloto
        LEFT JOIN autos a ON a.id = i.idauto
        LEFT JOIN autos_marcas am ON am.id = a.marca
-       WHERE r.idcampeonato = ? AND r.campeon = 1
+       LEFT JOIN campeonato_pilotos_excluidos exclusion
+         ON exclusion.idcampeonato = r.idcampeonato AND exclusion.idpiloto = r.idpiloto
+       WHERE r.idcampeonato = ? AND r.campeon = 1 AND exclusion.idpiloto IS NULL
        ORDER BY r.id DESC
        LIMIT 1`,
       [championship.id]
@@ -354,7 +362,9 @@ const getLatestActiveStandings = async (req, res, next) => {
          ON i.idcampeonato = r.idcampeonato AND i.idpiloto = r.idpiloto
        LEFT JOIN autos a ON a.id = i.idauto
        LEFT JOIN autos_marcas am ON am.id = a.marca
-       WHERE r.idcampeonato = ?
+       LEFT JOIN campeonato_pilotos_excluidos exclusion
+         ON exclusion.idcampeonato = r.idcampeonato AND exclusion.idpiloto = r.idpiloto
+       WHERE r.idcampeonato = ? AND exclusion.idpiloto IS NULL
        GROUP BY p.id, p.nombre, am.id, am.marca, am.logo
        ORDER BY puntos DESC, p.nombre ASC
        LIMIT 12`,
@@ -592,14 +602,18 @@ const savePrizes = async (req, res, next) => {
 
 const getEnrolled = async (req, res, next) => {
   try {
+    await ensureChampionshipExclusions();
     const [rows] = await pool.query(
       `SELECT i.numero, i.pago,
               p.id AS idpiloto, p.nombre, p.localidad, p.telefono, p.ig,
-              a.id AS idauto, am.marca, a.modelo, am.logo AS auto_logo
+              a.id AS idauto, am.marca, a.modelo, am.logo AS auto_logo,
+              CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido
        FROM inscriptos i
        JOIN pilotos p ON i.idpiloto = p.id
        JOIN autos a ON i.idauto = a.id
        JOIN autos_marcas am ON a.marca = am.id
+       LEFT JOIN campeonato_pilotos_excluidos exclusion
+         ON exclusion.idcampeonato = i.idcampeonato AND exclusion.idpiloto = i.idpiloto
        WHERE i.idcampeonato = ?
        ORDER BY i.numero ASC`,
       [req.params.id]
@@ -607,6 +621,122 @@ const getEnrolled = async (req, res, next) => {
     res.json({ data: rows });
   } catch (err) {
     next(err);
+  }
+};
+
+const setDriverExclusion = async (req, res, next) => {
+  try {
+    await ensureChampionshipExclusions();
+    const championshipId = Number(req.params.id);
+    const driverId = Number(req.params.idpiloto);
+    const excluded = req.body.excluido === true || Number(req.body.excluido) === 1;
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(driverId) || driverId < 1) {
+      return res.status(400).json({ error: 'Campeonato o piloto inválido' });
+    }
+    const [[registration]] = await pool.query(
+      'SELECT 1 FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
+      [championshipId, driverId]
+    );
+    if (!registration) return res.status(404).json({ error: 'El piloto no está inscripto en este campeonato' });
+
+    if (excluded) {
+      await pool.query(
+        `INSERT INTO campeonato_pilotos_excluidos (idcampeonato, idpiloto)
+         VALUES (?, ?) ON DUPLICATE KEY UPDATE actualizado = CURRENT_TIMESTAMP`,
+        [championshipId, driverId]
+      );
+    } else {
+      await pool.query(
+        'DELETE FROM campeonato_pilotos_excluidos WHERE idcampeonato = ? AND idpiloto = ?',
+        [championshipId, driverId]
+      );
+    }
+    res.json({
+      data: { idcampeonato: championshipId, idpiloto: driverId, excluido: excluded ? 1 : 0 },
+      message: excluded ? 'Piloto excluido del campeonato' : 'Exclusión del piloto eliminada',
+    });
+  } catch (error) { next(error); }
+};
+
+const getQualifyingBans = async (req, res, next) => {
+  try {
+    await ensureChampionshipQualifyingBans();
+    const championshipId = Number(req.params.id);
+    if (!Number.isInteger(championshipId) || championshipId < 1) {
+      return res.status(400).json({ error: 'Campeonato inválido' });
+    }
+    const [rows] = await pool.query(
+      `SELECT sanction.idpiloto, p.nombre, i.numero
+       FROM campeonato_sanciones_clasificacion sanction
+       JOIN pilotos p ON p.id = sanction.idpiloto
+       JOIN inscriptos i ON i.idcampeonato = sanction.idcampeonato AND i.idpiloto = sanction.idpiloto
+       WHERE sanction.idcampeonato = ? AND sanction.tandas_pendientes > 0
+       ORDER BY p.nombre ASC`,
+      [championshipId]
+    );
+    res.json({ data: rows });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const saveQualifyingBans = async (req, res, next) => {
+  const championshipId = Number(req.params.id);
+  const submitted = Array.isArray(req.body.sanciones) ? req.body.sanciones : [];
+  const sanctions = submitted.map(item => ({ idpiloto: Number(item.idpiloto) }));
+  if (!Number.isInteger(championshipId) || championshipId < 1) {
+    return res.status(400).json({ error: 'Campeonato inválido' });
+  }
+  if (sanctions.length > 500) return res.status(400).json({ error: 'Se superó el máximo de pilotos sancionados' });
+  if (sanctions.some(item => !Number.isInteger(item.idpiloto) || item.idpiloto < 1)) {
+    return res.status(400).json({ error: 'Cada sanción debe indicar un piloto válido' });
+  }
+  if (new Set(sanctions.map(item => item.idpiloto)).size !== sanctions.length) {
+    return res.status(400).json({ error: 'No se puede repetir un piloto en la lista' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureChampionshipQualifyingBans();
+    await connection.beginTransaction();
+    const [[championship]] = await connection.query('SELECT id FROM campeonatos WHERE id = ? FOR UPDATE', [championshipId]);
+    if (!championship) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Campeonato no encontrado' });
+    }
+    if (sanctions.length) {
+      const [registrations] = await connection.query(
+        'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto IN (?)',
+        [championshipId, sanctions.map(item => item.idpiloto)]
+      );
+      const registeredIds = new Set(registrations.map(item => Number(item.idpiloto)));
+      if (sanctions.some(item => !registeredIds.has(item.idpiloto))) {
+        await connection.rollback();
+        return res.status(400).json({ error: 'Todos los pilotos sancionados deben estar inscriptos en el campeonato' });
+      }
+    }
+    await connection.query('DELETE FROM campeonato_sanciones_clasificacion WHERE idcampeonato = ?', [championshipId]);
+    if (sanctions.length) {
+      await connection.query(
+        'INSERT INTO campeonato_sanciones_clasificacion (idcampeonato, idpiloto) VALUES ?',
+        [sanctions.map(item => [championshipId, item.idpiloto])]
+      );
+    }
+    await connection.commit();
+    const [rows] = await pool.query(
+      `SELECT sanction.idpiloto, p.nombre, i.numero
+       FROM campeonato_sanciones_clasificacion sanction
+       JOIN pilotos p ON p.id = sanction.idpiloto
+       JOIN inscriptos i ON i.idcampeonato = sanction.idcampeonato AND i.idpiloto = sanction.idpiloto
+       WHERE sanction.idcampeonato = ? ORDER BY p.nombre ASC`,
+      [championshipId]
+    );
+    res.json({ data: rows, message: 'Sanciones de clasificación guardadas correctamente' });
+  } catch (error) {
+    await connection.rollback();
+    next(error);
+  } finally {
+    connection.release();
   }
 };
 
@@ -687,6 +817,9 @@ module.exports = {
   getWarnings,
   saveWarnings,
   setWarningFulfillment,
+  setDriverExclusion,
+  getQualifyingBans,
+  saveQualifyingBans,
   getEnrolled,
   create,
   update,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowPathIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { pollsApi } from '../services/api';
 
 const emptyOption = () => ({ id: null, titulo: '', descripcion: '', porcentaje_manual: '', imagenes: [], newImages: [], photoOrder: [] });
@@ -13,6 +13,7 @@ export default function PollsAdmin() {
   const [editingId, setEditingId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingVisibilityId, setSavingVisibilityId] = useState('');
   const [message, setMessage] = useState('');
 
   const load = async () => {
@@ -103,6 +104,22 @@ export default function PollsAdmin() {
       await load();
     } catch (error) { setMessage(error.response?.data?.error || 'No se pudieron reiniciar los votos.'); }
   };
+  const toggleVisibility = async poll => {
+    const id = String(poll.id);
+    setSavingVisibilityId(id);
+    setMessage('');
+    try {
+      const response = await pollsApi.updateVisibility(poll.id, !poll.visible);
+      const saved = response.data.data;
+      setPolls(current => current.map(item => Number(item.id) === Number(poll.id) ? saved : item));
+      if (editingId === id) setForm(current => ({ ...current, visible: Boolean(saved.visible) }));
+      setMessage(response.data.message || (saved.visible ? 'Votación visible.' : 'Votación ocultada.'));
+    } catch (error) {
+      setMessage(error.response?.data?.error || 'No se pudo cambiar la visibilidad.');
+    } finally {
+      setSavingVisibilityId('');
+    }
+  };
 
   return (
     <div className="grid gap-8 xl:grid-cols-[440px_minmax(0,1fr)]">
@@ -134,7 +151,7 @@ export default function PollsAdmin() {
       <section className="space-y-5">
         <header><p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">Gestión</p><h2 className="mt-1 font-racing text-3xl font-bold uppercase text-white">Votaciones cargadas</h2></header>
         {loading ? <p className="py-12 text-center text-gray-500">Cargando votaciones...</p> : polls.length ? polls.map(poll => <article key={poll.id} className={`border bg-racing-card p-5 ${poll.visible ? 'border-cyan-300/30' : 'border-racing-border opacity-65'}`}>
-          <div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><span className="bg-cyan-300/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-300">{stateLabel(poll.estado)}</span><span className="bg-white/5 px-2 py-1 text-[9px] font-bold uppercase text-gray-400">{poll.visible ? 'Visible' : 'Oculta'}</span><span className="bg-cyan-300/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">Hasta {poll.max_opciones || 1} opción{Number(poll.max_opciones || 1) === 1 ? '' : 'es'}</span></div><p className="mt-3 font-racing text-lg font-bold uppercase tracking-wider text-cyan-300">DÍAS • {poll.dias || 'SIN CONFIGURAR'}</p></div><div className="flex gap-2"><button type="button" onClick={() => resetVotes(poll)} disabled={!poll.total_votos} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-amber-300 hover:border-amber-300 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-25" aria-label="Reiniciar votos" title="Reiniciar votos e IP"><ArrowPathIcon className="h-4 w-4" /></button><button type="button" onClick={() => edit(poll)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label="Editar votación"><PencilSquareIcon className="h-4 w-4" /></button><button type="button" onClick={() => remove(poll)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar votación"><TrashIcon className="h-4 w-4" /></button></div></div>
+          <div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><span className="bg-cyan-300/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-300">{stateLabel(poll.estado)}</span><span className="bg-white/5 px-2 py-1 text-[9px] font-bold uppercase text-gray-400">{poll.visible ? 'Visible' : 'Oculta'}</span><span className="bg-cyan-300/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">Hasta {poll.max_opciones || 1} opción{Number(poll.max_opciones || 1) === 1 ? '' : 'es'}</span></div><p className="mt-3 font-racing text-lg font-bold uppercase tracking-wider text-cyan-300">DÍAS • {poll.dias || 'SIN CONFIGURAR'}</p></div><div className="flex gap-2"><button type="button" onClick={() => toggleVisibility(poll)} disabled={savingVisibilityId === String(poll.id)} className={`inline-flex h-9 w-9 items-center justify-center border transition disabled:cursor-wait disabled:opacity-40 ${poll.visible ? 'border-emerald-400 bg-emerald-400 text-black hover:bg-emerald-300' : 'border-racing-border bg-black/25 text-gray-600 hover:border-emerald-400 hover:text-emerald-300'}`} aria-label={poll.visible ? 'Ocultar votación' : 'Mostrar votación'} title={poll.visible ? 'Visible: clic para ocultar' : 'Oculta: clic para mostrar'}><CheckCircleIcon className="h-5 w-5" /></button><button type="button" onClick={() => resetVotes(poll)} disabled={!poll.total_votos} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-amber-300 hover:border-amber-300 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-25" aria-label="Reiniciar votos" title="Reiniciar votos e IP"><ArrowPathIcon className="h-4 w-4" /></button><button type="button" onClick={() => edit(poll)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label="Editar votación"><PencilSquareIcon className="h-4 w-4" /></button><button type="button" onClick={() => remove(poll)} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar votación"><TrashIcon className="h-4 w-4" /></button></div></div>
           <p className="mt-2 text-xs text-gray-500">{inputDate(poll.fecha_inicio).replace('T', ' ')} → {inputDate(poll.fecha_cierre).replace('T', ' ')}</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{poll.opciones.map(option => <div key={option.id} className="overflow-hidden border border-white/10 bg-black/25"><div className="relative aspect-video bg-black">{option.imagen ? <img src={option.imagen} alt="" className="h-full w-full object-cover" /> : null}{option.imagenes?.length > 1 ? <span className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 text-[8px] font-bold uppercase text-cyan-200">{option.imagenes.length} fotos</span> : null}</div><div className="p-3"><div className="flex items-center justify-between gap-2 text-sm"><strong className="truncate text-white">{option.titulo}</strong><strong className="text-cyan-300">{option.porcentaje}%</strong></div>{option.descripcion ? <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-gray-500">{option.descripcion}</p> : null}<p className="mt-2 text-[9px] font-bold uppercase tracking-wider text-gray-600">{option.porcentaje_manual === null ? 'Porcentaje automático' : 'Porcentaje manual'} · {option.votos} votos</p></div></div>)}</div>
           <p className="mt-3 text-xs font-bold uppercase tracking-wider text-cyan-300">{poll.total_votos} voto{poll.total_votos === 1 ? '' : 's'} total{poll.total_votos === 1 ? '' : 'es'}</p>

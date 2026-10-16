@@ -171,6 +171,7 @@ export default function LiveTiming() {
   const [driverCountries, setDriverCountries] = useState(new Map());
   const [registeredDrivers, setRegisteredDrivers] = useState(new Map());
   const [enrolledDrivers, setEnrolledDrivers] = useState(new Map());
+  const [qualifyingBans, setQualifyingBans] = useState([]);
   const [percentageRule, setPercentageRule] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -230,6 +231,7 @@ export default function LiveTiming() {
   useEffect(() => {
     if (!selectedChampionshipId) {
       setEnrolledDrivers(new Map());
+      setQualifyingBans([]);
       setPercentageRule(0);
       return undefined;
     }
@@ -237,7 +239,10 @@ export default function LiveTiming() {
     let active = true;
     const loadEnrolledDrivers = async () => {
       try {
-        const response = await championshipsApi.getEnrolled(selectedChampionshipId);
+        const [response, bansResponse] = await Promise.all([
+          championshipsApi.getEnrolled(selectedChampionshipId),
+          championshipsApi.getQualifyingBans(selectedChampionshipId),
+        ]);
         if (!active) return;
 
         const enrolledMap = new Map();
@@ -245,9 +250,13 @@ export default function LiveTiming() {
           enrolledMap.set(driverNameKey(registration.nombre), registration);
         }
         setEnrolledDrivers(enrolledMap);
+        setQualifyingBans(bansResponse.data.data || []);
       } catch (err) {
         console.error('No se pudieron cargar los inscriptos del campeonato:', err);
-        if (active) setEnrolledDrivers(new Map());
+        if (active) {
+          setEnrolledDrivers(new Map());
+          setQualifyingBans([]);
+        }
       }
     };
 
@@ -702,40 +711,22 @@ export default function LiveTiming() {
             </h1>
             {raceEvent?.variante && <p className="font-racing text-xl font-semibold uppercase text-racing-red">Variante {raceEvent.variante}</p>}
 
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-300">
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-300">
               {raceEvent && (
                 <>
-                  <span className="font-bold uppercase text-white">{raceEvent.categoria} · Fecha {raceEvent.ronda}</span>
-                  <span className="flex items-center gap-1.5 capitalize"><CalendarDaysIcon className="h-4 w-4 text-racing-red" /> {formatEventDate(raceEvent.fecha)} H</span>
-                  <span className="flex items-center gap-2"><CountryFlag country={raceEvent.pais} className="text-lg" /><MapPinIcon className="h-4 w-4 text-racing-red" /> {[raceEvent.localidad, raceEvent.provincia].filter(Boolean).join(', ')}</span>
+                  <span className="inline-flex min-h-6 items-center font-bold uppercase leading-none text-white">{raceEvent.categoria} · Fecha {raceEvent.ronda}</span>
+                  <span className="inline-flex min-h-6 items-center gap-1.5 capitalize leading-none"><CalendarDaysIcon className="h-4 w-4 shrink-0 text-racing-red" /> {formatEventDate(raceEvent.fecha)} H</span>
+                  <span className="inline-flex min-h-6 items-center gap-2 leading-none"><CountryFlag country={raceEvent.pais} className="shrink-0 text-lg" /><MapPinIcon className="h-4 w-4 shrink-0 text-racing-red" /> {[raceEvent.localidad, raceEvent.provincia].filter(Boolean).join(', ')}</span>
                 </>
               )}
             </div>
 
             {raceEvent && <div className="mt-5 flex flex-wrap items-center gap-2">
-              <ServerJoinButton href={raceEvent?.servidor} className="h-9 px-3 py-0 text-xs" />
-              <span className={`inline-flex h-9 items-center gap-2 border px-3 text-xs font-bold uppercase ${error ? 'border-red-500/40 bg-red-500/10 text-red-300' : 'border-green-500/40 bg-green-500/10 text-green-300'}`}>
-                <span className={`h-2 w-2 rounded-full ${error ? 'bg-red-400' : 'animate-pulse bg-green-400'}`} />
-                {error ? 'Sin conexión' : stale ? 'Datos guardados' : 'En línea'}
-              </span>
-              <button
-                type="button"
-                onClick={() => loadTiming(true)}
-                disabled={refreshing}
-                className="inline-flex h-9 items-center gap-2 border border-racing-border bg-black/70 px-3 font-racing text-xs font-bold uppercase text-gray-200 transition-colors hover:border-racing-red hover:text-racing-red disabled:opacity-50"
-              >
-                <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> Actualizar
-              </button>
-              <button
-                type="button"
-                onClick={generateTimingPdf}
-                disabled={generatingPdf || loading || !drivers.length}
-                className="inline-flex h-9 w-9 items-center justify-center border border-white/25 bg-white/10 text-white transition-colors hover:border-white hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
-                title="Ver planilla PDF"
-                aria-label="Ver planilla PDF"
-              >
-                <DocumentArrowDownIcon className={`h-4 w-4 ${generatingPdf ? 'animate-pulse' : ''}`} />
-              </button>
+              <ServerJoinButton href={raceEvent?.servidor} variant="green" steady className="event-action-button h-9 w-full justify-center gap-2 px-3 py-0 text-[10px] sm:w-auto" />
+              {qualifyingBans.length ? <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 border border-red-400/45 bg-red-500/10 px-3 py-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-300">No pueden clasificar</span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 uppercase leading-relaxed">{qualifyingBans.map((item, index) => <Fragment key={item.idpiloto}>{index > 0 ? <span className="text-[10px] text-gray-600">•</span> : null}<span className="inline-flex items-baseline gap-1.5"><span className="text-[10px] font-semibold text-gray-500">#{item.numero ?? 0}</span><strong className="font-racing text-sm font-bold text-white">{item.nombre}</strong></span></Fragment>)}</span>
+              </div> : null}
             </div>}
           </div>
 
@@ -1039,6 +1030,18 @@ export default function LiveTiming() {
                 <p className="text-sm text-gray-400">Conectando con el servidor...</p>
               </div>
             )}
+            {!loading && drivers.length ? <div className="flex justify-end border-t border-racing-border bg-black/20 px-2 py-1.5">
+              <button
+                type="button"
+                onClick={generateTimingPdf}
+                disabled={generatingPdf}
+                className="inline-flex h-7 w-7 items-center justify-center text-gray-700 transition-colors hover:bg-white/5 hover:text-gray-300 disabled:opacity-40"
+                title="Ver planilla PDF"
+                aria-label="Ver planilla PDF"
+              >
+                <DocumentArrowDownIcon className={`h-3.5 w-3.5 ${generatingPdf ? 'animate-pulse' : ''}`} />
+              </button>
+            </div> : null}
           </section>
         </>}
       </div>

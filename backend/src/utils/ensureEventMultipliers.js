@@ -24,6 +24,9 @@ const ensureEventMultipliers = async () => {
       if (!existing.has('limite_apelaciones')) {
         changes.push('ADD COLUMN limite_apelaciones DATETIME NULL');
       }
+      if (!existing.has('resultados_confirmados')) {
+        changes.push('ADD COLUMN resultados_confirmados TINYINT(1) NOT NULL DEFAULT 0');
+      }
       if (changes.length) await pool.query(`ALTER TABLE calendario ${changes.join(', ')}`);
       if (visibilityColumnAdded) {
         await pool.query('ALTER TABLE calendario MODIFY COLUMN resultados_visibles TINYINT(1) NOT NULL DEFAULT 0');

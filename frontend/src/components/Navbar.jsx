@@ -15,8 +15,9 @@ import {
   TrophyIcon,
   RectangleStackIcon,
 } from '@heroicons/react/24/outline'
-import { authApi, championshipsApi, eventsApi, pollsApi, projectsApi } from '../services/api'
+import { authApi, championshipsApi, clubApi, eventsApi, pollsApi, projectsApi } from '../services/api'
 import { getLiveTimingEvents } from '../utils/weeklyChampionships'
+import { CountryFlag } from './CountryFlag'
 
 const InstagramIcon = ({ className = '' }) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none">
@@ -226,18 +227,41 @@ function ChampionshipTicker() {
   )
 }
 
-function ClubBanner() {
+function ClubBanner({ servers }) {
+  const [activeServerIndex, setActiveServerIndex] = useState(0)
+
+  useEffect(() => {
+    if (servers.length <= 1) {
+      setActiveServerIndex(0)
+      return undefined
+    }
+    const interval = window.setInterval(() => {
+      setActiveServerIndex(current => (current + 1) % servers.length)
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [servers.length])
+
+  const server = servers[activeServerIndex] || servers[0]
+
   return (
     <NavLink to="/club" className="group relative flex min-h-10 w-full items-center justify-center overflow-hidden border-y border-blue-300/40 bg-gradient-to-r from-[#04142b] via-[#0b4d88] to-[#04142b] px-14 py-2 text-center shadow-[inset_0_1px_0_rgba(147,197,253,0.2),0_4px_20px_rgba(2,22,48,0.58)] transition-colors duration-300 hover:via-[#0967ad] sm:px-24" aria-label="Ingresar a CADPO CLUB, servidor abierto y gratuito">
       <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 left-0 w-10 opacity-90 sm:w-16"/>
       <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 right-0 w-10 opacity-90 sm:w-16"/>
       <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/4 -skew-x-12 bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[650%]"/>
-      <span className="relative flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 sm:gap-x-3">
-        <strong className="font-racing text-sm font-black uppercase tracking-[0.16em] text-white sm:text-base sm:tracking-[0.22em]">CADPO CLUB</strong>
-        <span className="rounded-full border border-emerald-200/70 bg-emerald-400 px-2 py-1 text-[8px] font-black uppercase leading-none tracking-wider text-black">Gratis</span>
-        <span className="relative hidden h-4 w-[31rem] overflow-hidden text-[9px] font-bold uppercase tracking-[0.15em] lg:inline-block">
-          <span className="absolute inset-0 flex items-center justify-center text-blue-50 transition-all duration-300 group-hover:-translate-y-full group-hover:opacity-0">Servidor abierto • 7 minutos de clasificación • 7 minutos de carrera</span>
-          <span className="absolute inset-0 flex translate-y-full items-center justify-center font-black tracking-[0.28em] text-white opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">¡Unite ya!</span>
+      <span className="relative flex w-auto max-w-full min-w-0 items-center justify-center gap-x-2 sm:gap-x-2.5">
+        <strong className="shrink-0 font-racing text-base font-black uppercase tracking-[0.16em] text-white sm:text-lg sm:tracking-[0.2em]">CADPO CLUB</strong>
+        <span className="shrink-0 rounded-full border border-emerald-200/70 bg-emerald-400 px-2.5 py-1 text-[9px] font-black uppercase leading-none tracking-wider text-black">Gratis</span>
+        <span className="relative flex h-7 min-w-0 max-w-[1100px] overflow-hidden text-[8px] font-bold uppercase tracking-[0.08em] sm:text-[9px] sm:tracking-[0.13em]">
+          <span className="flex h-full min-w-0 max-w-full items-center transition-all duration-300 group-hover:-translate-y-full group-hover:opacity-0">
+            {server ? <span key={server.id} className="club-server-rotate flex h-full min-w-0 max-w-full items-center justify-center gap-2 text-white">
+              <span className="min-w-0 truncate"><span className="hidden text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)] sm:inline">Servidor </span>{server.nombre}</span>
+              <span className="shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)]">•</span>
+              <span className="hidden min-w-0 items-center gap-2 sm:flex">{(server.autos || []).slice(0, 6).map(car => <span key={car.id} className="flex min-w-0 items-center gap-1"><img src={car.logo} alt="" className="h-5 w-7 shrink-0 object-contain"/><span className="max-w-28 truncate text-gray-100">{[car.marca, car.modelo].filter(Boolean).join(' ')}</span></span>)}</span>
+              <span className="hidden shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)] sm:inline">•</span>
+              <span className="flex min-w-0 items-center gap-1.5"><CountryFlag country={server.pais} className="shrink-0 text-sm"/><span className="truncate">{server.circuito}</span></span>
+            </span> : <span className="flex h-full items-center justify-center text-white">Contenido disponible próximamente</span>}
+          </span>
+          <span className="absolute inset-0 flex translate-y-full items-center justify-center font-black tracking-[0.28em] text-[#39ff88] opacity-0 drop-shadow-[0_0_8px_rgba(57,255,136,0.6)] transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">¡Unite ya!</span>
         </span>
       </span>
     </NavLink>
@@ -252,6 +276,7 @@ export default function Navbar() {
   const [calendarNow, setCalendarNow] = useState(() => Date.now())
   const [projects, setProjects] = useState([])
   const [polls, setPolls] = useState([])
+  const [clubServers, setClubServers] = useState([])
 
   useEffect(() => {
     let active = true
@@ -281,6 +306,16 @@ export default function Navbar() {
       })
       .catch(() => {
         if (active) setPolls([])
+      })
+
+    clubApi.get()
+      .then(({ data }) => {
+        if (!active) return
+        const items = Array.isArray(data?.data) ? data.data : data?.data ? [data.data] : []
+        setClubServers(items.slice(0, 3))
+      })
+      .catch(() => {
+        if (active) setClubServers([])
       })
 
     return () => {
@@ -417,7 +452,7 @@ export default function Navbar() {
 
       {location.pathname === '/' ? (
         <>
-          <ClubBanner />
+          <ClubBanner servers={clubServers} />
           <ChampionshipTicker />
         </>
       ) : null}

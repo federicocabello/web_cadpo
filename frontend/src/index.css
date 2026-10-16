@@ -249,6 +249,38 @@
     animation: event-action-sheen 4s ease-in-out infinite;
   }
 
+  .track-notes-button {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background-color: #eab308;
+    background-image:
+      radial-gradient(circle at 15% 30%, rgba(255, 255, 255, 0.18) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 70% 65%, rgba(0, 0, 0, 0.22) 0 1px, transparent 1.5px),
+      linear-gradient(90deg, #111111 0%, #242424 58%, #5f510d 80%, #d6a900 100%);
+    background-size: 7px 7px, 9px 9px, 100% 100%;
+    box-shadow: 0 8px 22px rgba(234, 179, 8, 0.2);
+    transition: filter 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .track-notes-button::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 0;
+    width: 38%;
+    background: repeating-linear-gradient(135deg, #f4f4f5 0 7px, #b91c1c 7px 14px);
+    clip-path: polygon(0 0, 52% 0, 100% 100%, 0 100%);
+    opacity: 0.3;
+    transform: translateX(-32%);
+  }
+
+  .track-notes-button:hover {
+    filter: brightness(1.12);
+    border-color: #fef08a;
+    box-shadow: 0 10px 28px rgba(234, 179, 8, 0.3);
+  }
+
   .server-action-yellow {
     --action-glow: rgba(250, 204, 21, 0.55);
   }
@@ -490,6 +522,21 @@
   to { background-position: 16px 0; }
 }
 
+@keyframes club-server-rotate-down {
+  from {
+    opacity: 0;
+    transform: translateY(-110%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.club-server-rotate {
+  animation: club-server-rotate-down 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .club-checker-strip {
   background-color: #fff;
   background-image:
@@ -505,5 +552,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .club-checker-strip { animation: none; }
+  .club-checker-strip,
+  .club-server-rotate { animation: none; }
 }

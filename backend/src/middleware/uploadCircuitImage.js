@@ -6,11 +6,16 @@ const multer = require('multer');
 const publicDir = require('../utils/publicDir');
 const circuitImagesDir = path.join(publicDir, 'media', 'circuitos', 'fotos');
 const circuitLayoutsDir = path.join(publicDir, 'media', 'circuitos', 'trazados');
+const circuitNotesDir = path.join(publicDir, 'media', 'circuitos', 'notas');
 const allowedExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const targetDir = file.fieldname === 'trazado' ? circuitLayoutsDir : circuitImagesDir;
+    const targetDir = file.fieldname === 'trazado'
+      ? circuitLayoutsDir
+      : file.fieldname === 'notas'
+        ? circuitNotesDir
+        : circuitImagesDir;
 
     fs.mkdirSync(targetDir, { recursive: true });
     cb(null, targetDir);

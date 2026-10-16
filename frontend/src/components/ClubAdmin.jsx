@@ -16,16 +16,20 @@ const emptyForm = {
   idcategoria: '',
   idcircuito: '',
   servidor: '',
+  enlace_ingreso: '',
   autos: [],
   activo: true,
   orden: 0,
 };
 
+const formatClubName = value => String(value || '').toLocaleUpperCase('es-AR');
+
 const toForm = configuration => ({
-  nombre: configuration?.nombre || '',
+  nombre: formatClubName(configuration?.nombre),
   idcategoria: String(configuration?.idcategoria || ''),
   idcircuito: String(configuration?.idcircuito || ''),
   servidor: configuration?.servidor || '',
+  enlace_ingreso: configuration?.enlace_ingreso || '',
   autos: (configuration?.autos || []).map(car => Number(car.id)),
   activo: configuration ? Boolean(configuration.activo) : true,
   orden: Number(configuration?.orden || 0),
@@ -109,7 +113,7 @@ export default function ClubAdmin({ categories, circuits, cars }) {
     setEditingId(null);
     setForm({
       ...emptyForm,
-      nombre: server.nombre || `CADPO CLUB ${server.numero}`,
+      nombre: formatClubName(server.nombre || `CADPO CLUB ${server.numero}`),
       servidor: server.enlace,
       orden: configurations.length,
     });
@@ -198,10 +202,13 @@ export default function ClubAdmin({ categories, circuits, cars }) {
 
         <form onSubmit={save} className="mt-6 space-y-6">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_120px]">
-            <label><span className="text-sm font-semibold text-gray-300">Nombre público</span><input value={form.nombre} onChange={event => setForm(current => ({ ...current, nombre: event.target.value }))} className="input-field mt-2" placeholder="Ej.: CADPO CLUB TURISMO" maxLength="160" required/></label>
+            <label><span className="text-sm font-semibold text-gray-300">Nombre público</span><input value={form.nombre} onChange={event => setForm(current => ({ ...current, nombre: formatClubName(event.target.value) }))} className="input-field mt-2 uppercase" placeholder="Ej.: CADPO CLUB TURISMO" maxLength="160" required/></label>
             <label><span className="text-sm font-semibold text-gray-300">Orden</span><input type="number" min="0" max="65535" step="1" value={form.orden} onChange={event => setForm(current => ({ ...current, orden: event.target.value }))} className="input-field mt-2 text-center"/></label>
           </div>
-          <label className="block"><span className="flex items-center gap-2 text-sm font-semibold text-gray-300"><LinkIcon className="h-4 w-4 text-yellow-300"/>Enlace del servidor</span><input type="url" value={form.servidor} onChange={event => setForm(current => ({ ...current, servidor: event.target.value }))} className="input-field mt-2" placeholder="http://rh.servegame.com:30000/live-timing?server=1" required/><small className="mt-2 block text-xs text-gray-500">Podés seleccionarlo automáticamente arriba o escribir el número de servidor correspondiente.</small></label>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="block"><span className="flex items-center gap-2 text-sm font-semibold text-gray-300"><LinkIcon className="h-4 w-4 text-blue-300"/>Enlace para consultar tiempos</span><input type="url" value={form.servidor} onChange={event => setForm(current => ({ ...current, servidor: event.target.value }))} className="input-field mt-2" placeholder="http://rh.servegame.com:30000/live-timing?server=1" required/><small className="mt-2 block text-xs text-gray-500">Se obtiene automáticamente desde el Server Manager y se usa para consultar tanda y pilotos conectados.</small></label>
+            <label className="block"><span className="flex items-center gap-2 text-sm font-semibold text-gray-300"><LinkIcon className="h-4 w-4 text-emerald-300"/>Enlace directo para ingresar</span><input type="url" value={form.enlace_ingreso} onChange={event => setForm(current => ({ ...current, enlace_ingreso: event.target.value }))} className="input-field mt-2" placeholder="https://acstuff.ru/s/q:race/online/join?httpPort=30010&ip=rh.servegame.com" required/><small className="mt-2 block text-xs text-gray-500">Se conserva exactamente como lo pegás y abre el servidor mediante Content Manager.</small></label>
+          </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <label><span className="text-sm font-semibold text-gray-300">Categoría activa</span><select value={form.idcategoria} onChange={changeCategory} className="input-field mt-2" required><option value="">Seleccionar categoría</option>{categories.map(category => <option key={category.id} value={category.id}>{category.categoria}</option>)}</select></label>
             <label><span className="text-sm font-semibold text-gray-300">Circuito activo</span><select value={form.idcircuito} onChange={event => setForm(current => ({ ...current, idcircuito: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar circuito</option>{circuits.map(circuit => <option key={circuit.id} value={circuit.id}>{circuit.nombre}{circuit.variante ? ` · ${circuit.variante}` : ''}</option>)}</select></label>

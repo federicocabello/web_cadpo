@@ -296,6 +296,21 @@ const update = async (req, res, next) => {
   } catch (error) { await removeImages(writtenImages); next(error); }
 };
 
+const updateVisibility = async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const pollId = Number(req.params.id);
+    if (!Number.isInteger(pollId) || pollId < 1) return res.status(400).json({ error: 'Votación inválida' });
+    const visible = parseVisible(req.body.visible) ? 1 : 0;
+    const [result] = await pool.query('UPDATE votaciones SET visible = ? WHERE id = ?', [visible, pollId]);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Votación no encontrada' });
+    const poll = (await loadPolls({ includeHidden: true })).find(item => Number(item.id) === pollId);
+    res.json({ data: poll, message: visible ? 'Votación visible en la web' : 'Votación ocultada' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const vote = async (req, res, next) => {
   try {
     await ensureSchema();
@@ -369,4 +384,4 @@ const resetVotes = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { create, getAdmin, getPublic, remove, resetVotes, update, vote };
+module.exports = { create, getAdmin, getPublic, remove, resetVotes, update, updateVisibility, vote };

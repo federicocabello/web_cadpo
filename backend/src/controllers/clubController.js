@@ -36,6 +36,7 @@ const ensureSchema = () => {
         KEY idx_club_autos_orden (idconfiguracion, orden)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
       await ensureColumn('club_configuracion', 'nombre', 'VARCHAR(160) NULL AFTER `id`');
+      await ensureColumn('club_configuracion', 'enlace_ingreso', 'VARCHAR(1000) NULL AFTER `servidor`');
       await ensureColumn('club_configuracion', 'orden', 'SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER `activo`');
     })().catch(error => {
       schemaPromise = null;
@@ -77,6 +78,19 @@ const parseServerUrl = value => {
   };
 };
 
+const parseJoinUrl = value => {
+  const raw = String(value || '').trim();
+  if (!raw) return { error: 'Ingresá el enlace directo para acceder al servidor' };
+  if (raw.length > 1000) return { error: 'El enlace directo es demasiado largo' };
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error('invalid');
+    return { url: raw };
+  } catch {
+    return { error: 'Ingresá un enlace directo válido que comience con http:// o https://' };
+  }
+};
+
 const fetchWithTimeout = async (url, options = {}, timeoutMs = REMOTE_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -90,7 +104,7 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = REMOTE_TIMEOUT_MS
 const loadConfigurations = async ({ onlyActive = false } = {}) => {
   await ensureSchema();
   const [configurations] = await pool.query(`
-    SELECT cfg.id, cfg.nombre, cfg.idcategoria, cfg.idcircuito, cfg.servidor,
+    SELECT cfg.id, cfg.nombre, cfg.idcategoria, cfg.idcircuito, cfg.servidor, cfg.enlace_ingreso,
            cfg.activo, cfg.orden, cfg.actualizado,
            cat.categoria, cat.logo AS categoria_logo,
            cir.nombre AS circuito, cir.variante, cir.localidad, cir.provincia, cir.pais,
@@ -149,18 +163,20 @@ const getAdmin = async (req, res, next) => {
 };
 
 const validatePayload = async body => {
-  const nombre = String(body.nombre || '').trim().slice(0, 160);
+  const nombre = String(body.nombre || '').trim().toLocaleUpperCase('es-AR').slice(0, 160);
   const idcategoria = Number(body.idcategoria);
   const idcircuito = Number(body.idcircuito);
   const autoIds = [...new Set((Array.isArray(body.autos) ? body.autos : []).map(Number).filter(Number.isInteger))];
   const activo = !['false', '0', 'off'].includes(String(body.activo).toLowerCase()) ? 1 : 0;
   const orden = Math.max(0, Math.min(65535, Math.trunc(Number(body.orden) || 0)));
   const parsedServer = parseServerUrl(body.servidor);
+  const parsedJoinUrl = parseJoinUrl(body.enlace_ingreso);
 
   if (!nombre) return { error: 'Ingresá un nombre para identificar el servidor CLUB' };
   if (!idcategoria || !idcircuito) return { error: 'Seleccioná una categoría y un circuito' };
   if (!autoIds.length) return { error: 'Seleccioná al menos un auto para el servidor CLUB' };
   if (parsedServer.error) return { error: parsedServer.error };
+  if (parsedJoinUrl.error) return { error: parsedJoinUrl.error };
   if (!parsedServer.publicUrl) return { error: 'Ingresá el enlace del servidor CLUB' };
 
   const [[[category]], [[circuit]], [cars]] = await Promise.all([
@@ -174,7 +190,7 @@ const validatePayload = async body => {
     return { error: 'Todos los autos deben pertenecer a la categoría seleccionada' };
   }
 
-  return { nombre, idcategoria, idcircuito, autoIds, activo, orden, parsedServer };
+  return { nombre, idcategoria, idcircuito, autoIds, activo, orden, parsedServer, joinUrl: parsedJoinUrl.url };
 };
 
 const saveCars = async (connection, id, autoIds) => {
@@ -201,9 +217,9 @@ const create = async (req, res, next) => {
       id = Number(row.nextId);
       if (id > 255) throw new Error('Se alcanzó el límite de servidores CLUB configurables');
       await connection.query(`
-        INSERT INTO club_configuracion (id, nombre, idcategoria, idcircuito, servidor, activo, orden)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [id, payload.nombre, payload.idcategoria, payload.idcircuito, payload.parsedServer.publicUrl, payload.activo, payload.orden]);
+        INSERT INTO club_configuracion (id, nombre, idcategoria, idcircuito, servidor, enlace_ingreso, activo, orden)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [id, payload.nombre, payload.idcategoria, payload.idcircuito, payload.parsedServer.publicUrl, payload.joinUrl, payload.activo, payload.orden]);
       await saveCars(connection, id, payload.autoIds);
       await connection.commit();
     } catch (error) {
@@ -235,9 +251,9 @@ const update = async (req, res, next) => {
       await connection.beginTransaction();
       await connection.query(`
         UPDATE club_configuracion
-        SET nombre = ?, idcategoria = ?, idcircuito = ?, servidor = ?, activo = ?, orden = ?
+        SET nombre = ?, idcategoria = ?, idcircuito = ?, servidor = ?, enlace_ingreso = ?, activo = ?, orden = ?
         WHERE id = ?
-      `, [payload.nombre, payload.idcategoria, payload.idcircuito, payload.parsedServer.publicUrl, payload.activo, payload.orden, id]);
+      `, [payload.nombre, payload.idcategoria, payload.idcircuito, payload.parsedServer.publicUrl, payload.joinUrl, payload.activo, payload.orden, id]);
       await saveCars(connection, id, payload.autoIds);
       await connection.commit();
     } catch (error) {

@@ -5,6 +5,7 @@ const pool = require('../config/db');
 const publicDir = require('../utils/publicDir');
 const slugify = require('../utils/slugify');
 const ensureEventMultipliers = require('../utils/ensureEventMultipliers');
+const { ensureCircuitNotesSchema, attachCircuitNotes } = require('./circuitsController');
 
 const eventBannerExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
 const pendingCircuitName = 'A CONFIRMAR';
@@ -89,14 +90,14 @@ const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
          cal.especialidad, cal.coronacion, cal.transmision,
          cal.multiplicador_sprint, cal.multiplicador_final,
-         cal.resultados_visibles, cal.limite_apelaciones,
+         cal.resultados_visibles, cal.limite_apelaciones, cal.resultados_confirmados,
          CONCAT(cal.idcampeonato, '-', cal.ronda) AS id,
          CASE
            WHEN cal.fecha >= NOW() THEN 'upcoming'
            ELSE 'completed'
          END AS status,
          ci.id AS idcircuito, ci.nombre AS circuito,
-         ci.localidad, ci.provincia, ci.pais, ci.imagen, ci.trazado, ci.variante,
+         ci.localidad, ci.provincia, ci.pais, ci.imagen, ci.trazado, ci.variante, ci.notas_titulo,
          c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor,
          cat.id AS idcategoria, cat.categoria, cat.logo AS categoria_logo
   FROM calendario cal
@@ -108,6 +109,7 @@ const baseSelect = `
 const getAll = async (req, res, next) => {
   try {
     await ensureEventMultipliers();
+    await ensureCircuitNotesSchema();
     const { idcampeonato, status } = req.query;
     const params = [];
     const conditions = [];
@@ -123,7 +125,7 @@ const getAll = async (req, res, next) => {
     const order = status === 'completed' ? ' ORDER BY cal.fecha DESC' : ' ORDER BY cal.fecha ASC';
     const [rows] = await pool.query(`${baseSelect}${where}${order}`, params);
 
-    res.json({ data: await attachEventBanners(rows), total: rows.length });
+    res.json({ data: await attachCircuitNotes(await attachEventBanners(rows)), total: rows.length });
   } catch (err) {
     next(err);
   }
@@ -132,8 +134,9 @@ const getAll = async (req, res, next) => {
 const getUpcoming = async (req, res, next) => {
   try {
     await ensureEventMultipliers();
+    await ensureCircuitNotesSchema();
     const [rows] = await pool.query(`${baseSelect} WHERE cal.fecha >= NOW() ORDER BY cal.fecha ASC LIMIT 10`);
-    res.json({ data: await attachEventBanners(rows), total: rows.length });
+    res.json({ data: await attachCircuitNotes(await attachEventBanners(rows)), total: rows.length });
   } catch (err) {
     next(err);
   }
@@ -376,6 +379,29 @@ const updateAppealDeadline = async (req, res, next) => {
   }
 };
 
+const updateResultsConfirmation = async (req, res, next) => {
+  try {
+    await ensureEventMultipliers();
+    const championshipId = Number(req.params.idcampeonato);
+    const round = Number(req.params.ronda);
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+      return res.status(400).json({ error: 'Campeonato o fecha inválidos' });
+    }
+    const confirmed = req.body.confirmed === true || Number(req.body.confirmed) === 1 ? 1 : 0;
+    const [result] = await pool.query(
+      'UPDATE calendario SET resultados_confirmados = ? WHERE idcampeonato = ? AND ronda = ?',
+      [confirmed, championshipId, round],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+    res.json({
+      message: confirmed ? 'Resultados confirmados como definitivos' : 'Confirmación definitiva retirada',
+      data: { idcampeonato: championshipId, ronda: round, resultados_confirmados: confirmed },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getBanners = async (req, res, next) => {
   try {
     const gallery = await getEventGallery(req.params.idcampeonato, req.params.ronda);
@@ -418,4 +444,4 @@ const removeBanner = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, updateResultsVisibility, updateAppealDeadline, remove, getBanners, uploadBanners, removeBanner };
+module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, updateResultsVisibility, updateAppealDeadline, updateResultsConfirmation, remove, getBanners, uploadBanners, removeBanner };

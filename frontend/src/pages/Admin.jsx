@@ -12,11 +12,13 @@ import {
   EyeSlashIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FlagIcon,
   MagnifyingGlassIcon,
   PhotoIcon,
+  PlusIcon,
   PlayCircleIcon,
   FireIcon,
   PencilSquareIcon,
@@ -30,7 +32,8 @@ import {
   WrenchIcon,
   RectangleStackIcon,
   ChartBarIcon,
-  ClockIcon,
+  CheckCircleIcon,
+  VideoCameraIcon,
 } from '@heroicons/react/24/outline';
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
@@ -67,28 +70,29 @@ const formatEventDateTime = value => {
 };
 
 const adminSections = [
-  { id: 'importador', label: 'IMPORTADOR', icon: ArrowUpTrayIcon },
-  { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
-  { id: 'denuncias', label: 'DENUNCIAS', icon: ExclamationTriangleIcon },
-  { id: 'replays', label: 'REPETICIONES', icon: ArrowDownTrayIcon },
-  { id: 'plantillas', label: 'PLANTILLAS', icon: ArchiveBoxIcon },
-  { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
-  { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
-  { id: 'marcas', label: 'MARCAS', icon: TagIcon },
   { id: 'autos', label: 'AUTOS', icon: WrenchIcon },
   { id: 'campeonatos', label: 'CAMPEONATOS', icon: FireIcon },
-  { id: 'inscriptos', label: 'INSCRIPTOS', icon: UsersIcon },
-  { id: 'formularios', label: 'FORMULARIOS', icon: ClipboardDocumentListIcon },
+  { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
-  { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
-  { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
-  { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
-  { id: 'votaciones', label: 'VOTACIONES', icon: ChartBarIcon },
   { id: 'club', label: 'CLUB', icon: BoltIcon },
-  { id: 'relaciones-caja', label: 'RELACIONES DE CAJA', icon: WrenchScrewdriverIcon },
+  { id: 'denuncias', label: 'DENUNCIAS', icon: ExclamationTriangleIcon },
+  { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
+  { id: 'formularios', label: 'FORMULARIOS', icon: ClipboardDocumentListIcon },
+  { id: 'importador', label: 'IMPORTADOR', icon: ArrowUpTrayIcon },
+  { id: 'inscriptos', label: 'INSCRIPTOS', icon: UsersIcon },
+  { id: 'marcas', label: 'MARCAS', icon: TagIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
+  { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
+  { id: 'plantillas', label: 'PLANTILLAS', icon: ArchiveBoxIcon },
+  { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
+  { id: 'relaciones-caja', label: 'PUESTA A PUNTO', icon: WrenchScrewdriverIcon },
+  { id: 'replays', label: 'REPETICIONES', icon: ArrowDownTrayIcon },
+  { id: 'resultados', label: 'RESULTADOS', icon: TrophyIcon },
+  { id: 'sponsors', label: 'SPONSORS', icon: BuildingOffice2Icon },
+  { id: 'votaciones', label: 'VOTACIONES', icon: ChartBarIcon },
 ];
 const adminSectionStorageKey = 'cadpo-admin-section';
+const emptyResultAppealForm = { tanda: 'sprint', idpiloto: '', motivo: '' };
 const resultPointFields = [
   { key: 'presentismo', shortLabel: 'P', label: 'Presentismo' },
   { key: 'pts_qualy_sprint', shortLabel: 'QS', label: 'Qualy Sprint' },
@@ -798,6 +802,7 @@ export default function Admin() {
   const resultJsonInputRef = useRef(null);
   const imageInputRef = useRef(null);
   const layoutInputRef = useRef(null);
+  const circuitNotesInputRef = useRef(null);
   const categoryLogoInputRef = useRef(null);
   const categoryGalleryInputRef = useRef(null);
   const carBrandLogoInputRef = useRef(null);
@@ -812,6 +817,7 @@ export default function Admin() {
   const sponsorPhotosInputRef = useRef(null);
   const projectPhotosInputRef = useRef(null);
   const eventBannerInputRef = useRef(null);
+  const resultAppealVideoInputRef = useRef(null);
   const [authorized, setAuthorized] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [monitorMessage, setMonitorMessage] = useState('');
@@ -890,9 +896,17 @@ export default function Admin() {
   const [resultFinalMultiplier, setResultFinalMultiplier] = useState('1');
   const [savingResultMultipliers, setSavingResultMultipliers] = useState(false);
   const [savingResultVisibility, setSavingResultVisibility] = useState(false);
+  const [savingResultConfirmation, setSavingResultConfirmation] = useState(false);
   const [resultAppealDeadline, setResultAppealDeadline] = useState('');
   const [savingResultAppealDeadline, setSavingResultAppealDeadline] = useState(false);
   const [resultAppealDeadlineMessage, setResultAppealDeadlineMessage] = useState('');
+  const [resultAppeals, setResultAppeals] = useState([]);
+  const [resultAppealForm, setResultAppealForm] = useState(emptyResultAppealForm);
+  const [resultAppealVideo, setResultAppealVideo] = useState(null);
+  const [resultAppealUploadProgress, setResultAppealUploadProgress] = useState(0);
+  const [editingResultAppealId, setEditingResultAppealId] = useState(null);
+  const [savingResultAppeal, setSavingResultAppeal] = useState(false);
+  const [resultAppealMessage, setResultAppealMessage] = useState('');
   const [resultMultiplierMessage, setResultMultiplierMessage] = useState('');
   const [resultImportSession, setResultImportSession] = useState('sprint');
   const [resultImportedSessions, setResultImportedSessions] = useState({});
@@ -908,6 +922,12 @@ export default function Admin() {
   const [savingChampionshipWarnings, setSavingChampionshipWarnings] = useState(false);
   const [updatingWarningFulfillment, setUpdatingWarningFulfillment] = useState('');
   const [championshipWarningsMessage, setChampionshipWarningsMessage] = useState('');
+  const [qualifyingBans, setQualifyingBans] = useState([]);
+  const [qualifyingBanDriverId, setQualifyingBanDriverId] = useState('');
+  const [showQualifyingBans, setShowQualifyingBans] = useState(false);
+  const [loadingQualifyingBans, setLoadingQualifyingBans] = useState(false);
+  const [savingQualifyingBans, setSavingQualifyingBans] = useState(false);
+  const [qualifyingBansMessage, setQualifyingBansMessage] = useState('');
   const [championshipScoringRows, setChampionshipScoringRows] = useState([]);
   const [showChampionshipScoring, setShowChampionshipScoring] = useState(false);
   const [loadingChampionshipScoring, setLoadingChampionshipScoring] = useState(false);
@@ -917,6 +937,7 @@ export default function Admin() {
   const [standingsImageMessage, setStandingsImageMessage] = useState('');
   const [savingChampionshipChampion, setSavingChampionshipChampion] = useState(false);
   const [championshipChampionMessage, setChampionshipChampionMessage] = useState('');
+  const [updatingChampionshipExclusion, setUpdatingChampionshipExclusion] = useState('');
   const [resultDebutBallasts, setResultDebutBallasts] = useState({});
   const [resultBallastSort, setResultBallastSort] = useState('name');
   const [savingResultDebutBallasts, setSavingResultDebutBallasts] = useState(false);
@@ -938,6 +959,13 @@ export default function Admin() {
   const [registrationMessage, setRegistrationMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingCircuit, setSavingCircuit] = useState(false);
+  const [savingCircuitNote, setSavingCircuitNote] = useState(false);
+  const [editingCircuitNoteId, setEditingCircuitNoteId] = useState(null);
+  const [editingCircuitNoteTitle, setEditingCircuitNoteTitle] = useState('');
+  const [editingCircuitNoteFiles, setEditingCircuitNoteFiles] = useState([]);
+  const [selectedReusableCircuitNotes, setSelectedReusableCircuitNotes] = useState([]);
+  const [savingCircuitNoteOrder, setSavingCircuitNoteOrder] = useState(false);
+  const [reusingCircuitNotes, setReusingCircuitNotes] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingChampionship, setSavingChampionship] = useState(false);
   const [savingCarBrand, setSavingCarBrand] = useState(false);
@@ -945,6 +973,8 @@ export default function Admin() {
   const [circuitForm, setCircuitForm] = useState(emptyCircuitForm);
   const [circuitImageFile, setCircuitImageFile] = useState(null);
   const [circuitLayoutFile, setCircuitLayoutFile] = useState(null);
+  const [circuitNoteTitle, setCircuitNoteTitle] = useState('');
+  const [circuitNoteFiles, setCircuitNoteFiles] = useState([]);
   const [circuitLayoutCrop, setCircuitLayoutCrop] = useState(defaultCropSettings);
   const [editingCircuitId, setEditingCircuitId] = useState(null);
   const [circuitSearch, setCircuitSearch] = useState('');
@@ -1083,6 +1113,8 @@ export default function Admin() {
           marca: registration.marca,
           modelo: registration.modelo,
           autoLogo: registration.auto_logo,
+          numero: registration.numero,
+          excluido: Boolean(Number(registration.excluido)),
         });
       });
     return [...byDriver.values()].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
@@ -1097,6 +1129,33 @@ export default function Admin() {
     () => savedResults.filter(result => resultRound && Number(result.ronda) === Number(resultRound.ronda)),
     [resultRound, savedResults]
   );
+
+  const resultAppealDrivers = useMemo(() => {
+    const byId = new Map();
+    resultRoundResults.forEach(result => {
+      if (!result.idpiloto || !String(result.piloto || '').trim()) return;
+      byId.set(String(result.idpiloto), { id: result.idpiloto, nombre: result.piloto });
+    });
+    return [...byId.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es-AR', { sensitivity: 'base' }));
+  }, [resultRoundResults]);
+
+  useEffect(() => {
+    setResultAppealForm(emptyResultAppealForm);
+    setResultAppealVideo(null);
+    setEditingResultAppealId(null);
+    setResultAppealUploadProgress(0);
+    setResultAppealMessage('');
+    if (resultAppealVideoInputRef.current) resultAppealVideoInputRef.current.value = '';
+    if (!resultChampionshipId || !resultRound?.ronda) {
+      setResultAppeals([]);
+      return;
+    }
+    let active = true;
+    resultsApi.getAppeals({ idcampeonato: resultChampionshipId, ronda: resultRound.ronda })
+      .then(response => { if (active) setResultAppeals(response.data.data || []); })
+      .catch(error => { if (active) setResultAppealMessage(error.response?.data?.error || 'No se pudieron cargar las apelaciones.'); });
+    return () => { active = false; };
+  }, [resultChampionshipId, resultRound?.ronda]);
 
   const resultPreviousBallastByDriver = useMemo(() => {
     if (!resultRound) return new Map();
@@ -1216,6 +1275,7 @@ export default function Admin() {
       rounds: new Map(),
       total: 0,
       campeon: false,
+      excluido: Boolean(driver.excluido),
     }]));
 
     savedResults.filter(result => !result._delete).forEach(result => {
@@ -1227,9 +1287,11 @@ export default function Admin() {
           rounds: new Map(),
           total: 0,
           campeon: false,
+          excluido: Boolean(Number(result.excluido)),
         });
       }
       const standing = byDriver.get(driverKey);
+      standing.excluido = standing.excluido || Boolean(Number(result.excluido));
       const roundKey = String(result.ronda);
       const points = getResultPoints(result);
       const roundDetail = standing.rounds.get(roundKey) || {
@@ -1251,9 +1313,13 @@ export default function Admin() {
       standing.campeon = standing.campeon || Boolean(Number(result.campeon));
     });
 
+    let classifiedPosition = 0;
     return [...byDriver.values()]
-      .sort((a, b) => b.total - a.total || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' }))
-      .map((standing, index) => ({ ...standing, position: index + 1 }));
+      .map(standing => ({ ...standing, rawTotal: standing.total, total: standing.excluido ? 0 : standing.total }))
+      .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || b.total - a.total
+        || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' }))
+      .map(standing => ({ ...standing, position: standing.excluido ? null : ++classifiedPosition }));
   }, [resultRegisteredDrivers, savedResults]);
 
   const resultTotalColumnWidth = useMemo(() => {
@@ -1261,7 +1327,7 @@ export default function Admin() {
     return Math.max(7, characters + 2);
   }, [resultChampionshipStandings]);
 
-  const resultBallastStandings = useMemo(() => resultChampionshipStandings.map(standing => {
+  const resultBallastStandings = useMemo(() => resultChampionshipStandings.filter(standing => !standing.excluido).map(standing => {
     const ballastRounds = new Map();
     const debutBallast = parseResultBallast(resultDebutBallasts[String(standing.idpiloto)]);
     let ballastTotal = debutBallast;
@@ -1344,6 +1410,29 @@ export default function Admin() {
         if (active) setLoadingChampionshipWarnings(false);
       });
 
+    return () => { active = false; };
+  }, [resultChampionshipId]);
+
+  useEffect(() => {
+    let active = true;
+    setQualifyingBansMessage('');
+    setQualifyingBanDriverId('');
+    if (!resultChampionshipId) {
+      setQualifyingBans([]);
+      setShowQualifyingBans(false);
+      return undefined;
+    }
+    setLoadingQualifyingBans(true);
+    championshipsApi.getQualifyingBans(resultChampionshipId)
+      .then(response => {
+        if (active) setQualifyingBans(response.data.data || []);
+      })
+      .catch(error => {
+        if (!active) return;
+        setQualifyingBans([]);
+        setQualifyingBansMessage(error.response?.data?.error || 'No se pudieron cargar las sanciones de clasificación.');
+      })
+      .finally(() => { if (active) setLoadingQualifyingBans(false); });
     return () => { active = false; };
   }, [resultChampionshipId]);
 
@@ -2239,10 +2328,17 @@ export default function Admin() {
     });
     setCircuitImageFile(null);
     setCircuitLayoutFile(null);
+    setCircuitNoteTitle('');
+    setCircuitNoteFiles([]);
+    setEditingCircuitNoteId(null);
+    setEditingCircuitNoteTitle('');
+    setEditingCircuitNoteFiles([]);
+    setSelectedReusableCircuitNotes([]);
     setCircuitLayoutCrop(defaultCropSettings);
     setShowCircuitNameSuggestions(false);
     if (imageInputRef.current) imageInputRef.current.value = '';
     if (layoutInputRef.current) layoutInputRef.current.value = '';
+    if (circuitNotesInputRef.current) circuitNotesInputRef.current.value = '';
     setCircuitMessage(`Agregando una nueva variante de ${circuit.nombre}. Se conserva la imagen del autódromo, cargá el trazado de esta variante.`);
   };
 
@@ -2467,6 +2563,12 @@ export default function Admin() {
     setCircuitForm(emptyCircuitForm);
     setCircuitImageFile(null);
     setCircuitLayoutFile(null);
+    setCircuitNoteTitle('');
+    setCircuitNoteFiles([]);
+    setEditingCircuitNoteId(null);
+    setEditingCircuitNoteTitle('');
+    setEditingCircuitNoteFiles([]);
+    setSelectedReusableCircuitNotes([]);
     setCircuitLayoutCrop(defaultCropSettings);
     setEditingCircuitId(null);
     setLockedCircuitName(false);
@@ -2474,6 +2576,7 @@ export default function Admin() {
     setShowCircuitNameSuggestions(false);
     if (imageInputRef.current) imageInputRef.current.value = '';
     if (layoutInputRef.current) layoutInputRef.current.value = '';
+    if (circuitNotesInputRef.current) circuitNotesInputRef.current.value = '';
   };
 
   const resetCategoryForm = () => {
@@ -3184,6 +3287,34 @@ export default function Admin() {
     }
   };
 
+  const addQualifyingBan = () => {
+    const driver = resultRegisteredDrivers.find(item => String(item.id) === String(qualifyingBanDriverId));
+    if (!driver) return setQualifyingBansMessage('Seleccioná un piloto inscripto.');
+    setQualifyingBans(current => {
+      const exists = current.some(item => String(item.idpiloto) === String(driver.id));
+      if (exists) return current;
+      return [...current, { idpiloto: driver.id, nombre: driver.nombre, numero: driver.numero }]
+        .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
+    });
+    setQualifyingBanDriverId('');
+    setQualifyingBansMessage('Recordá guardar para confirmar los cambios.');
+  };
+
+  const saveQualifyingBans = async () => {
+    if (!resultChampionshipId) return;
+    setSavingQualifyingBans(true);
+    setQualifyingBansMessage('');
+    try {
+      const response = await championshipsApi.saveQualifyingBans(resultChampionshipId, qualifyingBans);
+      setQualifyingBans(response.data.data || []);
+      setQualifyingBansMessage(response.data.message || 'Sanciones guardadas correctamente.');
+    } catch (error) {
+      setQualifyingBansMessage(error.response?.data?.error || 'No se pudieron guardar las sanciones de clasificación.');
+    } finally {
+      setSavingQualifyingBans(false);
+    }
+  };
+
   const getScoringPatch = (positionField, value, multiplierOverride = null, { includeBallast = true } = {}) => {
     const scoringField = resultScoringByPosition[positionField];
     const normalizedPosition = String(value ?? '').trim().toLocaleUpperCase('es-AR');
@@ -3327,8 +3458,31 @@ export default function Admin() {
     }
   };
 
+  const setChampionshipExclusion = async (standing, checked) => {
+    if (!resultChampionshipId || updatingChampionshipExclusion) return;
+    const driverKey = String(standing.idpiloto);
+    setUpdatingChampionshipExclusion(driverKey);
+    setChampionshipChampionMessage('');
+    try {
+      const response = await championshipsApi.setDriverExclusion(resultChampionshipId, standing.idpiloto, checked);
+      const excludedValue = checked ? 1 : 0;
+      setRegistrations(current => current.map(registration =>
+        String(registration.idcampeonato) === String(resultChampionshipId)
+          && String(registration.idpiloto) === driverKey
+          ? { ...registration, excluido: excludedValue }
+          : registration));
+      setResults(current => current.map(result => String(result.idpiloto) === driverKey ? { ...result, excluido: excludedValue } : result));
+      setSavedResults(current => current.map(result => String(result.idpiloto) === driverKey ? { ...result, excluido: excludedValue } : result));
+      setChampionshipChampionMessage(response.data.message || (checked ? 'Piloto excluido del campeonato.' : 'Exclusión eliminada.'));
+    } catch (error) {
+      setChampionshipChampionMessage(error.response?.data?.error || 'No se pudo cambiar la exclusión del piloto.');
+    } finally {
+      setUpdatingChampionshipExclusion('');
+    }
+  };
+
   const generateChampionshipStandingsImage = async () => {
-    const standings = resultChampionshipStandings;
+    const standings = resultChampionshipStandings.filter(standing => !standing.excluido);
     if (!resultChampionship || !standings.length) {
       setStandingsImageMessage('Todavía no hay pilotos para generar las imágenes del campeonato.');
       return;
@@ -3726,6 +3880,90 @@ export default function Admin() {
       setResultAppealDeadlineMessage(error.response?.data?.error || 'No se pudo guardar el límite de apelaciones.');
     } finally {
       setSavingResultAppealDeadline(false);
+    }
+  };
+
+  const toggleResultConfirmation = async () => {
+    if (!resultRound || savingResultConfirmation) return;
+    const nextConfirmed = Number(resultRound.resultados_confirmados) !== 1;
+    setSavingResultConfirmation(true);
+    setResultMessage('');
+    try {
+      const response = await eventsApi.updateResultsConfirmation(resultChampionshipId, resultRound.ronda, nextConfirmed);
+      setEvents(current => current.map(event => (
+        String(event.idcampeonato) === String(resultChampionshipId) && String(event.ronda) === String(resultRound.ronda)
+          ? { ...event, resultados_confirmados: nextConfirmed ? 1 : 0 }
+          : event
+      )));
+      setResultMessage(response.data.message || (nextConfirmed ? 'Resultados confirmados.' : 'Confirmación retirada.'));
+    } catch (error) {
+      setResultMessage(error.response?.data?.error || 'No se pudo cambiar la confirmación de los resultados.');
+    } finally {
+      setSavingResultConfirmation(false);
+    }
+  };
+
+  const resetResultAppealEditor = () => {
+    setResultAppealForm(emptyResultAppealForm);
+    setResultAppealVideo(null);
+    setEditingResultAppealId(null);
+    setResultAppealUploadProgress(0);
+    if (resultAppealVideoInputRef.current) resultAppealVideoInputRef.current.value = '';
+  };
+
+  const editResultAppeal = appeal => {
+    setEditingResultAppealId(Number(appeal.id));
+    setResultAppealForm({ tanda: appeal.tanda || 'sprint', idpiloto: String(appeal.idpiloto || ''), motivo: appeal.motivo || '' });
+    setResultAppealVideo(null);
+    setResultAppealUploadProgress(0);
+    setResultAppealMessage('');
+    if (resultAppealVideoInputRef.current) resultAppealVideoInputRef.current.value = '';
+  };
+
+  const saveResultAppeal = async event => {
+    event.preventDefault();
+    if (!resultRound || !resultAppealForm.idpiloto || !resultAppealForm.motivo.trim() || savingResultAppeal) return;
+    setSavingResultAppeal(true);
+    setResultAppealUploadProgress(0);
+    setResultAppealMessage('');
+    try {
+      const data = new FormData();
+      data.append('idcampeonato', resultChampionshipId);
+      data.append('ronda', resultRound.ronda);
+      data.append('tanda', resultAppealForm.tanda);
+      data.append('idpiloto', resultAppealForm.idpiloto);
+      data.append('motivo', resultAppealForm.motivo.trim());
+      if (resultAppealVideo) data.append('video', resultAppealVideo);
+      const onUploadProgress = progressEvent => {
+        if (!progressEvent.total) return;
+        setResultAppealUploadProgress(Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100)));
+      };
+      const response = editingResultAppealId
+        ? await resultsApi.updateAppeal(editingResultAppealId, data, onUploadProgress)
+        : await resultsApi.createAppeal(data, onUploadProgress);
+      const saved = response.data.data;
+      setResultAppeals(current => editingResultAppealId
+        ? current.map(appeal => Number(appeal.id) === Number(saved.id) ? saved : appeal)
+        : [...current, saved]);
+      resetResultAppealEditor();
+      setResultAppealMessage(response.data.message || 'Apelación guardada.');
+    } catch (error) {
+      setResultAppealMessage(error.response?.data?.error || 'No se pudo guardar la apelación.');
+    } finally {
+      setSavingResultAppeal(false);
+    }
+  };
+
+  const removeResultAppeal = async appeal => {
+    if (!window.confirm(`¿Eliminar la apelación de ${appeal.piloto}?`)) return;
+    setResultAppealMessage('');
+    try {
+      const response = await resultsApi.removeAppeal(appeal.id);
+      setResultAppeals(current => current.filter(item => Number(item.id) !== Number(appeal.id)));
+      if (Number(editingResultAppealId) === Number(appeal.id)) resetResultAppealEditor();
+      setResultAppealMessage(response.data.message || 'Apelación eliminada.');
+    } catch (error) {
+      setResultAppealMessage(error.response?.data?.error || 'No se pudo eliminar la apelación.');
     }
   };
 
@@ -4308,6 +4546,7 @@ export default function Admin() {
 
     try {
       const data = new FormData();
+      let saveResponse;
       const normalizedForm = normalizeCircuitForm(circuitForm);
       Object.entries(normalizedForm).forEach(([key, value]) => data.append(key, value));
       if (lockedCircuitName && baseCircuitImagePath) data.append('imagen_actual', baseCircuitImagePath);
@@ -4316,18 +4555,17 @@ export default function Admin() {
         const croppedLayout = await createSquarePngFile(circuitLayoutFile, circuitLayoutCrop, 'trazado.png');
         data.append('trazado', croppedLayout);
       }
-
       if (editingCircuitId) {
-        await circuitsApi.update(editingCircuitId, data);
+        saveResponse = await circuitsApi.update(editingCircuitId, data);
       } else {
-        await circuitsApi.create(data);
+        saveResponse = await circuitsApi.create(data);
       }
 
       const circuitsRes = await circuitsApi.getAll();
 
       setCircuits(circuitsRes.data.data ?? []);
       resetCircuitForm();
-      setCircuitMessage(editingCircuitId ? 'Circuito actualizado correctamente.' : 'Circuito cargado correctamente.');
+      setCircuitMessage(saveResponse?.data?.message || (editingCircuitId ? 'Circuito actualizado correctamente.' : 'Circuito cargado correctamente.'));
     } catch (err) {
       setCircuitMessage(err.response?.data?.error || 'No se pudo cargar el circuito.');
     } finally {
@@ -4750,6 +4988,145 @@ export default function Admin() {
     setRegistrationDriverDetailsMessage('');
   };
 
+  const handleAddCircuitNote = async () => {
+    if (!editingCircuitId) {
+      setCircuitMessage('Primero guardá el circuito y luego agregá sus notas de pista.');
+      return;
+    }
+    if (!circuitNoteTitle.trim() || !circuitNoteFiles.length) {
+      setCircuitMessage('Ingresá un título y seleccioná al menos una imagen.');
+      return;
+    }
+    setSavingCircuitNote(true);
+    setCircuitMessage('');
+    try {
+      const data = new FormData();
+      data.append('titulo', circuitNoteTitle.trim().toLocaleUpperCase('es-AR'));
+      circuitNoteFiles.forEach(file => data.append('notas', file));
+      const response = await circuitsApi.createNote(editingCircuitId, data);
+      setCircuits(current => current.map(circuit => Number(circuit.id) === Number(editingCircuitId) ? response.data.data : circuit));
+      setCircuitNoteTitle('');
+      setCircuitNoteFiles([]);
+      if (circuitNotesInputRef.current) circuitNotesInputRef.current.value = '';
+      setCircuitMessage(response.data.message || 'Nota de pista agregada.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudo agregar la nota de pista.');
+    } finally {
+      setSavingCircuitNote(false);
+    }
+  };
+
+  const handleDeleteCircuitNote = async (circuitId, noteId) => {
+    if (!window.confirm('¿Eliminar esta nota de pista y todas sus imágenes?')) return;
+    try {
+      await circuitsApi.removeNote(circuitId, noteId);
+      if (Number(editingCircuitNoteId) === Number(noteId)) cancelEditingCircuitNote();
+      setCircuits(current => current.map(circuit => {
+        if (Number(circuit.id) !== Number(circuitId)) return circuit;
+        const notes = (circuit.notas_pista || []).filter(note => Number(note.id) !== Number(noteId));
+        return { ...circuit, notas_pista: notes, notas_titulo: notes[0]?.titulo || '', notas_imagenes: notes.flatMap(note => note.imagenes || []) };
+      }));
+      setCircuitMessage('Nota de pista eliminada.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudo eliminar la nota.');
+    }
+  };
+
+  const startEditingCircuitNote = note => {
+    setEditingCircuitNoteId(Number(note.id));
+    setEditingCircuitNoteTitle(note.titulo || '');
+    setEditingCircuitNoteFiles([]);
+    setCircuitMessage('');
+  };
+
+  const cancelEditingCircuitNote = () => {
+    setEditingCircuitNoteId(null);
+    setEditingCircuitNoteTitle('');
+    setEditingCircuitNoteFiles([]);
+  };
+
+  const handleUpdateCircuitNote = async (circuitId, noteId) => {
+    if (!editingCircuitNoteTitle.trim()) {
+      setCircuitMessage('Ingresá un título para la nota de pista.');
+      return;
+    }
+    setSavingCircuitNote(true);
+    setCircuitMessage('');
+    try {
+      const data = new FormData();
+      data.append('titulo', editingCircuitNoteTitle.trim().toLocaleUpperCase('es-AR'));
+      editingCircuitNoteFiles.forEach(file => data.append('notas', file));
+      const response = await circuitsApi.updateNote(circuitId, noteId, data);
+      setCircuits(current => current.map(circuit => Number(circuit.id) === Number(circuitId) ? response.data.data : circuit));
+      cancelEditingCircuitNote();
+      setCircuitMessage(response.data.message || 'Nota de pista actualizada.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudo actualizar la nota de pista.');
+    } finally {
+      setSavingCircuitNote(false);
+    }
+  };
+
+  const handleMoveCircuitNote = async (circuitId, noteId, direction) => {
+    const circuit = circuits.find(item => Number(item.id) === Number(circuitId));
+    const notes = [...(circuit?.notas_pista || [])];
+    const currentIndex = notes.findIndex(note => Number(note.id) === Number(noteId));
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= notes.length || savingCircuitNoteOrder) return;
+    [notes[currentIndex], notes[nextIndex]] = [notes[nextIndex], notes[currentIndex]];
+    setSavingCircuitNoteOrder(true);
+    setCircuitMessage('');
+    try {
+      const response = await circuitsApi.reorderNotes(circuitId, notes.map(note => note.id));
+      setCircuits(current => current.map(item => Number(item.id) === Number(circuitId) ? response.data.data : item));
+      setCircuitMessage(response.data.message || 'Orden de las notas actualizado.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudo cambiar el orden de las notas.');
+    } finally {
+      setSavingCircuitNoteOrder(false);
+    }
+  };
+
+  const toggleReusableCircuitNote = noteId => {
+    const id = Number(noteId);
+    setSelectedReusableCircuitNotes(current => current.includes(id)
+      ? current.filter(item => item !== id)
+      : [...current, id]);
+  };
+
+  const handleReuseCircuitNotes = async circuitId => {
+    if (!selectedReusableCircuitNotes.length) return;
+    setReusingCircuitNotes(true);
+    setCircuitMessage('');
+    try {
+      const response = await circuitsApi.reuseNotes(circuitId, selectedReusableCircuitNotes);
+      setCircuits(current => current.map(circuit => Number(circuit.id) === Number(circuitId) ? response.data.data : circuit));
+      setSelectedReusableCircuitNotes([]);
+      setCircuitMessage(response.data.message || 'Notas reutilizadas correctamente.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudieron reutilizar las notas seleccionadas.');
+    } finally {
+      setReusingCircuitNotes(false);
+    }
+  };
+
+  const handleDeleteCircuitNoteImage = async (circuitId, noteId, imageId) => {
+    if (!window.confirm('¿Eliminar esta imagen de las notas de pista?')) return;
+    try {
+      await circuitsApi.removeNoteImage(circuitId, noteId, imageId);
+      setCircuits(current => current.map(circuit => {
+        if (Number(circuit.id) !== Number(circuitId)) return circuit;
+        const notes = (circuit.notas_pista || []).map(note => Number(note.id) === Number(noteId)
+          ? { ...note, imagenes: (note.imagenes || []).filter(image => Number(image.id) !== Number(imageId)) }
+          : note);
+        return { ...circuit, notas_pista: notes, notas_imagenes: notes.flatMap(note => note.imagenes || []) };
+      }));
+      setCircuitMessage('Imagen de las notas de pista eliminada.');
+    } catch (error) {
+      setCircuitMessage(error.response?.data?.error || 'No se pudo eliminar la imagen.');
+    }
+  };
+
   const handleRegistrationDriverDetailsChange = event => {
     const { name, value } = event.target;
     const nextValue = name === 'telefono'
@@ -5068,9 +5445,16 @@ export default function Admin() {
     });
     setCircuitImageFile(null);
     setCircuitLayoutFile(null);
+    setCircuitNoteTitle('');
+    setCircuitNoteFiles([]);
+    setEditingCircuitNoteId(null);
+    setEditingCircuitNoteTitle('');
+    setEditingCircuitNoteFiles([]);
+    setSelectedReusableCircuitNotes([]);
     setCircuitLayoutCrop(defaultCropSettings);
     if (imageInputRef.current) imageInputRef.current.value = '';
     if (layoutInputRef.current) layoutInputRef.current.value = '';
+    if (circuitNotesInputRef.current) circuitNotesInputRef.current.value = '';
     setCircuitMessage(`Editando ${circuit.nombre}. Si no cargás nuevas imágenes, se conservan las actuales.`);
   };
 
@@ -5877,10 +6261,9 @@ export default function Admin() {
       return (
         <section className="min-w-0 overflow-hidden border border-racing-border bg-racing-gray">
           <div className="border-b border-racing-border px-4 py-4 lg:px-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="grid w-full min-w-0 gap-3 lg:grid-cols-[minmax(190px,0.7fr)_minmax(250px,1fr)_minmax(210px,0.8fr)_minmax(300px,1fr)] lg:items-end">
               <div>
                 <p className="text-xs font-semibold uppercase text-racing-red">Carga de resultados</p>
-                <h2 className="mt-1 font-racing text-2xl font-bold">Planilla de posiciones y puntajes</h2>
                 <p className="mt-1 text-sm text-gray-400">
                   {resultChampionship
                     ? `${resultChampionship.categoria} · Temporada ${resultChampionship.temporada} · ${resultChampionship.anio}`
@@ -5888,9 +6271,9 @@ export default function Admin() {
                 </p>
               </div>
 
-              <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-[minmax(250px,330px)_minmax(190px,250px)_auto] xl:items-end">
+              <div className="contents">
                 <label>
-                  <span className="text-xs font-semibold uppercase text-gray-400">Campeonato</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Campeonato</span>
                   <select
                     value={resultChampionshipId}
                     onChange={event => {
@@ -5901,7 +6284,7 @@ export default function Admin() {
                       setStandingsImageMessage('');
                       setChampionshipChampionMessage('');
                     }}
-                    className="input-field mt-2"
+                    className="input-field mt-1 h-9 py-0 text-xs"
                     disabled={savingResults}
                   >
                     <option value="">Seleccionar campeonato</option>
@@ -5913,22 +6296,23 @@ export default function Admin() {
                   </select>
                 </label>
                 <label>
-                  <span className="text-xs font-semibold uppercase text-gray-400">Fecha</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Fecha</span>
                   <select value={resultRoundId} onChange={event => {
                     setResultRoundId(event.target.value);
                     setResultGridSelection(null);
-                  }} className="input-field mt-2" disabled={!resultRounds.length || savingResults}>
+                  }} className="input-field mt-1 h-9 py-0 text-xs" disabled={!resultRounds.length || savingResults}>
                     <option value="">Seleccionar fecha</option>
                     {resultRounds.map(round => (
                       <option key={round.id} value={round.id}>Fecha {round.ronda} · {round.circuito}</option>
                     ))}
                   </select>
                 </label>
-                <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
+                {resultRound ? <div className="min-w-0"><span className="text-[9px] font-bold uppercase tracking-wider text-amber-200">Apelaciones y reclamos</span><div className="mt-1 flex min-w-0 items-center gap-1.5"><input type="datetime-local" value={resultAppealDeadline} onChange={event => { setResultAppealDeadline(event.target.value); setResultAppealDeadlineMessage(''); }} className="input-field h-9 min-w-0 flex-1 py-0 text-xs" disabled={savingResultAppealDeadline}/><button type="button" onClick={saveResultAppealDeadline} disabled={savingResultAppealDeadline} className="inline-flex h-9 shrink-0 items-center justify-center border border-amber-300/50 px-2 text-[8px] font-bold uppercase text-amber-200 transition hover:bg-amber-300 hover:text-black disabled:cursor-not-allowed disabled:opacity-40">{savingResultAppealDeadline ? '...' : 'Guardar plazo'}</button></div></div> : <div className="hidden lg:block"/>}
+                <div className="flex w-full min-w-0 flex-wrap items-end justify-between gap-1.5 lg:col-span-4">
                   {resultRound ? (
-                    <div className="flex shrink-0 items-end gap-1.5">
-                      <label className="w-20">
-                        <span className="block truncate text-[9px] font-bold uppercase tracking-wider text-cyan-300">Presentismo</span>
+                    <div className="flex min-w-[145px] flex-1 items-end gap-1.5">
+                      <label className="w-[68px]">
+                        <span className="block truncate text-[8px] font-bold uppercase tracking-wide text-cyan-300">Presentismo</span>
                         <span className="sr-only">Puntos de presentismo para todos los pilotos de la fecha</span>
                         <input
                           type="number"
@@ -5937,7 +6321,7 @@ export default function Admin() {
                           value={resultAttendancePoints}
                           onChange={event => setResultAttendancePoints(event.target.value)}
                           placeholder="PTS"
-                          className="mt-2 h-[46px] w-full border border-racing-border bg-black/25 px-2 text-center font-racing text-sm font-bold text-cyan-300 outline-none focus:border-cyan-400"
+                          className="mt-1 h-9 w-full border border-racing-border bg-black/25 px-1.5 text-center font-racing text-xs font-bold text-cyan-300 outline-none focus:border-cyan-400"
                           disabled={savingResults}
                         />
                       </label>
@@ -5945,7 +6329,7 @@ export default function Admin() {
                         type="button"
                         onClick={handleApplyAttendanceToRound}
                         disabled={savingResults || !resultRoundResults.length}
-                        className="h-[46px] shrink-0 border border-cyan-400/50 px-3 text-[9px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+                        className="h-9 min-w-16 flex-1 border border-cyan-400/50 px-2 text-[8px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Aplicar
                       </button>
@@ -5955,18 +6339,27 @@ export default function Admin() {
                     <button
                       type="button"
                       onClick={() => setShowChampionshipScoring(true)}
-                      className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-cyan-400/50 bg-cyan-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-cyan-300 transition hover:bg-cyan-400 hover:text-black"
+                      className="inline-flex h-9 min-w-[125px] flex-1 items-center justify-center gap-1.5 border border-cyan-400/50 bg-cyan-400/[0.06] px-2 text-[8px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-400 hover:text-black"
                     >
-                      <TrophyIcon className="h-4 w-4" /> Puntos y lastres
+                      <TrophyIcon className="h-3.5 w-3.5" /> Puntos y lastres
                     </button>
                   ) : null}
                   {resultChampionshipId ? (
                     <button
                       type="button"
                       onClick={() => setShowChampionshipWarnings(true)}
-                      className="inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border border-amber-400/50 bg-amber-400/[0.06] px-3 text-[9px] font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400 hover:text-black"
+                      className="inline-flex h-9 min-w-[125px] flex-1 items-center justify-center gap-1.5 border border-amber-400/50 bg-amber-400/[0.06] px-2 text-[8px] font-bold uppercase text-amber-300 transition hover:bg-amber-400 hover:text-black"
                     >
-                      <BellAlertIcon className="h-4 w-4" /> Apercibimientos
+                      <BellAlertIcon className="h-3.5 w-3.5" /> Apercibimientos
+                    </button>
+                  ) : null}
+                  {resultChampionshipId ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowQualifyingBans(true)}
+                      className="inline-flex h-9 min-w-[125px] flex-1 items-center justify-center gap-1.5 border border-red-400/50 bg-red-400/[0.06] px-2 text-[8px] font-bold uppercase text-red-300 transition hover:bg-red-500 hover:text-white"
+                    >
+                      <ExclamationTriangleIcon className="h-3.5 w-3.5" /> No clasifica
                     </button>
                   ) : null}
                   {resultRound ? (
@@ -5974,76 +6367,77 @@ export default function Admin() {
                       type="button"
                       onClick={toggleResultRoundVisibility}
                       disabled={savingResultVisibility || savingResults}
-                      className={`inline-flex h-[46px] shrink-0 items-center justify-center gap-2 border px-3 text-[9px] font-bold uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${Number(resultRound.resultados_visibles) === 1
+                      className={`inline-flex h-9 min-w-[145px] flex-1 items-center justify-center gap-1.5 border px-2 text-[8px] font-bold uppercase transition disabled:cursor-not-allowed disabled:opacity-40 ${Number(resultRound.resultados_visibles) === 1
                         ? 'border-emerald-400/60 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400 hover:text-black'
                         : 'border-gray-500/60 bg-black/25 text-gray-400 hover:border-white/50 hover:text-white'
                       }`}
                       title={Number(resultRound.resultados_visibles) === 1 ? 'Ocultar el detalle público de esta fecha' : 'Publicar el detalle de esta fecha'}
                     >
-                      {Number(resultRound.resultados_visibles) === 1 ? <EyeIcon className="h-4 w-4" /> : <EyeSlashIcon className="h-4 w-4" />}
+                      {Number(resultRound.resultados_visibles) === 1 ? <EyeIcon className="h-3.5 w-3.5" /> : <EyeSlashIcon className="h-3.5 w-3.5" />}
                       {savingResultVisibility ? 'Actualizando...' : Number(resultRound.resultados_visibles) === 1 ? 'Resultados visibles' : 'Resultados ocultos'}
+                    </button>
+                  ) : null}
+                  {resultRound ? (
+                    <button
+                      type="button"
+                      onClick={toggleResultConfirmation}
+                      disabled={savingResultConfirmation || savingResults}
+                      className={`inline-flex h-9 min-w-[155px] flex-1 items-center justify-center gap-1.5 border px-2 text-[8px] font-bold uppercase transition disabled:cursor-not-allowed disabled:opacity-40 ${Number(resultRound.resultados_confirmados) === 1
+                        ? 'border-cyan-300/60 bg-cyan-300/10 text-cyan-200 hover:bg-cyan-300 hover:text-black'
+                        : 'border-gray-500/60 bg-black/25 text-gray-400 hover:border-cyan-300/60 hover:text-cyan-200'
+                      }`}
+                      title={Number(resultRound.resultados_confirmados) === 1 ? 'Los resultados están marcados como definitivos' : 'Marcar los resultados como definitivos'}
+                    >
+                      <CheckCircleIcon className="h-3.5 w-3.5" />
+                      {savingResultConfirmation ? 'Actualizando...' : Number(resultRound.resultados_confirmados) === 1 ? 'Resultados confirmados' : 'Confirmar resultados'}
                     </button>
                   ) : null}
                   <button
                     type="button"
                     onClick={handleSaveResults}
                     disabled={!Object.keys(dirtyResults).length || savingResults}
-                    className="btn-primary h-[46px] min-w-28 flex-1 shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-40"
+                    className="btn-primary h-9 min-w-24 flex-1 justify-center px-3 text-[9px] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {savingResults ? 'Guardando...' : `Guardar${Object.keys(dirtyResults).length ? ` (${Object.keys(dirtyResults).length})` : ''}`}
                   </button>
                 </div>
               </div>
+              {resultAppealDeadlineMessage ? <p className="text-[10px] font-semibold text-amber-200 lg:col-span-4">{resultAppealDeadlineMessage}</p> : null}
             </div>
           </div>
 
           {resultRound ? (
             <div className="border-b border-racing-border bg-black/20 px-4 py-3 lg:px-6">
-              <section className="mb-4 border border-amber-300/25 bg-amber-300/[0.04] p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <ClockIcon className="mt-0.5 h-6 w-6 shrink-0 text-amber-300" />
-                    <div>
-                      <h3 className="font-racing text-lg font-bold uppercase text-white">Apelaciones y reclamos · Fecha {resultRound.ronda}</h3>
-                      <p className="mt-1 text-xs text-gray-500">Definí hasta qué día y hora se aceptarán apelaciones. Dejalo vacío y guardá para eliminar el plazo.</p>
-                    </div>
+              <section className="mb-3 border border-blue-400/25 bg-blue-400/[0.04] p-2.5">
+                <div className="flex items-center gap-2"><VideoCameraIcon className="h-4 w-4 shrink-0 text-blue-300"/><h3 className="font-racing text-sm font-bold uppercase text-white">Apelaciones cargadas · Fecha {resultRound.ronda}</h3></div>
+                <form onSubmit={saveResultAppeal} className="mt-2 border-t border-blue-400/15 pt-2">
+                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-[150px_minmax(190px,0.8fr)_minmax(220px,1fr)_auto] lg:items-end">
+                    <label><span className="text-[8px] font-bold uppercase tracking-wider text-blue-200">Tanda</span><select value={resultAppealForm.tanda} onChange={event => setResultAppealForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-0.5 h-9 py-0 text-xs" disabled={savingResultAppeal}>{assettoSessionOptions.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+                    <label><span className="text-[8px] font-bold uppercase tracking-wider text-blue-200">Piloto</span><select value={resultAppealForm.idpiloto} onChange={event => setResultAppealForm(current => ({ ...current, idpiloto: event.target.value }))} className="input-field mt-0.5 h-9 py-0 text-xs" disabled={savingResultAppeal} required><option value="">Seleccionar piloto</option>{resultAppealDrivers.map(driver => <option key={driver.id} value={driver.id}>{driver.nombre}</option>)}</select></label>
+                    <label className="min-w-0 sm:col-span-2 lg:col-span-1"><span className="text-[8px] font-bold uppercase tracking-wider text-blue-200">Video opcional</span><input ref={resultAppealVideoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska" onChange={event => setResultAppealVideo(event.target.files?.[0] || null)} className="input-field mt-0.5 block h-9 w-full min-w-0 overflow-hidden py-0 text-[10px] file:mr-2 file:h-8 file:max-w-28 file:border-0 file:bg-blue-600 file:px-2 file:py-1 file:text-[9px] file:font-semibold file:text-white" disabled={savingResultAppeal}/></label>
+                    <div className="flex min-w-0 items-center justify-end gap-1.5 sm:col-span-2 lg:col-span-1">{editingResultAppealId ? <button type="button" onClick={resetResultAppealEditor} disabled={savingResultAppeal} className="h-9 border border-racing-border px-2 text-[8px] font-bold uppercase text-gray-300 transition hover:border-white/40 hover:text-white">Cancelar</button> : null}<button type="submit" disabled={savingResultAppeal || !resultAppealForm.idpiloto || !resultAppealForm.motivo.trim()} className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap bg-blue-600 px-3 font-racing text-[9px] font-bold uppercase text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"><VideoCameraIcon className="h-3.5 w-3.5"/>{savingResultAppeal ? 'Guardando...' : editingResultAppealId ? 'Actualizar' : 'Agregar apelación'}</button></div>
                   </div>
-                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-auto">
-                    <label className="min-w-0 sm:w-72">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-200">Fecha y hora límite</span>
-                      <input
-                        type="datetime-local"
-                        value={resultAppealDeadline}
-                        onChange={event => { setResultAppealDeadline(event.target.value); setResultAppealDeadlineMessage(''); }}
-                        className="input-field mt-1 h-11 py-0"
-                        disabled={savingResultAppealDeadline}
-                      />
-                    </label>
-                    <button type="button" onClick={saveResultAppealDeadline} disabled={savingResultAppealDeadline} className="inline-flex h-11 items-center justify-center border border-amber-300/50 px-4 text-[10px] font-bold uppercase tracking-wider text-amber-200 transition hover:bg-amber-300 hover:text-black disabled:cursor-not-allowed disabled:opacity-40">
-                      {savingResultAppealDeadline ? 'Guardando...' : 'Guardar plazo'}
-                    </button>
-                  </div>
-                </div>
-                {resultAppealDeadlineMessage ? <p className="mt-3 text-xs font-semibold text-amber-200">{resultAppealDeadlineMessage}</p> : null}
+                  <label className="mt-2 block"><span className="text-[8px] font-bold uppercase tracking-wider text-blue-200">Motivo de la apelación</span><textarea value={resultAppealForm.motivo} onChange={event => setResultAppealForm(current => ({ ...current, motivo: event.target.value }))} rows="2" maxLength="10000" className="input-field mt-0.5 min-h-14 resize-y py-2 text-xs" placeholder="Describí el motivo de la apelación..." disabled={savingResultAppeal} required/></label>
+                  {savingResultAppeal && resultAppealVideo ? <div className="mt-2"><div className="mb-1 flex justify-between text-[9px] font-bold uppercase text-blue-200"><span>Subiendo video</span><span>{resultAppealUploadProgress}%</span></div><div className="h-1.5 overflow-hidden bg-black"><div className="h-full bg-blue-500 transition-[width]" style={{ width: `${resultAppealUploadProgress}%` }}/></div></div> : null}
+                </form>
+                {resultAppealMessage ? <p className="mt-2 text-[10px] font-semibold text-blue-200">{resultAppealMessage}</p> : null}
+                {resultAppeals.length ? <div className="mt-2 space-y-1 border-t border-blue-400/15 pt-2">{resultAppeals.map(appeal => <article key={appeal.id} className="grid gap-2 border border-racing-border bg-black/25 p-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="border border-blue-400/30 bg-blue-400/10 px-1.5 py-0.5 text-[8px] font-bold uppercase text-blue-200">{assettoSessionOptions.find(option => option.key === appeal.tanda)?.label || appeal.tanda}</span><strong className="text-xs text-white">{appeal.piloto}</strong>{appeal.video ? <a href={appeal.video} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[8px] font-bold uppercase text-cyan-300 hover:text-white"><PlayCircleIcon className="h-3.5 w-3.5"/>Ver video</a> : null}</div><p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-gray-400">{appeal.motivo}</p></div><div className="flex gap-1"><button type="button" onClick={() => editResultAppeal(appeal)} title="Modificar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-blue-400/30 text-blue-200 transition hover:bg-blue-500 hover:text-white" aria-label={`Editar apelación de ${appeal.piloto}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeResultAppeal(appeal)} title="Eliminar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-red-400/30 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar apelación de ${appeal.piloto}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></article>)}</div> : <p className="mt-2 border border-dashed border-racing-border px-3 py-2 text-center text-[10px] text-gray-600">Todavía no se cargaron apelaciones.</p>}
               </section>
-              <section className="mb-4 border border-racing-border bg-racing-dark/70 p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex items-start gap-3">
-                    <PhotoIcon className="mt-0.5 h-6 w-6 shrink-0 text-racing-red"/>
-                    <div>
-                      <h3 className="font-racing text-lg font-bold uppercase text-white">Banners del resultado · Fecha {resultRound.ronda}</h3>
-                      <p className="mt-1 text-xs text-gray-500">Cargá las imágenes del ganador, el podio o el campeón. En la vista pública aparecerán una debajo de la otra.</p>
-                    </div>
+              <section className="mb-3 border border-racing-border bg-racing-dark/70 p-2.5">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="flex items-center gap-2">
+                    <PhotoIcon className="h-4 w-4 shrink-0 text-racing-red"/>
+                    <h3 className="font-racing text-sm font-bold uppercase text-white">Banners del resultado · Fecha {resultRound.ronda}</h3>
                   </div>
-                  <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(260px,1fr)_auto] sm:items-end lg:w-[560px]">
-                    <label>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Seleccionar imágenes</span>
-                      <input ref={eventBannerInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setEventBannerFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-1 file:mr-3 file:border-0 file:bg-racing-red file:px-3 file:py-2 file:font-semibold file:text-white"/>
+                  <div className="grid min-w-0 gap-1.5 sm:grid-cols-[minmax(240px,1fr)_auto] sm:items-end lg:w-[520px]">
+                    <label className="min-w-0">
+                      <span className="text-[8px] font-semibold uppercase tracking-wider text-gray-500">Seleccionar imágenes</span>
+                      <input ref={eventBannerInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setEventBannerFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-0.5 block h-9 w-full min-w-0 overflow-hidden py-0 text-[10px] file:mr-2 file:h-8 file:max-w-28 file:border-0 file:bg-racing-red file:px-2 file:py-1 file:text-[9px] file:font-semibold file:text-white"/>
                     </label>
-                    <button type="button" onClick={uploadEventBanners} disabled={!eventBannerFiles.length || savingEventBanners} className="btn-primary min-h-11 justify-center disabled:cursor-not-allowed disabled:opacity-40"><ArrowUpTrayIcon className="h-5 w-5"/>{savingEventBanners ? 'Subiendo...' : `Subir ${eventBannerFiles.length || ''}`}</button>
+                    <button type="button" onClick={uploadEventBanners} disabled={!eventBannerFiles.length || savingEventBanners} className="btn-primary h-9 justify-center px-3 text-[9px] disabled:cursor-not-allowed disabled:opacity-40"><ArrowUpTrayIcon className="h-4 w-4"/>{savingEventBanners ? 'Subiendo...' : `Subir ${eventBannerFiles.length || ''}`}</button>
                   </div>
                 </div>
-                {eventBanners.length ? <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{eventBanners.map(banner => <article key={banner.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={banner.url} alt="Banner del resultado" className="h-full w-full object-cover"/><button type="button" onClick={() => removeEventBanner(banner)} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center border border-red-400/60 bg-black/80 text-red-300 opacity-100 transition hover:bg-red-600 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" aria-label="Eliminar banner"><TrashIcon className="h-4 w-4"/></button></article>)}</div> : <p className="mt-4 border border-dashed border-racing-border px-4 py-4 text-center text-xs text-gray-600">Esta fecha todavía no tiene banners de resultados.</p>}
+                {eventBanners.length ? <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{eventBanners.map(banner => <article key={banner.filename} className="group relative h-16 w-28 shrink-0 overflow-hidden border border-racing-border bg-black"><img src={banner.url} alt="Banner del resultado" className="h-full w-full object-cover"/><button type="button" onClick={() => removeEventBanner(banner)} className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center border border-red-400/60 bg-black/80 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label="Eliminar banner"><TrashIcon className="h-3.5 w-3.5"/></button></article>)}</div> : <p className="mt-2 border border-dashed border-racing-border px-3 py-2 text-center text-[10px] text-gray-600">Esta fecha todavía no tiene banners.</p>}
               </section>
 
               <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
@@ -6262,9 +6656,9 @@ export default function Admin() {
                           key={round.id}
                           colSpan={5}
                           className="whitespace-nowrap border border-racing-border px-3 py-3 text-center font-racing text-sm uppercase text-gray-300"
-                          title={`Fecha ${round.ronda}: ${round.circuito}${round.variante ? ` · ${round.variante}` : ''}`}
+                          title={`Fecha ${round.ronda} · ${round.localidad || 'Sin localidad'}`}
                         >
-                          Fecha {round.ronda} · {round.circuito}
+                          Fecha {round.ronda} · {round.localidad || 'Sin localidad'}
                         </th>
                       ))}
                       <th rowSpan={2} className="whitespace-nowrap border border-cyan-400/30 bg-cyan-400/10 px-3 py-2.5 text-center font-racing text-sm uppercase text-cyan-300" style={{ width: `${resultTotalColumnWidth}ch` }}>Total</th>
@@ -6285,19 +6679,20 @@ export default function Admin() {
                       const warningTotal = Number(warningDriver?.apercibimientos || 0);
                       const reachedSanctions = [...(warningDriver?.sanciones_alcanzadas || [])]
                         .sort((a, b) => Number(a.cantidad) - Number(b.cantidad));
-                      return <tr key={standing.idpiloto} className={index % 2 ? 'bg-black/10' : 'bg-transparent'}>
-                        <td className={`whitespace-nowrap border border-racing-border px-2 py-2 text-center font-racing text-lg font-bold ${standing.position === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.position === 2 ? 'bg-slate-300/10 text-slate-200' : standing.position === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.position}</td>
+                      return <tr key={standing.idpiloto} className={standing.excluido ? 'bg-black text-gray-600' : index % 2 ? 'bg-black/10' : 'bg-transparent'}>
+                        <td className={`whitespace-nowrap border border-racing-border px-2 py-2 text-center font-racing text-lg font-bold ${standing.excluido ? 'bg-black text-gray-700' : standing.position === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.position === 2 ? 'bg-slate-300/10 text-slate-200' : standing.position === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.excluido ? '—' : standing.position}</td>
                         <td className="border border-racing-border px-3 py-2 text-white">
                           <div className="flex min-w-60 items-center gap-3">
                             {standing.autoLogo ? <img src={standing.autoLogo} alt={`Logo ${standing.marca || ''}`} className="h-9 w-12 shrink-0 object-contain" /> : <div className="h-9 w-12 shrink-0" />}
                             <div className="min-w-0">
-                              <p className="flex items-center gap-2 truncate font-semibold" title={standing.piloto}><span className="truncate">{standing.piloto}</span></p>
+                              <p className="flex items-center gap-2 truncate font-semibold" title={standing.piloto}><span className="truncate">{standing.piloto}</span>{standing.excluido ? <span className="shrink-0 border border-gray-600 bg-black px-1.5 py-0.5 text-[8px] font-bold uppercase text-gray-400">Excluido</span> : null}</p>
                               <p className="truncate text-[11px] font-normal text-gray-500">{[standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar'}</p>
                               <label className={`mt-1 inline-flex cursor-pointer items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide ${standing.campeon ? 'text-yellow-300' : 'text-gray-600 hover:text-yellow-200'}`}><input type="checkbox" checked={Boolean(standing.campeon)} disabled={savingChampionshipChampion} onChange={event => setChampionshipChampion(standing, event.target.checked)} className="h-3.5 w-3.5 accent-yellow-400 disabled:opacity-40"/><span>Campeón</span></label>
+                              <label className={`ml-3 mt-1 inline-flex cursor-pointer items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide ${standing.excluido ? 'text-red-400' : 'text-gray-600 hover:text-red-300'}`}><input type="checkbox" checked={Boolean(standing.excluido)} disabled={Boolean(updatingChampionshipExclusion)} onChange={event => setChampionshipExclusion(standing, event.target.checked)} className="h-3.5 w-3.5 accent-red-500 disabled:opacity-40"/><span>{updatingChampionshipExclusion === String(standing.idpiloto) ? 'Guardando…' : 'Excluido'}</span></label>
                             </div>
                           </div>
                         </td>
-                        <td className="border border-amber-400/25 bg-amber-400/[0.035] px-2 py-2 align-top">
+                        <td className={`border px-2 py-2 align-top ${standing.excluido ? 'border-racing-border bg-black' : 'border-amber-400/25 bg-amber-400/[0.035]'}`}>
                           <div className="flex min-w-44 flex-col items-center gap-1.5">
                             <span className={`inline-flex min-w-14 items-center justify-center px-2.5 py-1 font-racing text-sm font-bold ${warningTotal > 0 ? 'bg-amber-400 text-black' : 'border border-racing-border bg-black/20 text-gray-600'}`}>
                               {loadingChampionshipWarnings ? '…' : `${warningTotal} AP`}
@@ -6328,7 +6723,7 @@ export default function Admin() {
                           const detail = standing.rounds.get(String(round.ronda));
                           if (!detail || detail.points === 0) {
                             return [
-                              <td key={`${round.id}-absent`} colSpan={5} className="border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] text-red-500">
+                              <td key={`${round.id}-absent`} colSpan={5} className={`border px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] ${standing.excluido ? 'border-racing-border bg-black text-gray-700' : 'border-red-500/20 bg-red-500/[0.06] text-red-500'}`}>
                                 AUSENTE
                               </td>,
                             ];
@@ -6338,10 +6733,10 @@ export default function Admin() {
                             <td key={`${round.id}-qualy`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.qualy)}</td>,
                             <td key={`${round.id}-sprint`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.sprint)}</td>,
                             <td key={`${round.id}-final`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{formatResultPointsCell(detail.final)}</td>,
-                            <td key={`${round.id}-points`} className="border border-amber-400/30 bg-amber-400/10 px-2 py-2 text-center font-racing text-base font-bold text-amber-300">{formatResultPointsCell(detail.points)}</td>,
+                            <td key={`${round.id}-points`} className={`border px-2 py-2 text-center font-racing text-base font-bold ${standing.excluido ? 'border-racing-border bg-black text-gray-500' : 'border-amber-400/30 bg-amber-400/10 text-amber-300'}`}>{formatResultPointsCell(detail.points)}</td>,
                           ];
                         })}
-                        <td className="whitespace-nowrap border border-cyan-400/30 bg-cyan-400/[0.08] px-3 py-2 text-center font-racing text-xl font-bold text-cyan-300">{formatResultPointsCell(standing.total)}</td>
+                        <td className={`whitespace-nowrap border px-3 py-2 text-center font-racing font-bold ${standing.excluido ? 'border-racing-border bg-black text-sm uppercase tracking-wider text-gray-500' : 'border-cyan-400/30 bg-cyan-400/[0.08] text-xl text-cyan-300'}`}>{standing.excluido ? 'Excluido' : formatResultPointsCell(standing.total)}</td>
                       </tr>;
                     })}
                     {!resultChampionshipStandings.length ? <tr><td colSpan={(resultRounds.length * 5) + 4} className="border border-racing-border px-6 py-10 text-center text-gray-500">No hay pilotos para calcular la tabla.</td></tr> : null}
@@ -6461,6 +6856,33 @@ export default function Admin() {
                   )}
                   <div className="mt-5 flex flex-col-reverse gap-3 border-t border-racing-border pt-4 sm:flex-row sm:items-center sm:justify-between"><p className={`text-sm ${championshipScoringMessage.toLocaleLowerCase('es-AR').includes('correctamente') ? 'text-emerald-300' : 'text-amber-300'}`}>{championshipScoringMessage}</p><button type="button" onClick={saveChampionshipScoring} disabled={savingChampionshipScoring || loadingChampionshipScoring} className="bg-cyan-400 px-6 py-3 text-xs font-bold uppercase text-black transition hover:bg-cyan-300 disabled:opacity-40">{savingChampionshipScoring ? 'Guardando...' : 'Guardar escala'}</button></div>
                 </div>
+              </section>
+            </div>
+          ) : null}
+
+          {showQualifyingBans && resultChampionshipId ? (
+            <div className="fixed inset-0 z-[115] flex items-center justify-center overflow-hidden bg-black/90 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setShowQualifyingBans(false); }}>
+              <section role="dialog" aria-modal="true" aria-labelledby="qualifying-bans-title" className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden border border-red-400/40 bg-racing-dark shadow-2xl shadow-black/70">
+                <header className="flex items-start justify-between gap-4 border-b border-racing-border px-5 py-4">
+                  <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-red-300">Sanciones por campeonato</p><h3 id="qualifying-bans-title" className="mt-1 font-racing text-2xl font-bold text-white">No puede salir a clasificar</h3><p className="mt-1 text-xs text-gray-500">{resultChampionship?.categoria} · Temporada {resultChampionship?.temporada}</p></div>
+                  <button type="button" onClick={() => setShowQualifyingBans(false)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-400 transition hover:border-red-300 hover:text-white" aria-label="Cerrar sanciones de clasificación"><XMarkIcon className="h-5 w-5"/></button>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                  <div className="grid gap-2 border border-red-400/20 bg-red-500/[0.04] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <label><span className="text-[9px] font-bold uppercase tracking-wider text-red-200">Piloto inscripto</span><select value={qualifyingBanDriverId} onChange={event => setQualifyingBanDriverId(event.target.value)} className="input-field mt-1 h-10 py-0 text-sm"><option value="">Seleccionar piloto</option>{resultRegisteredDrivers.filter(driver => !qualifyingBans.some(item => String(item.idpiloto) === String(driver.id))).map(driver => <option key={driver.id} value={driver.id}>{driver.numero != null ? `#${driver.numero} · ` : ''}{driver.nombre}</option>)}</select></label>
+                    <button type="button" onClick={addQualifyingBan} className="h-10 border border-red-400/50 bg-red-500/10 px-4 text-[10px] font-bold uppercase text-red-200 transition hover:bg-red-500 hover:text-white">Agregar</button>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {qualifyingBans.map(item => <div key={item.idpiloto} className="grid items-center gap-2 border border-racing-border bg-black/20 p-2 sm:grid-cols-[minmax(0,1fr)_40px]">
+                      <div className="min-w-0"><strong className="block truncate text-sm text-white">{item.numero != null ? `#${item.numero} · ` : ''}{item.nombre}</strong><span className="text-[9px] font-bold uppercase tracking-wider text-red-300">No puede clasificar</span></div>
+                      <button type="button" onClick={() => { setQualifyingBans(current => current.filter(row => String(row.idpiloto) !== String(item.idpiloto))); setQualifyingBansMessage('Recordá guardar para confirmar la eliminación.'); }} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 transition hover:border-red-400 hover:text-red-400" aria-label={`Quitar sanción de ${item.nombre}`}><TrashIcon className="h-4 w-4"/></button>
+                    </div>)}
+                    {!loadingQualifyingBans && !qualifyingBans.length ? <p className="border border-dashed border-racing-border px-4 py-10 text-center text-sm text-gray-600">No hay pilotos con clasificaciones pendientes.</p> : null}
+                    {loadingQualifyingBans ? <p className="py-8 text-center text-sm text-gray-500">Cargando sanciones...</p> : null}
+                  </div>
+                  {qualifyingBansMessage ? <p className="mt-3 text-xs font-semibold text-red-200">{qualifyingBansMessage}</p> : null}
+                </div>
+                <footer className="border-t border-racing-border p-4"><button type="button" onClick={saveQualifyingBans} disabled={loadingQualifyingBans || savingQualifyingBans} className="w-full bg-red-500 px-5 py-3 text-xs font-bold uppercase text-white transition hover:bg-red-400 disabled:opacity-40">{savingQualifyingBans ? 'Guardando...' : 'Guardar sanciones'}</button></footer>
               </section>
             </div>
           ) : null}
@@ -7040,6 +7462,16 @@ export default function Admin() {
     */
 
     if (activeSection === 'circuitos') {
+      const editingCircuit = circuits.find(circuit => Number(circuit.id) === Number(editingCircuitId));
+      const savedNotes = editingCircuit?.notas_pista || [];
+      const reusableNoteGroups = editingCircuit ? circuits
+        .filter(circuit => Number(circuit.id) !== Number(editingCircuit.id)
+          && String(circuit.nombre || '').trim().toLocaleLowerCase('es-AR') === String(editingCircuit.nombre || '').trim().toLocaleLowerCase('es-AR')
+          && circuit.notas_pista?.length)
+        .map(circuit => ({
+          circuit,
+          notes: circuit.notas_pista || [],
+        })) : [];
       return (
         <div className="grid grid-cols-1 2xl:grid-cols-[460px_1fr] gap-8">
           <section className="card-glass p-6">
@@ -7189,6 +7621,74 @@ export default function Admin() {
                 </div>
               </label>
 
+              <section className="border border-cyan-400/25 bg-cyan-400/[0.04] p-4">
+                <div className="mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Información para los pilotos</p>
+                  <h3 className="mt-1 font-racing text-xl font-bold uppercase text-white">Notas de pista</h3>
+                  <p className="mt-1 text-xs text-gray-500">Cada nota puede tener su propio título y varias imágenes.</p>
+                </div>
+                <label className="block">
+                  <span className="text-sm text-gray-300">Título de la nueva nota</span>
+                  <input
+                    value={circuitNoteTitle}
+                    onChange={event => setCircuitNoteTitle(event.target.value.toLocaleUpperCase('es-AR'))}
+                    className="input-field mt-2 uppercase"
+                    placeholder="Ej.: Límites de pista y referencias"
+                    maxLength="180"
+                    disabled={!editingCircuitId || savingCircuitNote}
+                  />
+                </label>
+                <label className="mt-4 block">
+                  <span className="text-sm text-gray-300">Imágenes</span>
+                  <div className="mt-2 border border-dashed border-cyan-400/25 bg-black/20 p-4">
+                    <div className="flex items-center gap-3 text-gray-400">
+                      <PhotoIcon className="h-6 w-6 text-cyan-300" />
+                      <span className="text-sm">{circuitNoteFiles.length ? `${circuitNoteFiles.length} imagen${circuitNoteFiles.length === 1 ? '' : 'es'} seleccionada${circuitNoteFiles.length === 1 ? '' : 's'}` : 'Podés seleccionar varias imágenes'}</span>
+                    </div>
+                    <input
+                      ref={circuitNotesInputRef}
+                      type="file"
+                      accept="image/avif,image/webp,image/jpeg,image/png"
+                      multiple
+                      onChange={event => setCircuitNoteFiles(Array.from(event.target.files || []))}
+                      disabled={!editingCircuitId || savingCircuitNote}
+                      className="mt-4 block w-full text-sm text-gray-400 file:mr-4 file:border-0 file:bg-cyan-500 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-black hover:file:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                </label>
+                {editingCircuitId ? <button type="button" onClick={handleAddCircuitNote} disabled={savingCircuitNote || !circuitNoteTitle.trim() || !circuitNoteFiles.length} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 bg-cyan-500 px-4 font-racing text-xs font-bold uppercase text-black transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-35"><PlusIcon className="h-4 w-4" />{savingCircuitNote ? 'Agregando nota...' : 'Agregar nota de pista'}</button> : <p className="mt-4 border border-dashed border-racing-border p-3 text-center text-xs text-gray-500">Guardá el circuito y luego abrilo para agregar todas las notas que necesites.</p>}
+
+                {reusableNoteGroups.length ? <div className="mt-5 border border-violet-400/25 bg-violet-400/[0.04] p-3">
+                  <div><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-violet-300">Otras variantes de {editingCircuit.nombre}</p><h4 className="mt-1 font-racing text-sm font-bold uppercase text-white">Reutilizar notas de pista</h4><p className="mt-1 text-[10px] leading-relaxed text-gray-500">Seleccioná las notas que también querés usar en esta variante. Se copiarán para que luego puedas editarlas por separado.</p></div>
+                  <div className="mt-3 space-y-3">{reusableNoteGroups.map(({ circuit, notes }) => <div key={circuit.id} className="border-t border-violet-400/15 pt-2"><p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">{circuit.variante || 'Variante principal'}</p><div className="space-y-1.5">{notes.map(note => <label key={note.id} className={`flex cursor-pointer items-center gap-3 border px-3 py-2 transition ${selectedReusableCircuitNotes.includes(Number(note.id)) ? 'border-violet-300 bg-violet-400/15 text-white' : 'border-racing-border bg-black/20 text-gray-400 hover:border-violet-400/40'}`}><input type="checkbox" checked={selectedReusableCircuitNotes.includes(Number(note.id))} onChange={() => toggleReusableCircuitNote(note.id)} className="h-4 w-4 shrink-0 accent-violet-400" /><span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase">{note.titulo}</span><span className="shrink-0 text-[9px] text-gray-500">{note.imagenes?.length || 0} IMG</span></label>)}</div></div>)}</div>
+                  <button type="button" onClick={() => handleReuseCircuitNotes(editingCircuit.id)} disabled={!selectedReusableCircuitNotes.length || reusingCircuitNotes} className="mt-3 inline-flex min-h-9 w-full items-center justify-center gap-2 bg-violet-500 px-3 font-racing text-xs font-bold uppercase text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-35"><PlusIcon className="h-4 w-4" />{reusingCircuitNotes ? 'Copiando notas...' : `Reutilizar ${selectedReusableCircuitNotes.length || ''} nota${selectedReusableCircuitNotes.length === 1 ? '' : 's'}`}</button>
+                </div> : null}
+
+                {savedNotes.length ? <div className="mt-5 space-y-3 border-t border-cyan-400/15 pt-4">
+                  {savedNotes.map((note, noteIndex) => {
+                    const isEditingNote = Number(editingCircuitNoteId) === Number(note.id);
+                    return <article key={note.id} className={`border p-3 transition ${isEditingNote ? 'border-cyan-300/60 bg-cyan-400/[0.06]' : 'border-racing-border bg-black/25'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-widest text-cyan-300">Nota {noteIndex + 1}</p><h4 className="mt-1 truncate font-racing text-base font-bold uppercase text-white">{note.titulo}</h4></div>
+                        <div className="flex shrink-0 gap-2">
+                          <button type="button" onClick={() => handleMoveCircuitNote(editingCircuit.id, note.id, -1)} disabled={noteIndex === 0 || savingCircuitNoteOrder} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-300 transition hover:border-cyan-300 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-25" aria-label={`Subir ${note.titulo}`}><ChevronUpIcon className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => handleMoveCircuitNote(editingCircuit.id, note.id, 1)} disabled={noteIndex === savedNotes.length - 1 || savingCircuitNoteOrder} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-300 transition hover:border-cyan-300 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-25" aria-label={`Bajar ${note.titulo}`}><ChevronDownIcon className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => isEditingNote ? cancelEditingCircuitNote() : startEditingCircuitNote(note)} className={`inline-flex h-8 w-8 items-center justify-center border transition ${isEditingNote ? 'border-cyan-300 bg-cyan-400 text-black' : 'border-cyan-400/30 text-cyan-300 hover:bg-cyan-400 hover:text-black'}`} aria-label={isEditingNote ? `Cancelar edición de ${note.titulo}` : `Editar ${note.titulo}`}><PencilSquareIcon className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => handleDeleteCircuitNote(editingCircuit.id, note.id)} className="inline-flex h-8 w-8 items-center justify-center border border-red-400/30 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar ${note.titulo}`}><TrashIcon className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                      {isEditingNote ? <div className="mt-3 border-t border-cyan-400/20 pt-3">
+                        <label className="block"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Título</span><input value={editingCircuitNoteTitle} onChange={event => setEditingCircuitNoteTitle(event.target.value.toLocaleUpperCase('es-AR'))} className="input-field mt-2 uppercase" maxLength="180" disabled={savingCircuitNote} /></label>
+                        <label className="mt-3 block"><span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Reemplazar imágenes</span><input type="file" accept="image/avif,image/webp,image/jpeg,image/png" multiple onChange={event => setEditingCircuitNoteFiles(Array.from(event.target.files || []))} disabled={savingCircuitNote} className="mt-2 block w-full text-xs text-gray-400 file:mr-3 file:border-0 file:bg-cyan-500 file:px-3 file:py-2 file:font-semibold file:text-black hover:file:bg-cyan-300 disabled:opacity-50" /><span className="mt-1 block text-[10px] text-gray-500">Si no seleccionás archivos, se conservan las imágenes actuales. Si elegís nuevas, reemplazan a todas las existentes.</span></label>
+                        {editingCircuitNoteFiles.length ? <div className="mt-2 text-xs font-semibold text-cyan-300">{editingCircuitNoteFiles.length} imagen{editingCircuitNoteFiles.length === 1 ? '' : 'es'} nueva{editingCircuitNoteFiles.length === 1 ? '' : 's'}</div> : null}
+                        <div className="mt-3 flex justify-end gap-2"><button type="button" onClick={cancelEditingCircuitNote} disabled={savingCircuitNote} className="border border-racing-border px-3 py-2 text-xs font-bold uppercase text-gray-300 transition hover:border-gray-400 hover:text-white disabled:opacity-50">Cancelar</button><button type="button" onClick={() => handleUpdateCircuitNote(editingCircuit.id, note.id)} disabled={savingCircuitNote || !editingCircuitNoteTitle.trim()} className="bg-cyan-500 px-4 py-2 font-racing text-xs font-bold uppercase text-black transition hover:bg-cyan-300 disabled:opacity-40">{savingCircuitNote ? 'Guardando...' : 'Guardar cambios'}</button></div>
+                      </div> : null}
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{(note.imagenes || []).map((image, imageIndex) => <div key={image.id} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt={`${note.titulo} ${imageIndex + 1}`} className="h-full w-full object-cover" /><button type="button" onClick={() => handleDeleteCircuitNoteImage(editingCircuit.id, note.id, image.id)} className="absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center bg-black/85 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar imagen ${imageIndex + 1}`}><TrashIcon className="h-4 w-4" /></button></div>)}</div>
+                    </article>;
+                  })}
+                </div> : editingCircuitId ? <p className="mt-4 text-xs text-gray-500">Este circuito todavía no tiene notas de pista.</p> : null}
+              </section>
+
               {circuitMessage && (
                 <div className="rounded-lg border border-racing-red/30 bg-racing-red/10 px-4 py-3 text-sm text-gray-200">
                   {circuitMessage}
@@ -7281,6 +7781,7 @@ export default function Admin() {
                         <td className="relative px-4 py-3">
                           <span className="font-racing text-base text-white">{circuit.nombre}</span>
                           {circuit.variante ? <span className="ml-2 text-xs uppercase text-racing-red">{circuit.variante}</span> : null}
+                          {circuit.notas_pista?.length ? <span className="ml-2 border border-cyan-400/30 bg-cyan-400/10 px-1.5 py-0.5 text-[8px] font-bold uppercase text-cyan-300">Notas · {circuit.notas_pista.length}</span> : null}
                         </td>
                         <td className="relative px-4 py-3 text-gray-400">
                           <span className="flex items-center gap-2">

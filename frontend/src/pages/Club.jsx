@@ -24,11 +24,8 @@ function ServerCard({ configuration, timing, error, loading }) {
   const session = timing?.session || (error ? 'Sin conexión' : loading ? 'Consultando...' : 'Sin actividad');
 
   return (
-    <article className="relative isolate flex min-h-0 flex-col overflow-hidden border border-blue-300/30 bg-[#03152b]/90 shadow-xl shadow-black/30">
-      {configuration.circuito_imagen ? <img src={configuration.circuito_imagen} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-20"/> : null}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#020b18]/95 via-[#03152b]/90 to-[#03152b]/75"/>
-
-      <header className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+    <article className="relative isolate flex min-h-0 flex-col overflow-hidden border border-blue-300/30 bg-[#03152b]/65 shadow-xl shadow-black/30 backdrop-blur-[2px]">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {configuration.categoria_logo ? <img src={configuration.categoria_logo} alt={configuration.categoria || ''} className="h-12 w-14 shrink-0 object-contain"/> : null}
           <div className="min-w-0">
@@ -36,7 +33,10 @@ function ServerCard({ configuration, timing, error, loading }) {
             <p className="mt-0.5 truncate text-[9px] font-semibold uppercase tracking-wider text-blue-300">{configuration.nombre}</p>
           </div>
         </div>
-        <span className="shrink-0 bg-emerald-400 px-2 py-1 text-[8px] font-black uppercase text-black">Gratis</span>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-2 border border-emerald-300/25 bg-emerald-300/[0.06] px-2.5 py-1.5"><SignalIcon className="h-4 w-4 text-emerald-300"/><div className="text-right"><strong className="block font-racing text-lg leading-none text-white">{error ? '—' : connected}</strong><span className="block text-[7px] font-bold uppercase tracking-wider text-gray-500">Pilotos online</span></div></div>
+          <span className="bg-emerald-400 px-2 py-1 text-[8px] font-black uppercase text-black">Gratis</span>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 border-b border-white/10">
@@ -64,13 +64,8 @@ function ServerCard({ configuration, timing, error, loading }) {
           {configuration.circuito_trazado ? <img src={configuration.circuito_trazado} alt="Trazado" className="relative z-10 h-20 w-28 shrink-0 object-contain drop-shadow-[0_6px_12px_rgba(0,0,0,0.9)]"/> : null}
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-3 border-y border-white/10 py-2.5">
-          <div className="flex items-center gap-2"><SignalIcon className="h-5 w-5 text-emerald-300"/><div><strong className="block font-racing text-xl leading-none text-white">{error ? '—' : connected}</strong><span className="text-[8px] font-bold uppercase tracking-wider text-gray-500">Pilotos online</span></div></div>
-          {!error ? <span className="text-[8px] font-black uppercase tracking-wider text-emerald-300">Servidor conectado</span> : null}
-        </div>
-
-        {configuration.autos?.length ? <div className="scrollbar-hidden mt-3 grid min-h-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto">{configuration.autos.map(car => <div key={car.id} className="flex min-h-11 w-full items-center gap-3 border border-white/[0.07] bg-white/[0.025] px-3 py-1.5">{car.logo ? <img src={car.logo} alt="" className="h-9 w-14 shrink-0 object-contain sm:h-10 sm:w-16"/> : <span className="h-9 w-14 shrink-0"/>}<span className="min-w-0 truncate text-[10px] font-bold uppercase tracking-wide text-gray-200 sm:text-xs">{car.modelo}</span></div>)}</div> : null}
-        <ServerJoinButton href={configuration.servidor} variant="green" steady label="Instalar contenido e ingresar" className="mt-3 w-full justify-center py-2.5 text-xs"/>
+        {configuration.autos?.length ? <div className="mt-3 grid grid-cols-1 content-start gap-1 sm:grid-cols-2 xl:grid-cols-3">{configuration.autos.map(car => <div key={car.id} className="flex min-h-9 w-full items-center gap-2.5 border border-white/[0.07] bg-white/[0.025] px-2.5 py-1">{car.logo ? <img src={car.logo} alt="" className="h-7 w-11 shrink-0 object-contain sm:h-8 sm:w-12"/> : <span className="h-7 w-11 shrink-0"/>}<span className="min-w-0 truncate text-[9px] font-bold uppercase tracking-wide text-gray-200 sm:text-[10px]">{car.modelo}</span></div>)}</div> : null}
+        <ServerJoinButton href={configuration.enlace_ingreso || configuration.servidor} variant="green" steady label="Instalar contenido e ingresar" className="mt-3 w-full justify-center py-2.5 text-xs"/>
       </div>
     </article>
   );
@@ -129,14 +124,27 @@ export default function Club() {
     return () => window.clearInterval(interval);
   }, [configurations, loadServerStatuses]);
 
-  const primaryConfiguration = configurations[0] || null;
+  const backgroundConfigurations = configurations.filter(configuration => configuration.circuito_imagen);
   return (
     <main className="relative isolate min-h-[calc(100svh-7rem)] overflow-hidden border-b border-white/10 bg-[#060709] animate-fade-in">
-      {primaryConfiguration?.circuito_imagen ? <img src={primaryConfiguration.circuito_imagen} alt="" className="absolute inset-0 -z-30 h-full w-full object-cover opacity-25"/> : null}
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(90deg,rgba(2,10,24,.98)_0%,rgba(4,30,60,.9)_48%,rgba(2,10,24,.97)_100%),radial-gradient(circle_at_18%_20%,rgba(37,99,235,.3),transparent_40%)]"/>
+      {backgroundConfigurations.length ? <div className="absolute inset-0 -z-30 overflow-hidden bg-[#020812]">{backgroundConfigurations.map((configuration, index) => {
+        const count = backgroundConfigurations.length;
+        const overlap = count > 1 ? 8 : 0;
+        const width = (100 / count) + (count > 1 ? overlap * 2 : 0);
+        const left = (index * (100 / count)) - (index > 0 ? overlap : 0);
+        const mask = count === 1
+          ? 'linear-gradient(to right, black, black)'
+          : index === 0
+            ? 'linear-gradient(to right, black 0%, black 62%, transparent 100%)'
+            : index === count - 1
+              ? 'linear-gradient(to right, transparent 0%, black 38%, black 100%)'
+              : 'linear-gradient(to right, transparent 0%, black 24%, black 76%, transparent 100%)';
+        return <img key={configuration.id} src={configuration.circuito_imagen} alt="" className="absolute inset-y-0 h-full object-cover opacity-55" style={{ left: `${left}%`, width: `${width}%`, maskImage: mask, WebkitMaskImage: mask }}/>;
+      })}</div> : null}
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(90deg,rgba(2,10,24,.9)_0%,rgba(4,30,60,.58)_48%,rgba(2,10,24,.88)_100%),linear-gradient(180deg,rgba(0,0,0,.16),rgba(0,0,0,.58)),radial-gradient(circle_at_18%_20%,rgba(37,99,235,.24),transparent_40%)]"/>
       <div className="race-hero-grid absolute inset-0 -z-10 opacity-15"/>
 
-      <div className="mx-auto grid min-h-[calc(100svh-7rem)] w-full max-w-[1800px] gap-7 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(390px,520px)] lg:items-stretch lg:px-12 xl:gap-12 xl:px-16">
+      <div className="mx-auto grid min-h-[calc(100svh-7rem)] w-full max-w-[1800px] gap-7 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(440px,1.1fr)] lg:items-center lg:px-12 xl:gap-8 xl:px-16">
         <section className="flex min-w-0 flex-col justify-center py-3 lg:py-7">
           <div className="inline-flex w-fit items-center gap-2 border border-emerald-300/35 bg-emerald-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300"/>Servidores abiertos y gratuitos</div>
 
@@ -154,7 +162,7 @@ export default function Club() {
 
         </section>
 
-        <aside className="grid min-h-0 gap-3 lg:h-full" style={configurations.length ? { gridTemplateRows: `repeat(${configurations.length}, minmax(0, 1fr))` } : undefined}>
+        <aside className="grid min-h-0 content-center gap-3">
           {configurations.map(configuration => <ServerCard key={configuration.id} configuration={configuration} timing={timingByServer[String(configuration.id)]} error={errorsByServer[String(configuration.id)]} loading={timingLoading}/>) }
           {!configurations.length ? <div className="flex min-h-72 items-center justify-center border border-dashed border-blue-300/25 bg-black/20 px-6 text-center"><div><SignalIcon className="mx-auto h-10 w-10 text-blue-900"/><p className="mt-3 font-racing text-xl font-bold uppercase text-gray-500">No hay servidores CLUB publicados</p></div></div> : null}
         </aside>

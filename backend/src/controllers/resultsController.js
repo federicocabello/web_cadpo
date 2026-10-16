@@ -1,5 +1,65 @@
 const pool = require('../config/db');
 const ensureResultAchievements = require('../utils/ensureResultAchievements');
+const fs = require('fs/promises');
+const path = require('path');
+const publicDir = require('../utils/publicDir');
+const ensureChampionshipExclusions = require('../utils/ensureChampionshipExclusions');
+
+let appealsSchemaPromise;
+const APPEAL_SESSIONS = new Set(['qualy_sprint', 'sprint', 'qualy_final', 'final']);
+
+const ensureAppealsSchema = () => {
+  if (!appealsSchemaPromise) {
+    appealsSchemaPromise = pool.query(`CREATE TABLE IF NOT EXISTS resultado_apelaciones (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      idcampeonato INT NOT NULL,
+      ronda SMALLINT UNSIGNED NOT NULL,
+      tanda VARCHAR(30) NOT NULL,
+      idpiloto INT NOT NULL,
+      motivo TEXT NOT NULL,
+      video VARCHAR(500) NULL,
+      video_nombre VARCHAR(255) NULL,
+      creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      actualizado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_resultado_apelaciones_fecha (idcampeonato, ronda, tanda),
+      KEY idx_resultado_apelaciones_piloto (idpiloto)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`).catch(error => {
+      appealsSchemaPromise = null;
+      throw error;
+    });
+  }
+  return appealsSchemaPromise;
+};
+
+const appealVideoPath = file => file ? `/media/resultados/apelaciones/${file.filename}` : null;
+const removeAppealVideo = async mediaPath => {
+  const relativePath = String(mediaPath || '').replace(/^[/\\]+/, '');
+  const absolutePath = path.resolve(publicDir, relativePath);
+  const videosDir = path.resolve(publicDir, 'media', 'resultados', 'apelaciones');
+  if (!absolutePath.startsWith(`${videosDir}${path.sep}`)) return;
+  await fs.unlink(absolutePath).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+};
+
+const validateAppealData = async ({ championshipId, round, driverId, session, reason }) => {
+  if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+    throw Object.assign(new Error('Campeonato o fecha inválidos'), { statusCode: 400 });
+  }
+  if (!Number.isInteger(driverId) || driverId < 1) {
+    throw Object.assign(new Error('Seleccioná un piloto'), { statusCode: 400 });
+  }
+  if (!APPEAL_SESSIONS.has(session)) {
+    throw Object.assign(new Error('Seleccioná una tanda válida'), { statusCode: 400 });
+  }
+  if (!reason) throw Object.assign(new Error('Ingresá el motivo de la apelación'), { statusCode: 400 });
+  const [[result]] = await pool.query(
+    'SELECT id FROM resultados WHERE idcampeonato = ? AND ronda = ? AND idpiloto = ? LIMIT 1',
+    [championshipId, round, driverId],
+  );
+  if (!result) throw Object.assign(new Error('El piloto no tiene resultados cargados en esta fecha'), { statusCode: 400 });
+};
 
 const RESULT_FIELDS = [
   'idcampeonato',
@@ -73,7 +133,7 @@ const normalizeValue = (field, value) => {
 
 const getAll = async (req, res, next) => {
   try {
-    await ensureResultAchievements();
+    await Promise.all([ensureResultAchievements(), ensureChampionshipExclusions()]);
     const { idcampeonato, ronda } = req.query;
     let query = `
       SELECT r.*,
@@ -81,13 +141,16 @@ const getAll = async (req, res, next) => {
              ci.nombre AS circuito, ci.variante,
              ci.imagen AS circuito_imagen, ci.trazado AS circuito_trazado,
              ci.localidad AS circuito_localidad, ci.provincia AS circuito_provincia,
-             a.modelo, am.marca, am.logo AS auto_logo
+             a.modelo, am.marca, am.logo AS auto_logo,
+             CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido
       FROM resultados r
       JOIN pilotos p ON r.idpiloto = p.id
       JOIN circuitos ci ON r.idcircuito = ci.id
       LEFT JOIN inscriptos i ON i.idcampeonato = r.idcampeonato AND i.idpiloto = r.idpiloto
       LEFT JOIN autos a ON a.id = i.idauto
       LEFT JOIN autos_marcas am ON am.id = a.marca
+      LEFT JOIN campeonato_pilotos_excluidos exclusion
+        ON exclusion.idcampeonato = r.idcampeonato AND exclusion.idpiloto = r.idpiloto
     `;
     const params = [];
     const conditions = [];
@@ -249,6 +312,127 @@ const saveBulk = async (req, res, next) => {
   }
 };
 
+const getAppeals = async (req, res, next) => {
+  try {
+    await ensureAppealsSchema();
+    const championshipId = Number(req.query.idcampeonato);
+    const round = Number(req.query.ronda);
+    const conditions = [];
+    const params = [];
+    if (Number.isInteger(championshipId) && championshipId > 0) {
+      conditions.push('a.idcampeonato = ?');
+      params.push(championshipId);
+    }
+    if (Number.isInteger(round) && round > 0) {
+      conditions.push('a.ronda = ?');
+      params.push(round);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows] = await pool.query(
+      `SELECT a.id, a.idcampeonato, a.ronda, a.tanda, a.idpiloto, a.motivo,
+              a.video, a.video_nombre, a.creado, a.actualizado,
+              p.nombre AS piloto
+       FROM resultado_apelaciones a
+       INNER JOIN pilotos p ON p.id = a.idpiloto
+       ${where}
+       ORDER BY a.ronda DESC,
+                FIELD(a.tanda, 'qualy_sprint', 'sprint', 'qualy_final', 'final'),
+                p.nombre ASC, a.id ASC`,
+      params,
+    );
+    res.json({ data: rows, total: rows.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const createAppeal = async (req, res, next) => {
+  let saved = false;
+  try {
+    await ensureAppealsSchema();
+    const championshipId = Number(req.body.idcampeonato);
+    const round = Number(req.body.ronda);
+    const driverId = Number(req.body.idpiloto);
+    const session = String(req.body.tanda || '').trim().toLowerCase();
+    const reason = String(req.body.motivo || '').trim().slice(0, 10000);
+    await validateAppealData({ championshipId, round, driverId, session, reason });
+    const video = appealVideoPath(req.file);
+    const videoName = req.file ? path.basename(String(req.file.originalname || '')).slice(0, 255) : null;
+    const [result] = await pool.query(
+      `INSERT INTO resultado_apelaciones
+       (idcampeonato, ronda, tanda, idpiloto, motivo, video, video_nombre)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [championshipId, round, session, driverId, reason, video, videoName],
+    );
+    saved = true;
+    const [[created]] = await pool.query(
+      `SELECT a.*, p.nombre AS piloto
+       FROM resultado_apelaciones a INNER JOIN pilotos p ON p.id = a.idpiloto
+       WHERE a.id = ?`,
+      [result.insertId],
+    );
+    res.status(201).json({ data: created, message: 'Apelación agregada' });
+  } catch (error) {
+    if (req.file && !saved) await removeAppealVideo(appealVideoPath(req.file)).catch(() => {});
+    next(error);
+  }
+};
+
+const updateAppeal = async (req, res, next) => {
+  let saved = false;
+  try {
+    await ensureAppealsSchema();
+    const appealId = Number(req.params.appealId);
+    const [[current]] = await pool.query('SELECT * FROM resultado_apelaciones WHERE id = ?', [appealId]);
+    if (!current) {
+      if (req.file) await removeAppealVideo(appealVideoPath(req.file));
+      return res.status(404).json({ error: 'Apelación no encontrada' });
+    }
+    const championshipId = Number(req.body.idcampeonato || current.idcampeonato);
+    const round = Number(req.body.ronda || current.ronda);
+    const driverId = Number(req.body.idpiloto || current.idpiloto);
+    const session = String(req.body.tanda || current.tanda).trim().toLowerCase();
+    const reason = String(req.body.motivo ?? current.motivo).trim().slice(0, 10000);
+    await validateAppealData({ championshipId, round, driverId, session, reason });
+    const video = req.file ? appealVideoPath(req.file) : current.video;
+    const videoName = req.file ? path.basename(String(req.file.originalname || '')).slice(0, 255) : current.video_nombre;
+    await pool.query(
+      `UPDATE resultado_apelaciones
+       SET idcampeonato = ?, ronda = ?, tanda = ?, idpiloto = ?, motivo = ?, video = ?, video_nombre = ?
+       WHERE id = ?`,
+      [championshipId, round, session, driverId, reason, video, videoName, appealId],
+    );
+    saved = true;
+    if (req.file && current.video && current.video !== video) {
+      await removeAppealVideo(current.video).catch(error => console.warn('No se pudo eliminar el video anterior de la apelación:', error.message));
+    }
+    const [[updated]] = await pool.query(
+      `SELECT a.*, p.nombre AS piloto
+       FROM resultado_apelaciones a INNER JOIN pilotos p ON p.id = a.idpiloto
+       WHERE a.id = ?`,
+      [appealId],
+    );
+    res.json({ data: updated, message: 'Apelación actualizada' });
+  } catch (error) {
+    if (req.file && !saved) await removeAppealVideo(appealVideoPath(req.file)).catch(() => {});
+    next(error);
+  }
+};
+
+const removeAppeal = async (req, res, next) => {
+  try {
+    await ensureAppealsSchema();
+    const appealId = Number(req.params.appealId);
+    const [[appeal]] = await pool.query('SELECT video FROM resultado_apelaciones WHERE id = ?', [appealId]);
+    if (!appeal) return res.status(404).json({ error: 'Apelación no encontrada' });
+    await pool.query('DELETE FROM resultado_apelaciones WHERE id = ?', [appealId]);
+    if (appeal.video) await removeAppealVideo(appeal.video);
+    res.json({ message: 'Apelación eliminada' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const remove = async (req, res, next) => {
   try {
     await ensureResultAchievements();
@@ -260,4 +444,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, saveBulk, remove };
+module.exports = { getAll, getById, create, update, saveBulk, getAppeals, createAppeal, updateAppeal, removeAppeal, remove };
