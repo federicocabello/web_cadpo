@@ -103,7 +103,7 @@ const chat = async (req, res, next) => {
     const sessionId = String(req.body?.sessionId || '').trim().slice(0, 100);
     const [knowledge, approvedMemory, staticKnowledge] = await Promise.all([
       buildKnowledge(question),
-      loadApprovedMemory(question),
+      loadApprovedMemory(),
       loadStaticKnowledge(question),
     ]);
     const contextualKnowledge = { ...knowledge, approvedMemory, staticKnowledge };
