@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
+import AyrtonChat from './components/AyrtonChat'
 import Home from './pages/Home'
 import Events from './pages/Events'
 import Championships from './pages/Championships'
@@ -104,6 +105,7 @@ function App() {
           />
         </Routes>
       </main>
+      {!isAdminView ? <AyrtonChat /> : null}
       {!isAdminView ? <Footer /> : null}
     </div>
   )

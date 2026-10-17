@@ -6,7 +6,6 @@ import {
   CalendarDaysIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  DocumentArrowDownIcon,
   FlagIcon,
   MapPinIcon,
   SignalIcon,
@@ -102,6 +101,7 @@ const sessionLabel = value => {
 
 const isQualifyingSession = value => /clasificaci[oó]n|qualifying|qualification|qualy/i.test(String(value || ''));
 const isRaceSession = value => /carrera|race/i.test(String(value || ''));
+const isPracticeSession = value => /pr[aá]ctica|practice/i.test(String(value || ''));
 
 const parseDate = value => parseCalendarDate(value);
 
@@ -723,6 +723,11 @@ export default function LiveTiming() {
 
             {raceEvent && <div className="mt-5 flex flex-wrap items-center gap-2">
               <ServerJoinButton href={raceEvent?.servidor} variant="green" steady className="event-action-button h-9 w-full justify-center gap-2 px-3 py-0 text-[10px] sm:w-auto" />
+              <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1 border-l-2 border-white/15 px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-white">
+                <span className="inline-flex items-center gap-1.5 text-[10px]">Sesión <button type="button" onClick={generateTimingPdf} disabled={generatingPdf || loading || !drivers.length} className={`font-racing text-sm font-bold uppercase sm:text-base disabled:cursor-not-allowed disabled:opacity-40 ${isPracticeSession(timing?.session) ? 'text-green-400' : isQualifyingSession(timing?.session) || isRaceSession(timing?.session) ? 'text-red-400' : 'text-white'}`} title="Ver planilla PDF" aria-label={`Ver planilla PDF de la sesión ${sessionLabel(timing?.session)}`}>{sessionLabel(timing?.session)}</button></span>
+                {Number(connectedDriverCount) > 0 ? <span className="inline-flex items-center gap-1 font-racing text-sm text-yellow-300 sm:text-base"><strong className="text-base sm:text-lg">{connectedDriverCount}</strong> pilotos en pista</span> : null}
+                <span className="inline-flex flex-wrap items-center gap-x-1.5 text-white"><span>{isQualifyingSession(timing?.session) ? 'Tiempo de clasificación' : `Clasificación ${formatCalendarDate(raceEvent?.fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H`}</span><strong className="font-racing text-base tabular-nums text-orange-400 sm:text-lg">{isQualifyingSession(timing?.session) ? formatSessionRemaining(timing, now) : formatCountdown(raceEvent?.fecha, now)}</strong></span>
+              </div>
               {qualifyingBans.length ? <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 border border-red-400/45 bg-red-500/10 px-3 py-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-300">No pueden clasificar</span>
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 uppercase leading-relaxed">{qualifyingBans.map((item, index) => <Fragment key={item.idpiloto}>{index > 0 ? <span className="text-[10px] text-gray-600">•</span> : null}<span className="inline-flex items-baseline gap-1.5"><span className="text-[10px] font-semibold text-gray-500">#{item.numero ?? 0}</span><strong className="font-racing text-sm font-bold text-white">{item.nombre}</strong></span></Fragment>)}</span>
@@ -783,31 +788,6 @@ export default function LiveTiming() {
         )}
 
         {!serviceUnavailable && !noAvailableDates && !isRaceSession(timing?.session) && <>
-          <section className="mb-3 grid grid-cols-2 gap-px overflow-hidden border border-racing-border bg-racing-border sm:grid-cols-3">
-            <div className="relative isolate overflow-hidden bg-racing-card p-3">
-              {isQualifyingSession(timing?.session) ? (
-                <div className="classification-checker absolute inset-y-0 right-0 -z-10 w-2/3 opacity-20" />
-              ) : (
-                <div className="session-country-flag absolute inset-y-0 right-0 -z-10 w-1/3 opacity-35">
-                  <CountryFlag country={raceEvent?.pais} />
-                </div>
-              )}
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Sesión</p>
-              <p className="mt-1 truncate font-racing text-xl font-bold uppercase text-white">{sessionLabel(timing?.session)}</p>
-            </div>
-            <div className="bg-racing-card p-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Pilotos en pista</p>
-              <p className="mt-1 font-racing text-2xl font-bold text-white">{connectedDriverCount}</p>
-            </div>
-            <div className="relative isolate col-span-2 overflow-hidden bg-racing-card p-3 sm:col-span-1">
-              <div className="classification-checker absolute inset-y-0 right-0 -z-10 w-2/3 opacity-30" />
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{isQualifyingSession(timing?.session) ? 'Tiempo de clasificación' : `Inicio de clasificación a las ${formatCalendarDate(raceEvent?.fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H`}</p>
-              <p className="mt-1 font-racing text-2xl font-bold tabular-nums text-orange-400">
-                {isQualifyingSession(timing?.session) ? formatSessionRemaining(timing, now) : formatCountdown(raceEvent?.fecha, now)}
-              </p>
-            </div>
-          </section>
-
           {percentageRuleActive && !qualifyingSession && <section className="mb-3 grid overflow-hidden border border-cyan-400/35 bg-cyan-400/10 md:grid-cols-[1.15fr_auto_auto_auto] md:items-stretch">
             <div className="flex items-center gap-3 border-b border-cyan-400/20 px-4 py-3 md:border-b-0 md:border-r"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-cyan-400 font-racing text-lg font-bold text-black">%</span><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Regla de habilitación</p><p className="font-racing text-xl font-bold uppercase text-white">Dentro del {percentageRuleLabel}% del líder</p><p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">También debe completar {REQUIRED_LAPS} vueltas</p></div></div>
             <div className="border-b border-cyan-400/20 px-5 py-3 md:min-w-44 md:border-b-0 md:border-r"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Tiempo del líder</p><p className="mt-1 font-racing text-2xl font-bold tabular-nums text-white">{formatLapTime(bestLap)}</p></div>
@@ -837,7 +817,7 @@ export default function LiveTiming() {
                     </div>
                   </div> : null}
                   <article
-                    className={`timing-driver-row relative ${qualifyingSession ? 'timing-driver-row-compact p-2.5' : 'p-3.5'} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
+                    className={`timing-driver-row relative ${qualifyingSession ? 'timing-driver-row-compact p-2' : 'p-3'} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                     style={{ '--row-shift': `${positionChange * 150}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                   >
                     <div className="flex items-start gap-3">
@@ -851,8 +831,8 @@ export default function LiveTiming() {
                           <div className="flex min-w-0 items-start gap-2">
                             <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="mt-0.5 shrink-0 text-lg" />
                             <div className="min-w-0">
-                              <h3 className="break-words font-semibold leading-tight text-white">{driver.name}</h3>
-                              {(driver.team || driver.raceNumber || driver.ballast > 0) ? <p className="mt-1 text-[10px] uppercase text-gray-500">{driver.team || (driver.raceNumber ? `#${driver.raceNumber}` : '')}{driver.ballast > 0 ? <span className="ml-2 font-racing font-bold text-yellow-300">{formatBallast(driver.ballast)}</span> : null}</p> : null}
+                              <h3 className="flex flex-wrap items-baseline gap-x-2 font-semibold leading-tight text-white"><span className="break-words">{driver.name}</span>{driver.ballast > 0 ? <span className="shrink-0 font-racing text-xs font-bold text-yellow-300">{formatBallast(driver.ballast)}</span> : null}</h3>
+                              {(driver.team || driver.raceNumber) ? <p className="mt-1 text-[10px] uppercase text-gray-500">{driver.team || `#${driver.raceNumber}`}</p> : null}
                             </div>
                           </div>
                           {driver.connected && (
@@ -865,12 +845,12 @@ export default function LiveTiming() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-3 flex min-h-14 items-center gap-3 border-t border-white/5 pt-3">
+                        <div className="mt-2 flex min-h-11 items-center gap-2.5 border-t border-white/5 pt-2">
                           {driver.carBrandLogo ? (
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="h-10 w-16 shrink-0 object-contain"
+                              className="h-8 w-14 shrink-0 object-contain"
                             />
                           ) : null}
                           <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-600">Auto</p><p className="break-words text-sm font-bold uppercase leading-tight text-white">{driver.displayCarModel}</p></div>
@@ -878,7 +858,7 @@ export default function LiveTiming() {
                       </div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/5 pt-3">
+                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-white/5 pt-2">
                       <div className="col-span-2 overflow-x-auto pb-1">
                         <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
                       </div>
@@ -900,7 +880,7 @@ export default function LiveTiming() {
                       </div>
                     </div>
 
-                    {!qualifyingSession && <div className="mt-3">
+                    {!qualifyingSession && <div className="mt-2">
                       {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-3 py-1 text-xs font-bold uppercase text-green-400">Habilitado · {percentageRuleActive ? 'vueltas y tiempo cumplidos' : 'vueltas cumplidas'}</span> : <span className="inline-flex bg-red-500/15 px-3 py-1 text-xs font-bold uppercase text-red-300">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
                     </div>}
                   </article>
@@ -913,15 +893,15 @@ export default function LiveTiming() {
               <table className={`w-full table-fixed border-collapse text-left text-sm 2xl:text-base ${qualifyingSession ? 'min-w-[1080px]' : 'min-w-[1260px]'}`}>
                 <thead className="bg-black text-[10px] font-bold uppercase tracking-widest text-gray-500">
                   <tr>
-                    <th className="w-12 px-2 py-2.5 text-center 2xl:w-16 2xl:px-4 2xl:py-3">Pos.</th>
-                    <th className="w-[230px] px-2.5 py-2.5 2xl:w-[340px] 2xl:px-4 2xl:py-3">Piloto</th>
-                    <th className="w-[230px] px-2.5 py-2.5 2xl:w-[340px] 2xl:px-4 2xl:py-3">Auto</th>
-                    <th className="w-[200px] px-2.5 py-2.5 2xl:w-[260px] 2xl:px-4 2xl:py-3">Sectores</th>
-                    <th className="w-[125px] px-2.5 py-2.5 text-right 2xl:w-[160px] 2xl:px-4 2xl:py-3">Mejor vuelta</th>
-                    <th className="w-[95px] px-2 py-2.5 text-right 2xl:w-[120px] 2xl:px-4 2xl:py-3">Diferencia</th>
-                    <th className="w-[65px] px-2 py-2.5 text-center 2xl:w-[90px] 2xl:px-4 2xl:py-3">Vueltas</th>
-                    <th className="w-[95px] px-2 py-2.5 text-right 2xl:w-[130px] 2xl:px-4 2xl:py-3">Vel. máx.</th>
-                    {!qualifyingSession && <th className="w-[172px] px-2 py-2.5 text-center 2xl:w-[280px] 2xl:px-4 2xl:py-3">Habilitación</th>}
+                    <th className="w-12 px-2 py-2 text-center 2xl:w-16 2xl:px-4">Pos.</th>
+                    <th className="w-[280px] px-2.5 py-2 2xl:w-[390px] 2xl:px-4">Piloto</th>
+                    <th className="w-[230px] px-2.5 py-2 2xl:w-[340px] 2xl:px-4">Auto</th>
+                    <th className="w-[150px] px-2.5 py-2 2xl:w-[210px] 2xl:px-4">Sectores</th>
+                    <th className="w-[125px] px-2.5 py-2 text-right 2xl:w-[160px] 2xl:px-4">Mejor vuelta</th>
+                    <th className="w-[95px] px-2 py-2 text-right 2xl:w-[120px] 2xl:px-4">Diferencia</th>
+                    <th className="w-[65px] px-2 py-2 text-center 2xl:w-[90px] 2xl:px-4">Vueltas</th>
+                    <th className="w-[95px] px-2 py-2 text-right 2xl:w-[130px] 2xl:px-4">Vel. máx.</th>
+                    {!qualifyingSession && <th className="w-[172px] px-2 py-2 text-center 2xl:w-[280px] 2xl:px-4">Habilitación</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-racing-border">
@@ -951,19 +931,19 @@ export default function LiveTiming() {
                         className={`timing-driver-row ${qualifyingSession ? 'timing-driver-row-compact' : ''} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                         style={{ '--row-shift': `${positionChange * 54}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
                       >
-                        <td className="px-2 py-2 text-center font-racing text-lg font-bold text-white 2xl:px-4 2xl:py-3 2xl:text-xl">
+                        <td className="px-2 py-1.5 text-center font-racing text-lg font-bold text-white 2xl:px-4 2xl:py-2 2xl:text-xl">
                           <span className="inline-flex items-center justify-center gap-1">
                             {index + 1}
                             {positionChange > 0 ? <ArrowUpIcon className="timing-position-arrow h-4 w-4 text-green-400" /> : null}
                             {positionChange < 0 ? <ArrowDownIcon className="timing-position-arrow h-4 w-4 text-red-400" /> : null}
                           </span>
                         </td>
-                        <td className="w-[230px] px-2.5 py-2 2xl:w-[340px] 2xl:px-4 2xl:py-3">
+                        <td className="w-[280px] px-2.5 py-1.5 2xl:w-[390px] 2xl:px-4 2xl:py-2">
                           <div className="min-w-0">
                             <div className="min-w-0">
                               <div className="flex min-w-0 items-center gap-2">
                                 <CountryFlag country={driverCountries.get(driver.guid) || driverCountries.get(driverNameKey(driver.name))} className="text-base 2xl:text-lg" />
-                                <p className="min-w-0 flex-1 truncate font-semibold text-white" title={driver.name}>{driver.name}</p>
+                                <p className="min-w-0 truncate font-semibold text-white" title={driver.name}>{driver.name}</p>
                                 {driver.ballast > 0 ? (
                                   <span className="shrink-0 font-racing text-sm font-bold text-yellow-300 2xl:text-base">
                                     {formatBallast(driver.ballast)}
@@ -983,13 +963,13 @@ export default function LiveTiming() {
                             </div>
                           </div>
                         </td>
-                        <td className="h-[58px] w-[230px] px-2.5 py-2 2xl:h-[70px] 2xl:w-[340px] 2xl:px-4 2xl:py-3">
+                        <td className="h-[50px] w-[230px] px-2.5 py-1.5 2xl:h-[58px] 2xl:w-[340px] 2xl:px-4 2xl:py-2">
                           <div className="flex min-w-0 items-center gap-2 2xl:gap-4">
                           {driver.carBrandLogo ? (
                             <img
                               src={driver.carBrandLogo}
                               alt=""
-                              className="h-9 w-14 shrink-0 object-contain xl:w-16 2xl:h-12 2xl:w-24"
+                              className="h-8 w-14 shrink-0 object-contain xl:w-16 2xl:h-10 2xl:w-20"
                             />
                           ) : null}
                           <span className="min-w-0 break-words text-sm font-bold uppercase leading-tight text-white 2xl:text-base">
@@ -997,16 +977,16 @@ export default function LiveTiming() {
                           </span>
                           </div>
                         </td>
-                        <td className="px-2.5 py-2 2xl:px-4 2xl:py-3">
+                        <td className="px-2.5 py-1.5 2xl:px-4 2xl:py-2">
                           <SectorMiniTable sectors={driver.bestSectors} fastestSectors={fastestSectors} leaderSectors={leaderSectors} />
                         </td>
-                        <td className="px-2.5 py-2 2xl:px-4 2xl:py-3">
+                        <td className="px-2.5 py-1.5 2xl:px-4 2xl:py-2">
                           <p className={`shrink-0 text-right font-racing text-base font-bold tabular-nums 2xl:text-xl ${driver.bestLap && driver.bestLap === bestLap ? 'text-[#c77dff]' : 'text-white'}`}>{formatLapTime(driver.bestLap)}</p>
                         </td>
-                        <td className="px-2 py-2 text-right font-racing text-base font-bold tabular-nums text-racing-red 2xl:px-4 2xl:py-3 2xl:text-lg">{formatGap(driver.bestLap, bestLap)}</td>
-                        <td className="px-2 py-2 text-center text-gray-300 2xl:px-4 2xl:py-3">{driver.laps}</td>
-                        <td className="whitespace-nowrap px-2 py-2 text-right text-xs text-gray-300 2xl:px-4 2xl:py-3 2xl:text-base">{driver.topSpeed ? `${driver.topSpeed.toFixed(1)} km/h` : '--'}</td>
-                        {!qualifyingSession && <td className="px-2 py-2 text-center 2xl:px-4 2xl:py-3">
+                        <td className="px-2 py-1.5 text-right font-racing text-base font-bold tabular-nums text-racing-red 2xl:px-4 2xl:py-2 2xl:text-lg">{formatGap(driver.bestLap, bestLap)}</td>
+                        <td className="px-2 py-1.5 text-center text-gray-300 2xl:px-4 2xl:py-2">{driver.laps}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right text-xs text-gray-300 2xl:px-4 2xl:py-2 2xl:text-base">{driver.topSpeed ? `${driver.topSpeed.toFixed(1)} km/h` : '--'}</td>
+                        {!qualifyingSession && <td className="px-2 py-1.5 text-center 2xl:px-4 2xl:py-2">
                           {eligibility.enabled ? <span className="inline-flex bg-green-500/15 px-2 py-1 text-xs font-bold uppercase text-green-400 2xl:px-3 2xl:text-sm">Habilitado</span> : <span className="inline-flex bg-red-500/15 px-2 py-1 text-[10px] font-bold uppercase text-red-300 2xl:px-3 2xl:text-xs">Inhabilitado · {eligibility.missing.join(' · ')}</span>}
                         </td>}
                       </tr>
@@ -1030,18 +1010,6 @@ export default function LiveTiming() {
                 <p className="text-sm text-gray-400">Conectando con el servidor...</p>
               </div>
             )}
-            {!loading && drivers.length ? <div className="flex justify-end border-t border-racing-border bg-black/20 px-2 py-1.5">
-              <button
-                type="button"
-                onClick={generateTimingPdf}
-                disabled={generatingPdf}
-                className="inline-flex h-7 w-7 items-center justify-center text-gray-700 transition-colors hover:bg-white/5 hover:text-gray-300 disabled:opacity-40"
-                title="Ver planilla PDF"
-                aria-label="Ver planilla PDF"
-              >
-                <DocumentArrowDownIcon className={`h-3.5 w-3.5 ${generatingPdf ? 'animate-pulse' : ''}`} />
-              </button>
-            </div> : null}
           </section>
         </>}
       </div>

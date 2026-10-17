@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Formula1';
+  src: url('/font/Formula1-Regular_web_0.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Formula1';
+  src: url('/font/Formula1-Bold_web_0.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -242,6 +258,10 @@
     --action-glow: rgba(0, 255, 205, 0.55);
   }
 
+  .server-action-orange {
+    --action-glow: rgba(255, 122, 26, 0.62);
+  }
+
   .event-action-button {
     background-image: linear-gradient(110deg, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.28) 49%, transparent 56%, transparent 100%);
     background-position: 140% 0;
@@ -254,13 +274,10 @@
     isolation: isolate;
     overflow: hidden;
     background-color: #eab308;
-    background-image:
-      radial-gradient(circle at 15% 30%, rgba(255, 255, 255, 0.18) 0 1px, transparent 1.5px),
-      radial-gradient(circle at 70% 65%, rgba(0, 0, 0, 0.22) 0 1px, transparent 1.5px),
-      linear-gradient(90deg, #111111 0%, #242424 58%, #5f510d 80%, #d6a900 100%);
-    background-size: 7px 7px, 9px 9px, 100% 100%;
-    box-shadow: 0 8px 22px rgba(234, 179, 8, 0.2);
-    transition: filter 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    background-image: linear-gradient(90deg, #111111 0%, #242424 58%, #5f510d 80%, #d6a900 100%);
+    background-size: 100% 100%;
+    box-shadow: none;
+    transition: filter 180ms ease, border-color 180ms ease;
   }
 
   .track-notes-button::before {
@@ -278,7 +295,7 @@
   .track-notes-button:hover {
     filter: brightness(1.12);
     border-color: #fef08a;
-    box-shadow: 0 10px 28px rgba(234, 179, 8, 0.3);
+    box-shadow: none;
   }
 
   .server-action-yellow {
@@ -554,4 +571,360 @@
 @media (prefers-reduced-motion: reduce) {
   .club-checker-strip,
   .club-server-rotate { animation: none; }
+}
+
+/* Ayrton Team Radio */
+.ayrton-radio-panel,
+.ayrton-radio-launcher {
+  position: relative;
+  isolation: isolate;
+  font-family: 'Formula1', 'Rajdhani', sans-serif;
+}
+
+/* Navegación compacta para monitores intermedios */
+@media (min-width: 1280px) and (max-width: 1799px) {
+  .cadpo-primary-nav,
+  .cadpo-nav-button {
+    overflow: visible;
+  }
+
+  .cadpo-nav-button:hover,
+  .cadpo-nav-button:focus-visible {
+    z-index: 110;
+  }
+
+  .cadpo-nav-tooltip {
+    width: max-content;
+    max-width: min(13rem, calc(100vw - 1rem));
+    line-height: 1.25;
+    text-align: center;
+    text-overflow: clip;
+    overflow: visible;
+  }
+}
+
+.ayrton-radio-panel--opening {
+  transform-origin: right bottom;
+  animation: ayrton-radio-panel-open 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ayrton-radio-panel--closing {
+  transform-origin: right bottom;
+  pointer-events: none;
+  animation: ayrton-radio-panel-close 240ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@media (max-width: 639px) {
+  .ayrton-radio-shell {
+    right: 0.65rem;
+    bottom: 0.75rem;
+    left: auto;
+  }
+
+  .ayrton-radio-panel {
+    width: min(22rem, calc(100vw - 1.3rem));
+    max-width: 22rem;
+    height: min(30rem, calc(100dvh - 4.5rem));
+    max-height: calc(100dvh - 1.5rem);
+    border-radius: 0;
+    overscroll-behavior: contain;
+  }
+
+  .ayrton-radio-launcher {
+    display: block;
+    width: min(13.5rem, calc(100vw - 1rem));
+    margin-left: auto;
+  }
+
+  .ayrton-radio-panel-header {
+    padding: 0.55rem 0.65rem 0.5rem;
+  }
+
+  .ayrton-radio-title {
+    gap: 0.35rem;
+    font-size: 1.15rem;
+  }
+
+  .ayrton-radio-title svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .ayrton-radio-messages {
+    padding: 0.6rem 0.7rem;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ayrton-radio-form {
+    padding: 0.45rem;
+  }
+
+  .ayrton-radio-form textarea {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1100px) {
+  .ayrton-radio-panel {
+    width: min(23rem, calc(100vw - 2rem));
+  }
+}
+
+@media (min-width: 640px) and (max-height: 720px) {
+  .ayrton-radio-shell {
+    bottom: 0.5rem;
+  }
+
+  .ayrton-radio-panel {
+    height: calc(100dvh - 1rem);
+  }
+
+  .ayrton-radio-panel-header {
+    padding-top: 0.6rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .ayrton-radio-title {
+    font-size: 1.35rem;
+  }
+
+  .ayrton-radio-messages {
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .ayrton-radio-form {
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+}
+
+.ayrton-radio-title {
+  font-family: 'Formula1', 'Rajdhani', sans-serif;
+  font-weight: 700;
+}
+
+.ayrton-radio-header-text {
+  -webkit-text-stroke: 0.8px rgba(21, 23, 29, 0.96);
+  paint-order: stroke fill;
+  text-shadow: 0 1px 3px rgba(10, 11, 14, 0.84);
+}
+
+.ayrton-radio-panel::before,
+.ayrton-radio-launcher::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 30%),
+    radial-gradient(circle at 75% 0%, rgba(32, 244, 208, 0.09), transparent 42%);
+}
+
+.ayrton-radio-launcher {
+  transition: border-color 260ms ease, box-shadow 320ms ease, background-color 260ms ease;
+}
+
+.ayrton-radio-launcher::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  width: 5px;
+  pointer-events: none;
+  background: #20f4d0;
+  opacity: 0;
+  transform: scaleY(0.18);
+  transform-origin: center;
+  box-shadow: 0 0 9px rgba(32, 244, 208, 0.65);
+  transition: opacity 180ms ease, transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ayrton-radio-launcher:hover {
+  border-color: rgba(32, 244, 208, 0.38);
+  background-color: rgba(23, 29, 31, 0.99);
+  box-shadow:
+    0 14px 45px rgba(0, 0, 0, 0.72),
+    0 0 30px rgba(32, 244, 208, 0.28),
+    0 0 55px rgba(32, 244, 208, 0.12);
+}
+
+.ayrton-radio-launcher:hover::after {
+  opacity: 1;
+  transform: scaleY(1);
+  animation: ayrton-radio-edge-pulse 1.5s ease-in-out 360ms infinite;
+}
+
+.ayrton-radio-messages {
+  background-color: #15171d;
+  background-image:
+    linear-gradient(rgba(21, 23, 29, 0.91), rgba(21, 23, 29, 0.95)),
+    url('/fondochat.jpg');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.ayrton-radio-header-wave {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.21;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 92%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 92%, transparent 100%);
+}
+
+.ayrton-radio-header-wave::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(21, 23, 29, 0.88) 0%, rgba(21, 23, 29, 0.35) 48%, rgba(21, 23, 29, 0.7) 100%);
+}
+
+.ayrton-radio-header-wave .ayrton-radio-wave {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  gap: 0.5px;
+  border: 0;
+  filter: none;
+  transform: scaleX(2);
+  transform-origin: center;
+}
+
+.ayrton-radio-header-wave .ayrton-radio-bar {
+  min-height: 14px;
+  height: min(100%, calc(var(--radio-level) + 35%));
+}
+
+.ayrton-radio-wave {
+  display: grid;
+  grid-template-columns: repeat(21, minmax(0, 1fr));
+  align-items: end;
+  gap: 1px;
+  width: 100%;
+  height: 31px;
+  margin-top: 7px;
+  padding-bottom: 3px;
+  overflow: hidden;
+  border-bottom: 2px solid #20f4d0;
+  filter: drop-shadow(0 0 5px rgba(32, 244, 208, 0.32));
+}
+
+.ayrton-radio-bar {
+  display: block;
+  width: 100%;
+  height: var(--radio-level);
+  min-height: 3px;
+  background: #20f4d0;
+  transform: scaleY(0.35);
+  transform-origin: bottom;
+  animation: ayrton-radio-level var(--radio-duration) ease-in-out infinite;
+  animation-delay: var(--radio-delay);
+}
+
+.ayrton-radio-launcher .ayrton-radio-wave {
+  padding-bottom: 3px;
+  border-bottom: 2px solid #20f4d0;
+}
+
+@keyframes ayrton-radio-level {
+  0%, 100% {
+    opacity: 0.62;
+    transform: scaleY(var(--radio-low));
+  }
+  29% {
+    opacity: 1;
+    transform: scaleY(var(--radio-high));
+  }
+  67% {
+    opacity: 0.82;
+    transform: scaleY(var(--radio-middle));
+  }
+}
+
+@keyframes ayrton-radio-edge-pulse {
+  0%, 100% {
+    filter: brightness(0.9);
+    box-shadow: 0 0 8px rgba(32, 244, 208, 0.55);
+  }
+  50% {
+    filter: brightness(1.25);
+    box-shadow: 0 0 18px rgba(32, 244, 208, 0.95);
+  }
+}
+
+@keyframes ayrton-radio-panel-open {
+  from {
+    opacity: 0;
+    transform: translate3d(22px, 28px, 0) scale(0.88);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes ayrton-radio-panel-close {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(18px, 24px, 0) scale(0.9);
+    filter: blur(4px);
+  }
+}
+
+.ayrton-transmission-dot {
+  display: inline-block;
+  transform-origin: center;
+  animation: ayrton-transmission-dot 900ms ease-in-out infinite;
+  animation-delay: var(--dot-delay);
+}
+
+@keyframes ayrton-transmission-dot {
+  0%, 100% {
+    opacity: 0.22;
+    transform: translateY(1px) scale(0.62);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.35);
+    text-shadow: 0 0 8px rgba(32, 244, 208, 0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ayrton-radio-bar {
+    animation: none;
+    opacity: 0.9;
+    transform: scaleY(0.72);
+  }
+
+  .ayrton-radio-launcher:hover::after {
+    animation: none;
+  }
+
+  .ayrton-radio-panel--opening,
+  .ayrton-radio-panel--closing {
+    animation-duration: 1ms;
+  }
+
+  .ayrton-transmission-dot {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }

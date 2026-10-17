@@ -7,3 +7,9 @@ dist-ssr/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Aplicaciones y herramientas locales (no publicar en GitHub)
+/importador_cadpo/
+/predator/
+/ac_fisicas_manager/
+/ac_setup_manager/

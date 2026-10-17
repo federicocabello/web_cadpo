@@ -48,7 +48,7 @@ function ServerCard({ configuration, timing, error, loading }) {
           <p className="text-[8px] font-black uppercase tracking-widest text-gray-500">Estado</p>
           <p className={`mt-1 flex items-center gap-2 font-racing text-base font-bold uppercase ${error ? 'text-red-300' : racing ? 'text-racing-red' : 'text-emerald-300'}`}>
             <span className={`h-2 w-2 rounded-full ${error ? 'bg-red-400' : racing ? 'animate-pulse bg-racing-red' : 'bg-emerald-300'}`}/>
-            {error ? 'No disponible' : racing ? 'En carrera' : 'Fuera de carrera'}
+            {error ? 'No disponible' : racing ? 'No puedes unirte' : 'Puedes unirte'}
           </p>
         </div>
       </div>
@@ -130,18 +130,18 @@ export default function Club() {
       {backgroundConfigurations.length ? <div className="absolute inset-0 -z-30 overflow-hidden bg-[#020812]">{backgroundConfigurations.map((configuration, index) => {
         const count = backgroundConfigurations.length;
         const overlap = count > 1 ? 8 : 0;
-        const width = (100 / count) + (count > 1 ? overlap * 2 : 0);
-        const left = (index * (100 / count)) - (index > 0 ? overlap : 0);
+        const height = (100 / count) + (count > 1 ? overlap * 2 : 0);
+        const top = (index * (100 / count)) - (index > 0 ? overlap : 0);
         const mask = count === 1
-          ? 'linear-gradient(to right, black, black)'
+          ? 'linear-gradient(to bottom, black, black)'
           : index === 0
-            ? 'linear-gradient(to right, black 0%, black 62%, transparent 100%)'
+            ? 'linear-gradient(to bottom, black 0%, black 62%, transparent 100%)'
             : index === count - 1
-              ? 'linear-gradient(to right, transparent 0%, black 38%, black 100%)'
-              : 'linear-gradient(to right, transparent 0%, black 24%, black 76%, transparent 100%)';
-        return <img key={configuration.id} src={configuration.circuito_imagen} alt="" className="absolute inset-y-0 h-full object-cover opacity-55" style={{ left: `${left}%`, width: `${width}%`, maskImage: mask, WebkitMaskImage: mask }}/>;
+              ? 'linear-gradient(to bottom, transparent 0%, black 38%, black 100%)'
+              : 'linear-gradient(to bottom, transparent 0%, black 24%, black 76%, transparent 100%)';
+        return <img key={configuration.id} src={configuration.circuito_imagen} alt="" className="absolute inset-x-0 w-full object-cover opacity-[0.68]" style={{ top: `${top}%`, height: `${height}%`, maskImage: mask, WebkitMaskImage: mask }}/>;
       })}</div> : null}
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(90deg,rgba(2,10,24,.9)_0%,rgba(4,30,60,.58)_48%,rgba(2,10,24,.88)_100%),linear-gradient(180deg,rgba(0,0,0,.16),rgba(0,0,0,.58)),radial-gradient(circle_at_18%_20%,rgba(37,99,235,.24),transparent_40%)]"/>
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(90deg,rgba(2,10,24,.76)_0%,rgba(4,30,60,.36)_48%,rgba(2,10,24,.74)_100%),radial-gradient(circle_at_18%_20%,rgba(37,99,235,.2),transparent_42%)]"/>
       <div className="race-hero-grid absolute inset-0 -z-10 opacity-15"/>
 
       <div className="mx-auto grid min-h-[calc(100svh-7rem)] w-full max-w-[1800px] gap-7 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(440px,1.1fr)] lg:items-center lg:px-12 xl:gap-8 xl:px-16">
@@ -156,7 +156,7 @@ export default function Club() {
           <h2 className="mt-7 max-w-3xl font-racing text-2xl font-bold uppercase leading-tight text-white sm:text-4xl xl:text-5xl">Entrá, clasificá y corré todas las veces que quieras.</h2>
           <p className="mt-4 max-w-3xl text-sm leading-7 text-gray-300 sm:text-base">Servidores libres de la comunidad para que cualquier piloto pueda sumarse gratuitamente. No necesitás estar inscripto en un campeonato.</p>
 
-          <div className="mt-6 grid max-w-3xl gap-2 sm:grid-cols-3">{formatCards.map(({ value, unit, title, Icon, tone }) => <article key={title} className="flex items-center gap-3 border border-white/10 bg-white/[0.035] px-3 py-3"><Icon className={`h-5 w-5 shrink-0 ${tone}`}/><div><strong className={`font-racing text-2xl font-black ${tone}`}>{value}</strong><span className="ml-1 text-[7px] font-black uppercase text-gray-500">{unit}</span><p className="text-[8px] font-bold uppercase text-gray-300">{title}</p></div></article>)}</div>
+          <div className="mt-6 grid max-w-3xl gap-2 sm:grid-cols-3">{formatCards.map(({ value, unit, title, Icon, tone }) => <article key={title} className="flex items-center gap-3 border border-blue-300/20 bg-[#03152b]/65 px-3 py-3 shadow-lg shadow-black/20 backdrop-blur-[2px]"><Icon className={`h-5 w-5 shrink-0 ${tone}`}/><div><strong className={`font-racing text-2xl font-black ${tone}`}>{value}</strong><span className="ml-1 text-[7px] font-black uppercase text-gray-500">{unit}</span><p className="text-[8px] font-bold uppercase text-gray-300">{title}</p></div></article>)}</div>
 
           <div className="mt-5 max-w-3xl border-l-2 border-blue-300 bg-blue-400/[0.06] px-4 py-3"><p className="text-[9px] font-black uppercase tracking-[0.22em] text-blue-300">Contenido renovado</p><p className="mt-1 text-xs leading-relaxed text-gray-300 sm:text-sm">Las categorías y los circuitos se irán renovando para ofrecer nuevas combinaciones.</p></div>
 

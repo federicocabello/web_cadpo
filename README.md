@@ -18,6 +18,9 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Notas de pista ordenables por circuito, con título e imágenes editables, reutilización selectiva entre variantes y visor emergente en el inicio.
 - Importador de escritorio para cargas masivas en MySQL.
 - Pantalla automática de mantenimiento cuando la API o la base de datos no están disponibles.
+- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre la información deportiva, CADPO CLUB, resultados publicados, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
+- Historial de consultas y respuestas de Ayrton en Cloudflare D1, con aviso por correo mediante el SMTP del sitio.
+- Memoria contextual aprobada en Cloudflare D1: desde **Administración > Ayrton** se mantiene un contexto general siempre disponible y se revisan conversaciones para convertirlas en conocimiento reutilizable sin aprender automáticamente datos potencialmente falsos enviados por visitantes.
 
 ### Gestión deportiva y resultados
 
@@ -43,7 +46,7 @@ Las correcciones manuales permanecen editables antes del guardado definitivo. Lo
 | Frontend | React 19, React Router, Vite 8, Tailwind CSS, Axios |
 | Backend | Node.js, Express 5, MySQL2, Multer, express-validator |
 | Importador | Python 3, Tkinter, tksheet, MySQL Connector/Python |
-| Base de datos | MySQL |
+| Base de datos | MySQL y Cloudflare D1 para el historial de Ayrton |
 
 ### Estructura del repositorio
 
@@ -119,8 +122,20 @@ Variables adicionales admitidas:
 | `PUBLIC_DIR` | Directorio donde se leen y guardan los archivos públicos | `public_html` en hosting o `frontend/public` en local |
 | `LIVE_TIMING_HOST` | Servidor externo de tiempos en vivo | `rh.servegame.com` |
 | `VITE_API_TARGET` | Destino del proxy de Vite durante el desarrollo | `http://localhost:3000` |
+| `CLOUDFLARE_ACCOUNT_ID` | Identificador de la cuenta que ejecuta Workers AI | Requerido para Ayrton |
+| `CLOUDFLARE_AI_API_TOKEN` | Token de API con permiso para ejecutar Workers AI | Requerido para Ayrton |
+| `CLOUDFLARE_AI_GATEWAY_ID` | Gateway opcional para observabilidad y controles de Cloudflare | Vacío |
+| `CLOUDFLARE_AI_MODEL` | Modelo utilizado por Ayrton | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| `AYRTON_REQUESTS_PER_MINUTE` | Límite de consultas por IP y por minuto | `12` |
+| `CLOUDFLARE_D1_DATABASE_ID` | Identificador de la base D1 que conserva las conversaciones | Vacío; el chat sigue funcionando sin historial |
+| `CLOUDFLARE_D1_API_TOKEN` | Token con permiso `D1 Edit`; puede omitirse si el token de IA también tiene ese permiso | `CLOUDFLARE_AI_API_TOKEN` |
+| `AYRTON_IP_SECRET` | Secreto utilizado para guardar un hash irreversible de la IP | `POLL_IP_SECRET` |
+| `AYRTON_EMAIL_NOTIFICATIONS` | Envía un correo por cada respuesta de Ayrton | `true` |
+| `AYRTON_NOTIFY_EMAIL` | Destinatario de las notificaciones de Ayrton | `LIVE_MONITOR_EMAIL` |
 
 No subas archivos `.env` ni credenciales al repositorio.
+
+Para preparar D1, creá una base desde **Cloudflare > Storage & Databases > D1**, abrí su consola y ejecutá `backend/scripts/createAyrtonD1.sql`. Después copiá el identificador de la base en `CLOUDFLARE_D1_DATABASE_ID`. El registro en D1 y el correo son tolerantes a fallos: una interrupción de cualquiera de esos servicios no impide que Ayrton responda.
 
 ### Ejecución en desarrollo
 
@@ -202,6 +217,7 @@ La API expone recursos bajo `/api`:
 - `/results`
 - `/media`
 - `/live-timing`
+- `/ayrton`
 
 Las operaciones de administración deben realizarse con precaución: varios endpoints crean, modifican y eliminan registros y archivos.
 
@@ -285,6 +301,9 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Sortable per-circuit track notes with editable titles and images, selective reuse across variants, and a modal viewer on the home page.
 - Desktop importer for bulk MySQL operations.
 - Automatic maintenance screen when the API or database is unavailable.
+- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to sporting data, CADPO CLUB, published results, replays, templates and projects, plus on-demand access to live APIs.
+- Ayrton question and answer history in Cloudflare D1, with email notifications through the website SMTP service.
+- Approved contextual memory in Cloudflare D1: **Administration > Ayrton** provides an always-available general context and can promote reviewed conversations to reusable knowledge without automatically learning potentially false visitor input.
 
 ### Sporting management and results
 
@@ -308,7 +327,7 @@ Manual corrections remain editable until the final save. Pending changes are vis
 | Frontend | React 19, React Router, Vite 8, Tailwind CSS, Axios |
 | Backend | Node.js, Express 5, MySQL2, Multer, express-validator |
 | Importer | Python 3, Tkinter, tksheet, MySQL Connector/Python |
-| Database | MySQL |
+| Database | MySQL and Cloudflare D1 for Ayrton conversation history |
 
 ### Repository structure
 
@@ -384,8 +403,20 @@ Additional supported variables:
 | `PUBLIC_DIR` | Directory used to read and store public files | `public_html` on hosting or `frontend/public` locally |
 | `LIVE_TIMING_HOST` | External live timing server | `rh.servegame.com` |
 | `VITE_API_TARGET` | Vite proxy target during development | `http://localhost:3000` |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account identifier used for Workers AI | Required for Ayrton |
+| `CLOUDFLARE_AI_API_TOKEN` | API token allowed to run Workers AI | Required for Ayrton |
+| `CLOUDFLARE_AI_GATEWAY_ID` | Optional AI Gateway for Cloudflare observability and controls | Empty |
+| `CLOUDFLARE_AI_MODEL` | Model used by Ayrton | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| `AYRTON_REQUESTS_PER_MINUTE` | Requests allowed per IP per minute | `12` |
+| `CLOUDFLARE_D1_DATABASE_ID` | D1 database identifier used for conversation history | Empty; chat remains available without history |
+| `CLOUDFLARE_D1_API_TOKEN` | Token with `D1 Edit`; optional when the AI token already has this permission | `CLOUDFLARE_AI_API_TOKEN` |
+| `AYRTON_IP_SECRET` | Secret used to create an irreversible IP hash | `POLL_IP_SECRET` |
+| `AYRTON_EMAIL_NOTIFICATIONS` | Sends an email for each Ayrton response | `true` |
+| `AYRTON_NOTIFY_EMAIL` | Ayrton notification recipient | `LIVE_MONITOR_EMAIL` |
 
 Never commit `.env` files or credentials.
+
+To prepare D1, create a database under **Cloudflare > Storage & Databases > D1**, open its console, and execute `backend/scripts/createAyrtonD1.sql`. Then set `CLOUDFLARE_D1_DATABASE_ID` to the database identifier. D1 logging and email notifications fail independently, so neither service can prevent Ayrton from answering.
 
 ### Development
 
@@ -467,6 +498,7 @@ The API exposes these resources under `/api`:
 - `/results`
 - `/media`
 - `/live-timing`
+- `/ayrton`
 
 Administrative operations should be used carefully: several endpoints create, modify, and delete database records and files.
 

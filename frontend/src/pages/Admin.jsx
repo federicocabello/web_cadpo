@@ -34,6 +34,7 @@ import {
   ChartBarIcon,
   CheckCircleIcon,
   VideoCameraIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
@@ -49,6 +50,7 @@ import TyresCalculator from '../components/TyresCalculator';
 import CadpoImporter from '../components/CadpoImporter';
 import PollsAdmin from '../components/PollsAdmin';
 import ClubAdmin from '../components/ClubAdmin';
+import AyrtonMemoryAdmin from '../components/AyrtonMemoryAdmin';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -71,6 +73,7 @@ const formatEventDateTime = value => {
 
 const adminSections = [
   { id: 'autos', label: 'AUTOS', icon: WrenchIcon },
+  { id: 'ayrton', label: 'AYRTON', icon: ChatBubbleLeftRightIcon },
   { id: 'campeonatos', label: 'CAMPEONATOS', icon: FireIcon },
   { id: 'categorias', label: 'CATEGORÍAS', icon: TagIcon },
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
@@ -5871,6 +5874,7 @@ export default function Admin() {
   };
 
   const renderSection = () => {
+    if (activeSection === 'ayrton') return <AyrtonMemoryAdmin />;
     if (activeSection === 'club') return <ClubAdmin categories={categories} circuits={circuits} cars={cars} />;
     if (activeSection === 'votaciones') return <PollsAdmin />;
     if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><TyresCalculator/></div>;

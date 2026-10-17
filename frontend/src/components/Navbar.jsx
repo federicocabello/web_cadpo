@@ -128,7 +128,7 @@ const socialLinks = [
     iconClassName: 'text-[#25d366] group-hover:scale-110',
   },
   {
-    href: 'https://discord.gg/UxZYQTNe7',
+    href: 'https://discord.gg/cHMuEPT',
     label: 'Unirse a la comunidad de Discord',
     text: 'Comunidad de Discord',
     shortText: 'Discord',
@@ -371,7 +371,7 @@ export default function Navbar() {
   return (
     <nav className="sticky top-0 z-50 bg-racing-dark/95 backdrop-blur-md border-b border-racing-border">
       <div className="w-full px-3 sm:px-5 lg:px-7 2xl:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="relative z-[80] flex h-16 items-center justify-between overflow-visible">
           <div className="flex items-center gap-2">
             <a
               href="/"
@@ -393,7 +393,7 @@ export default function Navbar() {
             </div>
           </div>
 
-          <div className="ml-3 hidden min-w-0 flex-1 items-center justify-end gap-1 xl:flex min-[1800px]:ml-6 min-[1800px]:gap-2">
+          <div className="cadpo-primary-nav ml-3 hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-visible xl:flex min-[1800px]:ml-6 min-[1800px]:gap-2">
             {visibleNavLinks.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
@@ -407,7 +407,7 @@ export default function Navbar() {
                   }
                 }}
                 className={({ isActive }) =>
-                  `group relative inline-flex h-9 w-9 items-center justify-center rounded-md border px-0 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing min-[1800px]:w-auto min-[1800px]:gap-1.5 min-[1800px]:px-2 ${
+                  `cadpo-nav-button group relative inline-flex h-9 w-9 items-center justify-center overflow-visible rounded-md border px-0 font-racing text-[11px] font-semibold tracking-wide whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-racing min-[1800px]:w-auto min-[1800px]:gap-1.5 min-[1800px]:px-2 ${
                     isActive
                       ? 'border-racing-red bg-racing-red/12 text-racing-red'
                       : 'border-racing-border bg-racing-card/55 text-gray-300 hover:border-racing-red/60 hover:bg-racing-red/5 hover:text-white'
@@ -416,7 +416,7 @@ export default function Navbar() {
               >
                 <Icon className="h-4 w-4 shrink-0 text-racing-red transition-transform duration-200 group-hover:scale-110" />
                 <span className="hidden leading-none min-[1800px]:inline">{label}</span>
-                <span className="pointer-events-none absolute left-1/2 top-[calc(100%+0.4rem)] z-[70] -translate-x-1/2 translate-y-1 whitespace-nowrap rounded border border-racing-border bg-black/95 px-2 py-1 text-[9px] font-bold tracking-wider text-white opacity-0 shadow-xl transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 min-[1800px]:hidden">{label}</span>
+                <span className="cadpo-nav-tooltip pointer-events-none absolute left-1/2 top-[calc(100%+0.3rem)] z-[100] -translate-x-1/2 translate-y-1 whitespace-nowrap rounded border border-racing-border bg-black/95 px-2.5 py-1.5 text-[9px] font-bold leading-tight tracking-wider text-white opacity-0 shadow-xl transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 min-[1800px]:hidden">{label}</span>
                 {to === '/proyectos' && hasNewProjects ? <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full border border-red-300/70 bg-red-600 font-black leading-none tracking-wide text-white shadow-[0_0_9px_rgba(220,38,38,0.7)] min-[1800px]:-right-2 min-[1800px]:-top-2 min-[1800px]:h-auto min-[1800px]:w-auto min-[1800px]:px-1.5 min-[1800px]:py-0.5 min-[1800px]:text-[8px]"><span className="hidden min-[1800px]:inline">NUEVO</span></span> : null}
                 {to === '/campeonatos' && hasActivePoll ? <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5 items-center justify-center rounded-full border border-red-300/70 bg-red-600 font-black leading-none tracking-wide text-white shadow-[0_0_9px_rgba(220,38,38,0.7)] min-[1800px]:-right-2 min-[1800px]:-top-2 min-[1800px]:h-auto min-[1800px]:w-auto min-[1800px]:px-1.5 min-[1800px]:py-0.5 min-[1800px]:text-[8px]"><span className="hidden min-[1800px]:inline">NUEVO</span></span> : null}
               </NavLink>

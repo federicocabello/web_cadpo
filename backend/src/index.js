@@ -32,6 +32,7 @@ const projectsRouter = require('./routes/projects');
 const importerRouter = require('./routes/importer');
 const pollsRouter = require('./routes/polls');
 const clubRouter = require('./routes/club');
+const ayrtonRouter = require('./routes/ayrton');
 const liveTimingMonitor = require('./services/liveTimingMonitor');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -97,6 +98,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/importer', importerRouter);
 app.use('/api/polls', pollsRouter);
 app.use('/api/club', clubRouter);
+app.use('/api/ayrton', ayrtonRouter);
 
 // Servir el frontend desde Hostinger, desde el paquete de producción o desde Vite local.
 const hostingerPublicPath = path.join(__dirname, '../../public_html');

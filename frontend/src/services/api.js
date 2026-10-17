@@ -50,6 +50,18 @@ export const authApi = {
   adminLogin: password => api.post('/auth/admin-login', { password }),
 };
 
+export const ayrtonApi = {
+  getStatus: () => api.get('/ayrton/status'),
+  chat: (message, history = [], sessionId = '') => api.post('/ayrton/chat', { message, history, sessionId }, { timeout: 45000 }),
+  getAdminContext: () => api.get('/ayrton/admin/context'),
+  updateAdminContext: content => api.put('/ayrton/admin/context', { content }),
+  getAdminKnowledge: () => api.get('/ayrton/admin/knowledge'),
+  getAdminMessages: (limit = 40) => api.get('/ayrton/admin/messages', { params: { limit } }),
+  createKnowledge: data => api.post('/ayrton/admin/knowledge', data),
+  updateKnowledge: (id, data) => api.put(`/ayrton/admin/knowledge/${id}`, data),
+  removeKnowledge: id => api.delete(`/ayrton/admin/knowledge/${id}`),
+};
+
 export const eventsApi = {
   getAll: params => api.get('/events', { params }),
   getUpcoming: () => api.get('/events/proximas'),
