@@ -244,24 +244,26 @@ function ClubBanner({ servers }) {
   const server = servers[activeServerIndex] || servers[0]
 
   return (
-    <NavLink to="/club" className="group relative flex min-h-10 w-full items-center justify-center overflow-hidden border-y border-blue-300/40 bg-gradient-to-r from-[#04142b] via-[#0b4d88] to-[#04142b] px-14 py-2 text-center shadow-[inset_0_1px_0_rgba(147,197,253,0.2),0_4px_20px_rgba(2,22,48,0.58)] transition-colors duration-300 hover:via-[#0967ad] sm:px-24" aria-label="Ingresar a CADPO CLUB, servidor abierto y gratuito">
-      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 left-0 w-10 opacity-90 sm:w-16"/>
-      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 right-0 w-10 opacity-90 sm:w-16"/>
+    <NavLink to="/club" className="group relative flex min-h-10 w-full items-center justify-center overflow-hidden border-y border-blue-300/40 bg-gradient-to-r from-[#04142b] via-[#0b4d88] to-[#04142b] px-10 py-1 text-center shadow-[inset_0_1px_0_rgba(147,197,253,0.2),0_4px_20px_rgba(2,22,48,0.58)] transition-colors duration-300 hover:via-[#0967ad] sm:px-24 sm:py-2" aria-label="Ingresar a CADPO CLUB, servidor abierto y gratuito">
+      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 left-0 w-8 opacity-90 sm:w-16"/>
+      <span className="club-checker-strip club-checker-static pointer-events-none absolute inset-y-0 right-0 w-8 opacity-90 sm:w-16"/>
       <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/4 -skew-x-12 bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[650%]"/>
-      <span className="relative flex w-auto max-w-full min-w-0 items-center justify-center gap-x-2 sm:gap-x-2.5">
-        <strong className="shrink-0 font-racing text-base font-black uppercase tracking-[0.16em] text-white sm:text-lg sm:tracking-[0.2em]">CADPO CLUB</strong>
-        <span className="shrink-0 rounded-full border border-emerald-200/70 bg-emerald-400 px-2.5 py-1 text-[9px] font-black uppercase leading-none tracking-wider text-black">Gratis</span>
-        <span className="relative flex h-7 min-w-0 max-w-[1100px] overflow-hidden text-[8px] font-bold uppercase tracking-[0.08em] sm:text-[9px] sm:tracking-[0.13em]">
+      <span className="relative flex w-full min-w-0 max-w-full items-center justify-center sm:w-auto sm:gap-x-2.5">
+        <span className="flex items-center justify-center gap-2">
+          <strong className="shrink-0 font-racing text-base font-black uppercase tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.2em]">CADPO CLUB</strong>
+          <span className="inline-flex shrink-0 rounded-full border border-emerald-200/70 bg-emerald-400 px-2 py-0.5 text-[7px] font-black uppercase leading-none tracking-wider text-black sm:px-2.5 sm:py-1 sm:text-[9px]">Gratis</span>
+        </span>
+        <span className="relative hidden h-7 min-w-0 max-w-[1100px] overflow-hidden text-[9px] font-bold uppercase tracking-[0.13em] sm:flex sm:w-auto">
           <span className="flex h-full min-w-0 max-w-full items-center transition-all duration-300 group-hover:-translate-y-full group-hover:opacity-0">
             {server ? <span key={server.id} className="club-server-rotate flex h-full min-w-0 max-w-full items-center justify-center gap-2 text-white">
-              <span className="min-w-0 truncate"><span className="hidden text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)] sm:inline">Servidor </span>{server.nombre}</span>
-              <span className="shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)]">•</span>
-              <span className="hidden min-w-0 items-center gap-2 sm:flex">{(server.autos || []).slice(0, 6).map(car => <span key={car.id} className="flex min-w-0 items-center gap-1"><img src={car.logo} alt="" className="h-5 w-7 shrink-0 object-contain"/><span className="max-w-28 truncate text-gray-100">{[car.marca, car.modelo].filter(Boolean).join(' ')}</span></span>)}</span>
-              <span className="hidden shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)] sm:inline">•</span>
-              <span className="flex min-w-0 items-center gap-1.5"><CountryFlag country={server.pais} className="shrink-0 text-sm"/><span className="truncate">{server.circuito}</span></span>
-            </span> : <span className="flex h-full items-center justify-center text-white">Contenido disponible próximamente</span>}
+                <span className="min-w-0 truncate"><span className="text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)]">Servidor </span>{server.nombre}</span>
+                <span className="shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)]">•</span>
+                <span className="flex min-w-0 items-center gap-2">{(server.autos || []).slice(0, 6).map(car => <span key={car.id} className="flex min-w-0 items-center gap-1"><img src={car.logo} alt="" className="h-5 w-7 shrink-0 object-contain"/><span className="max-w-28 truncate text-gray-100">{[car.marca, car.modelo].filter(Boolean).join(' ')}</span></span>)}</span>
+                <span className="shrink-0 text-[#39ff88] drop-shadow-[0_0_7px_rgba(57,255,136,0.5)]">•</span>
+                <span className="flex min-w-0 items-center gap-1.5"><CountryFlag country={server.pais} className="shrink-0 text-sm"/><span className="truncate">{server.circuito}</span></span>
+              </span> : <span className="flex h-full items-center justify-center text-white">Contenido disponible próximamente</span>}
           </span>
-          <span className="absolute inset-0 flex translate-y-full items-center justify-center font-black tracking-[0.28em] text-[#39ff88] opacity-0 drop-shadow-[0_0_8px_rgba(57,255,136,0.6)] transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">¡Unite ya!</span>
+          <span className="absolute inset-0 hidden translate-y-full items-center justify-center font-black tracking-[0.28em] text-[#39ff88] opacity-0 drop-shadow-[0_0_8px_rgba(57,255,136,0.6)] transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100 sm:flex">¡Unite ya!</span>
         </span>
       </span>
     </NavLink>

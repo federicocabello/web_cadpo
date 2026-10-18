@@ -101,7 +101,6 @@ const sessionLabel = value => {
 
 const isQualifyingSession = value => /clasificaci[oó]n|qualifying|qualification|qualy/i.test(String(value || ''));
 const isRaceSession = value => /carrera|race/i.test(String(value || ''));
-const isPracticeSession = value => /pr[aá]ctica|practice/i.test(String(value || ''));
 
 const parseDate = value => parseCalendarDate(value);
 
@@ -724,8 +723,8 @@ export default function LiveTiming() {
             {raceEvent && <div className="mt-5 flex flex-wrap items-center gap-2">
               <ServerJoinButton href={raceEvent?.servidor} variant="green" steady className="event-action-button h-9 w-full justify-center gap-2 px-3 py-0 text-[10px] sm:w-auto" />
               <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1 border-l-2 border-white/15 px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-white">
-                <span className="inline-flex items-center gap-1.5 text-[10px]">Sesión <button type="button" onClick={generateTimingPdf} disabled={generatingPdf || loading || !drivers.length} className={`font-racing text-sm font-bold uppercase sm:text-base disabled:cursor-not-allowed disabled:opacity-40 ${isPracticeSession(timing?.session) ? 'text-green-400' : isQualifyingSession(timing?.session) || isRaceSession(timing?.session) ? 'text-red-400' : 'text-white'}`} title="Ver planilla PDF" aria-label={`Ver planilla PDF de la sesión ${sessionLabel(timing?.session)}`}>{sessionLabel(timing?.session)}</button></span>
-                {Number(connectedDriverCount) > 0 ? <span className="inline-flex items-center gap-1 font-racing text-sm text-yellow-300 sm:text-base"><strong className="text-base sm:text-lg">{connectedDriverCount}</strong> pilotos en pista</span> : null}
+                <span className="inline-flex items-center gap-1.5 text-[10px] text-yellow-300">Sesión <button type="button" onClick={generateTimingPdf} disabled={generatingPdf || loading || !drivers.length} className="font-racing text-sm font-bold uppercase text-yellow-300 disabled:cursor-not-allowed disabled:opacity-40 sm:text-base" title="Ver planilla PDF" aria-label={`Ver planilla PDF de la sesión ${sessionLabel(timing?.session)}`}>{sessionLabel(timing?.session)}</button></span>
+                {Number(connectedDriverCount) > 0 ? <span className="inline-flex items-center gap-1.5 font-racing text-sm text-emerald-300 sm:text-base"><span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_7px_rgba(52,211,153,0.9)]" aria-hidden="true"/><strong className="text-base sm:text-lg">{connectedDriverCount}</strong> pilotos en pista</span> : null}
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 text-white"><span>{isQualifyingSession(timing?.session) ? 'Tiempo de clasificación' : `Clasificación ${formatCalendarDate(raceEvent?.fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H comienza en`}</span><strong className="font-racing text-base tabular-nums text-orange-400 sm:text-lg">{isQualifyingSession(timing?.session) ? formatSessionRemaining(timing, now) : formatCountdown(raceEvent?.fecha, now)}</strong></span>
               </div>
               {qualifyingBans.length ? <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 border border-red-400/45 bg-red-500/10 px-3 py-1.5">
@@ -797,7 +796,7 @@ export default function LiveTiming() {
 
           <section className="overflow-hidden border border-racing-border bg-racing-card">
             <div className="md:hidden">
-              <p className="whitespace-nowrap border-b border-[#c77dff]/15 px-2.5 py-1 text-center text-[8px] font-bold uppercase tracking-wide text-[#c77dff]/70">Planilla completa solo en vista desde la PC</p>
+              <p className="whitespace-nowrap border-b border-cyan-300/15 px-2.5 py-1 text-center text-[8px] font-bold uppercase tracking-wide text-cyan-300/75">Planilla completa solo en vista desde la PC</p>
               <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_4.75rem_3.75rem_2rem] items-center gap-1.5 border-b border-racing-border bg-black px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-gray-500">
                 <span className="text-center">Pos.</span>
                 <span>Piloto</span>

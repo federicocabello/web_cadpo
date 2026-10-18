@@ -73,6 +73,8 @@ function ServerCard({ configuration, timing, error, loading }) {
 
 export default function Club() {
   const [configurations, setConfigurations] = useState([]);
+  const [configurationsLoading, setConfigurationsLoading] = useState(true);
+  const [configurationsError, setConfigurationsError] = useState(false);
   const [timingByServer, setTimingByServer] = useState({});
   const [errorsByServer, setErrorsByServer] = useState({});
   const [timingLoading, setTimingLoading] = useState(false);
@@ -84,8 +86,16 @@ export default function Club() {
         if (!active) return;
         const items = Array.isArray(data.data) ? data.data : data.data ? [data.data] : [];
         setConfigurations(items.slice(0, 3));
+        setConfigurationsError(false);
       })
-      .catch(() => active && setConfigurations([]));
+      .catch(() => {
+        if (!active) return;
+        setConfigurations([]);
+        setConfigurationsError(true);
+      })
+      .finally(() => {
+        if (active) setConfigurationsLoading(false);
+      });
     return () => { active = false; };
   }, []);
 
@@ -123,6 +133,24 @@ export default function Club() {
     const interval = window.setInterval(() => loadServerStatuses(false), 10000);
     return () => window.clearInterval(interval);
   }, [configurations, loadServerStatuses]);
+
+  if (configurationsLoading) {
+    return (
+      <main className="relative isolate flex min-h-[calc(100svh-7rem)] items-center justify-center overflow-hidden border-b border-white/10 bg-[#020812] px-5 animate-fade-in">
+        <div className="race-hero-grid absolute inset-0 -z-10 opacity-15"/>
+        <div className="flex flex-col items-center text-center">
+          <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
+            <span className="absolute inset-0 animate-spin rounded-full border-2 border-blue-300/15 border-t-blue-300"/>
+            <img src="/casco.png" alt="CADPO CLUB" className="h-20 w-20 object-contain drop-shadow-[0_0_18px_rgba(96,165,250,0.4)] sm:h-24 sm:w-24"/>
+          </div>
+          <p className="mt-5 font-racing text-xl font-bold uppercase tracking-[0.12em] text-white sm:text-2xl">Comprobando servidores</p>
+          <div className="mt-3 flex items-center gap-1.5" aria-hidden="true">
+            {[0, 1, 2].map(index => <span key={index} className="h-2 w-2 animate-pulse rounded-full bg-blue-300" style={{ animationDelay: `${index * 180}ms` }}/>) }
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   const backgroundConfigurations = configurations.filter(configuration => configuration.circuito_imagen);
   return (
@@ -164,7 +192,7 @@ export default function Club() {
 
         <aside className="grid min-h-0 content-center gap-3">
           {configurations.map(configuration => <ServerCard key={configuration.id} configuration={configuration} timing={timingByServer[String(configuration.id)]} error={errorsByServer[String(configuration.id)]} loading={timingLoading}/>) }
-          {!configurations.length ? <div className="flex min-h-72 items-center justify-center border border-dashed border-blue-300/25 bg-black/20 px-6 text-center"><div><SignalIcon className="mx-auto h-10 w-10 text-blue-900"/><p className="mt-3 font-racing text-xl font-bold uppercase text-gray-500">No hay servidores CLUB publicados</p></div></div> : null}
+          {!configurations.length ? <div className="flex min-h-72 items-center justify-center border border-dashed border-blue-300/25 bg-black/20 px-6 text-center"><div><SignalIcon className="mx-auto h-10 w-10 text-blue-900"/><p className="mt-3 font-racing text-xl font-bold uppercase text-gray-500">{configurationsError ? 'No se pudieron comprobar los servidores' : 'No hay servidores CLUB publicados'}</p></div></div> : null}
         </aside>
       </div>
     </main>
