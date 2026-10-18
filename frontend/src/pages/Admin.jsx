@@ -3485,7 +3485,7 @@ export default function Admin() {
   };
 
   const generateChampionshipStandingsImage = async () => {
-    const standings = resultChampionshipStandings.filter(standing => !standing.excluido);
+    const standings = resultChampionshipStandings;
     if (!resultChampionship || !standings.length) {
       setStandingsImageMessage('Todavía no hay pilotos para generar las imágenes del campeonato.');
       return;
@@ -3513,7 +3513,7 @@ export default function Admin() {
         ...standings.map(standing => loadCanvasImage(standing.autoLogo)),
       ]);
       const pages = Array.from({ length: Math.ceil(standings.length / 10) }, (_, index) => standings.slice(index * 10, (index + 1) * 10));
-      const leaderTotal = Number(standings[0]?.total || 0);
+      const leaderTotal = Number(standings.find(standing => !standing.excluido)?.total || 0);
       const achievementsByDriver = savedResults.reduce((map, result) => {
         const driverKey = String(result.idpiloto);
         const current = map.get(driverKey) || { poles: 0, sprints: 0, finals: 0 };
@@ -3611,31 +3611,40 @@ export default function Admin() {
       const rowHeight = 70;
       pageStandings.forEach((standing, index) => {
         const y = rowStart + index * rowHeight;
-        context.fillStyle = index % 2 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.075)';
+        context.fillStyle = standing.excluido ? '#000000' : index % 2 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.075)';
         context.beginPath();
         context.roundRect(tableX, y, tableWidth, rowHeight - 7, 7);
         context.fill();
-        if (standing.position <= 3) {
+        if (!standing.excluido && standing.position <= 3) {
           context.fillStyle = standing.position === 1 ? '#facc15' : standing.position === 2 ? '#d1d5db' : '#c56a30';
           context.fillRect(tableX, y, 8, rowHeight - 7);
         }
 
-        context.fillStyle = standing.position === 1 ? '#facc15' : standing.position === 2 ? '#e5e7eb' : standing.position === 3 ? '#fb923c' : '#9ca3af';
+        context.fillStyle = standing.excluido ? '#4b5563' : standing.position === 1 ? '#facc15' : standing.position === 2 ? '#e5e7eb' : standing.position === 3 ? '#fb923c' : '#9ca3af';
         context.font = '900 38px Arial Black, Arial, sans-serif';
-        context.fillText(`${standing.position}°`, 105, y + 45);
+        context.fillText(standing.excluido ? '—' : `${standing.position}°`, 105, y + 45);
         drawContainedCanvasImage(context, carLogos[(pageIndex * 10) + index], 190, y + 8, 90, 47);
 
-        context.fillStyle = '#ffffff';
+        context.fillStyle = standing.excluido ? '#9ca3af' : '#ffffff';
         context.font = '800 27px Arial, sans-serif';
-        context.fillText(fitCanvasText(context, standing.piloto, standing.campeon ? 560 : 700), 310, y + 30);
-        if (standing.campeon) {
+        context.fillText(fitCanvasText(context, standing.piloto, standing.campeon && !standing.excluido ? 560 : 700), 310, y + 30);
+        if (standing.campeon && !standing.excluido) {
           context.fillStyle = '#facc15';
           context.font = '900 16px Arial, sans-serif';
           context.fillText('CAMPEÓN', 900, y + 29);
         }
-        context.fillStyle = '#7f8794';
+        context.fillStyle = standing.excluido ? '#59616d' : '#7f8794';
         context.font = '600 17px Arial, sans-serif';
         context.fillText(fitCanvasText(context, [standing.marca, standing.modelo].filter(Boolean).join(' ') || 'Auto sin informar', 700), 310, y + 53);
+
+        if (standing.excluido) {
+          context.textAlign = 'center';
+          context.fillStyle = '#a3aab5';
+          context.font = '800 23px Arial, sans-serif';
+          context.fillText('EXCLUIDO', 1535, y + 42);
+          context.textAlign = 'left';
+          return;
+        }
 
         context.textAlign = 'right';
         context.fillStyle = '#22d3ee';

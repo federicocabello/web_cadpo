@@ -42,7 +42,9 @@ const getQuestionIntents = question => {
   return {
     club,
     clubLive: club && /\b(estado|sesion|conectados|online|ahora|funcionando)\b/.test(normalized),
-    results: /\b(resultado|resultados|posiciones|tabla de puntos|ganador|ganadores)\b/.test(normalized),
+    championships: /\b(campeonato|campeonatos|temporada|temporadas|categoria|categorias|actual|anterior|pasado|proximo|futuro)\b/.test(normalized),
+    drivers: /\b(piloto|pilotos|corredor|corredores|campeon|campeones|victoria|victorias|pole|poles|podio|podios)\b/.test(normalized),
+    results: /\b(resultado|resultados|posiciones|clasificacion|tabla|tabla de puntos|puntos|puntaje|ganador|ganadores|lider|campeon|campeones)\b/.test(normalized),
     downloads: /\b(descarga|descargar|archivo|archivos|repeticion|repeticiones|replay|replays|plantilla|plantillas|template|templates)\b/.test(normalized),
     projects: /\b(proyecto|proyectos|desarrollo|desarrollando|proximamente)\b/.test(normalized),
   };
@@ -126,9 +128,10 @@ const loadLiveTiming = async championships => Promise.all(championships
 const loadBaseKnowledge = async () => {
   const [championshipsResult, eventsResult, formsResult, summaryResult] = await Promise.all([
     pool.query(`
-      SELECT c.id, cat.categoria, c.temporada, c.anio, c.plataforma, c.reglamento,
+      SELECT c.id, c.idcategoria, cat.categoria, c.temporada, c.anio, c.plataforma, c.reglamento,
              c.puerto, c.n_server,
              MIN(cal.fecha) AS primera_fecha, MAX(cal.fecha) AS ultima_fecha, COUNT(cal.ronda) AS fechas,
+             SUM(CASE WHEN cal.fecha < NOW() THEN 1 ELSE 0 END) AS fechas_disputadas,
              CASE WHEN MIN(cal.fecha) IS NULL OR NOW() < MIN(cal.fecha) THEN 'próximo'
                   WHEN NOW() > MAX(cal.fecha) THEN 'finalizado' ELSE 'en curso' END AS estado
       FROM campeonatos c
@@ -136,7 +139,7 @@ const loadBaseKnowledge = async () => {
       LEFT JOIN calendario cal ON cal.idcampeonato = c.id
       GROUP BY c.id, cat.id
       ORDER BY COALESCE(MAX(cal.fecha), CONCAT(c.anio, '-01-01')) DESC, c.id DESC
-      LIMIT 30
+      LIMIT 120
     `),
     pool.query(`
       SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especialidad,
@@ -183,37 +186,132 @@ const loadBaseKnowledge = async () => {
 };
 
 const chooseRelevantChampionships = (question, championships) => {
-  const scored = championships
-    .map(item => ({ item, score: scoreText(question, [item.categoria, item.temporada, item.anio]) }))
-    .filter(entry => entry.score > 0)
-    .sort((a, b) => b.score - a.score || Number(b.item.id) - Number(a.item.id))
-    .map(entry => entry.item);
+  const normalized = foldText(question);
+  const requestedSeason = normalized.match(/\b(?:temporada|temp|t)\s*(\d{1,3})\b/)?.[1];
+  const requestedYear = normalized.match(/\b(20\d{2})\b/)?.[1];
+  const wantsPast = /\b(anterior|anteriores|pasado|pasados|pasada|pasadas|previo|previos|ultima temporada|temporada anterior|finalizado|finalizados)\b/.test(normalized);
+  const wantsFuture = /\b(proximo|proximos|proxima|proximas|futuro|futuros|siguiente|siguientes|por venir)\b/.test(normalized);
+  const wantsCurrent = /\b(actual|actuales|presente|en curso|activo|activos|esta temporada)\b/.test(normalized);
+  const wantsPlural = /\b(campeonatos|temporadas|anteriores|pasados|proximos|futuros)\b/.test(normalized);
+  const scored = championships.map(item => ({
+    item,
+    score: scoreText(question, [item.categoria, `temporada ${item.temporada}`, `t${item.temporada}`, item.anio]),
+  }));
+  const exactCategoryIds = new Set(championships
+    .filter(item => {
+      const category = foldText(item.categoria);
+      return category.length >= 3 && normalized.includes(category);
+    })
+    .map(item => Number(item.idcategoria)));
+  const bestScore = Math.max(0, ...scored.map(entry => entry.score));
+  let candidates = exactCategoryIds.size
+    ? championships.filter(item => exactCategoryIds.has(Number(item.idcategoria)))
+    : bestScore > 0
+      ? scored.filter(entry => entry.score === bestScore).map(entry => entry.item)
+      : [...championships];
 
-  if (scored.length) return scored.slice(0, 3);
-  return championships.filter(item => item.estado !== 'finalizado').slice(0, 2)
-    .concat(championships.filter(item => item.estado === 'finalizado').slice(0, 1));
+  if (requestedSeason) candidates = candidates.filter(item => String(item.temporada) === requestedSeason);
+  if (requestedYear) candidates = candidates.filter(item => String(item.anio) === requestedYear);
+
+  const byNewest = (a, b) => String(b.ultima_fecha || `${b.anio}-12-31`).localeCompare(String(a.ultima_fecha || `${a.anio}-12-31`)) || Number(b.id) - Number(a.id);
+  const byUpcoming = (a, b) => String(a.primera_fecha || `${a.anio}-01-01`).localeCompare(String(b.primera_fecha || `${b.anio}-01-01`)) || Number(a.id) - Number(b.id);
+  let selected;
+
+  if (wantsPast) selected = candidates.filter(item => item.estado === 'finalizado').sort(byNewest);
+  else if (wantsFuture) selected = candidates.filter(item => item.estado === 'próximo').sort(byUpcoming);
+  else if (wantsCurrent) {
+    selected = candidates.filter(item => item.estado === 'en curso').sort(byNewest);
+    if (!selected.length) selected = candidates.filter(item => item.estado === 'próximo').sort(byUpcoming);
+    if (!selected.length) selected = candidates.filter(item => item.estado === 'finalizado').sort(byNewest);
+  } else selected = candidates.sort(byNewest);
+
+  const broadTemporalSearch = wantsPlural && (wantsPast || wantsFuture || wantsCurrent || exactCategoryIds.size > 0 || requestedSeason || requestedYear);
+  if (selected.length) return selected.slice(0, broadTemporalSearch ? 8 : 1);
+  if (wantsPast || wantsFuture || wantsCurrent || exactCategoryIds.size || requestedSeason || requestedYear) return [];
+  return championships.filter(item => item.estado === 'en curso').sort(byNewest).slice(0, 3)
+    .concat(championships.filter(item => item.estado === 'próximo').sort(byUpcoming).slice(0, 3))
+    .concat(championships.filter(item => item.estado === 'finalizado').sort(byNewest).slice(0, 3));
 };
 
 const loadStandings = async championshipIds => {
   if (!championshipIds.length) return [];
   const [rows] = await pool.query(`
-    SELECT t.idcampeonato, t.posicion, t.puntos, t.victorias, t.apercibimientos, t.campeon,
-           p.nombre AS piloto, a.modelo, am.marca
-    FROM tablas t
-    JOIN pilotos p ON p.id = t.idpiloto
-    LEFT JOIN inscriptos i ON i.idcampeonato = t.idcampeonato AND i.idpiloto = t.idpiloto
+    SELECT cp.idcampeonato, cp.idpiloto, p.nombre AS piloto, p.localidad, p.provincia, p.nacionalidad, p.ig,
+           i.numero, a.modelo, am.marca,
+           MAX(t.posicion) AS posicion_guardada, MAX(t.puntos) AS puntos_guardados,
+           MAX(t.victorias) AS victorias_guardadas, MAX(t.apercibimientos) AS apercibimientos,
+           GREATEST(COALESCE(MAX(t.campeon), 0), COALESCE(MAX(r.campeon), 0)) AS campeon,
+           CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido,
+           COUNT(DISTINCT r.ronda) AS fechas_con_resultado,
+           ROUND(SUM(${pointsExpression}), 2) AS puntos_calculados,
+           SUM(CASE WHEN r.ganador_final = 1 OR TRIM(r.pos_final) = '1' THEN 1 ELSE 0 END) AS finales_ganadas,
+           SUM(CASE WHEN r.ganador_sprint = 1 OR TRIM(r.pos_sprint) = '1' THEN 1 ELSE 0 END) AS sprint_ganados,
+           SUM(CASE WHEN r.pole_sprint = 1 OR TRIM(r.pos_qualy_sprint) = '1' THEN 1 ELSE 0 END
+             + CASE WHEN r.pole_final = 1 OR TRIM(r.pos_qualy_final) = '1' THEN 1 ELSE 0 END) AS poles
+    FROM (
+      SELECT idcampeonato, idpiloto FROM inscriptos WHERE idcampeonato IN (?)
+      UNION
+      SELECT idcampeonato, idpiloto FROM resultados WHERE idcampeonato IN (?)
+    ) cp
+    JOIN pilotos p ON p.id = cp.idpiloto
+    LEFT JOIN inscriptos i ON i.idcampeonato = cp.idcampeonato AND i.idpiloto = cp.idpiloto
     LEFT JOIN autos a ON a.id = i.idauto
     LEFT JOIN autos_marcas am ON am.id = a.marca
-    WHERE t.idcampeonato IN (?)
-    ORDER BY t.idcampeonato DESC, t.posicion ASC
-  `, [championshipIds]);
+    LEFT JOIN resultados r ON r.idcampeonato = cp.idcampeonato AND r.idpiloto = cp.idpiloto
+    LEFT JOIN tablas t ON t.idcampeonato = cp.idcampeonato AND t.idpiloto = cp.idpiloto
+    LEFT JOIN campeonato_pilotos_excluidos exclusion
+      ON exclusion.idcampeonato = cp.idcampeonato AND exclusion.idpiloto = cp.idpiloto
+    GROUP BY cp.idcampeonato, cp.idpiloto, p.id, i.numero, a.id, am.id, exclusion.idpiloto
+  `, [championshipIds, championshipIds]);
 
-  const counts = new Map();
-  return rows.filter(row => {
-    const count = counts.get(row.idcampeonato) || 0;
-    counts.set(row.idcampeonato, count + 1);
-    return count < 15;
+  const grouped = new Map();
+  rows.forEach(row => {
+    const key = String(row.idcampeonato);
+    const list = grouped.get(key) || [];
+    const calculatedPoints = Number(row.puntos_calculados || 0);
+    list.push({
+      ...row,
+      puntos: Number(row.fechas_con_resultado) > 0 ? calculatedPoints : Number(row.puntos_guardados || 0),
+    });
+    grouped.set(key, list);
   });
+
+  return [...grouped.values()].flatMap(items => {
+    let position = 0;
+    return items
+      .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || Number(b.puntos) - Number(a.puntos)
+        || String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' }))
+      .map(item => ({ ...item, posicion: Number(item.excluido) ? null : ++position }));
+  });
+};
+
+const loadChampionshipCalendars = async championshipIds => {
+  if (!championshipIds.length) return [];
+  const [rows] = await pool.query(`
+    SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial, cal.especialidad,
+           cal.resultados_visibles, cal.resultados_confirmados,
+           ci.nombre AS circuito, ci.variante, ci.localidad, ci.provincia, ci.pais,
+           CASE WHEN cal.fecha >= NOW() THEN 'próxima' ELSE 'disputada' END AS estado
+    FROM calendario cal
+    LEFT JOIN circuitos ci ON ci.id = cal.idcircuito
+    WHERE cal.idcampeonato IN (?)
+    ORDER BY cal.idcampeonato DESC, cal.ronda ASC
+  `, [championshipIds]);
+  return rows;
+};
+
+const loadCategoryCars = async categoryIds => {
+  if (!categoryIds.length) return [];
+  const [rows] = await pool.query(`
+    SELECT a.idcategoria, cat.categoria, a.id AS idauto, am.marca, a.modelo
+    FROM autos a
+    JOIN categorias cat ON cat.id = a.idcategoria
+    JOIN autos_marcas am ON am.id = a.marca
+    WHERE a.idcategoria IN (?)
+    ORDER BY cat.categoria ASC, am.marca ASC, a.modelo ASC
+  `, [categoryIds]);
+  return rows;
 };
 
 const loadDriverKnowledge = async question => {
@@ -225,8 +323,10 @@ const loadDriverKnowledge = async question => {
            COUNT(DISTINCT r.idcampeonato, r.ronda) AS carreras,
            COUNT(DISTINCT r.idcampeonato) AS campeonatos,
            SUM(CASE WHEN r.ganador_final = 1 OR TRIM(r.pos_final) = '1' THEN 1 ELSE 0 END) AS victorias,
+           SUM(CASE WHEN r.ganador_sprint = 1 OR TRIM(r.pos_sprint) = '1' THEN 1 ELSE 0 END) AS sprint_ganados,
            SUM(CASE WHEN r.pole_sprint = 1 OR TRIM(r.pos_qualy_sprint) = '1' THEN 1 ELSE 0 END
              + CASE WHEN r.pole_final = 1 OR TRIM(r.pos_qualy_final) = '1' THEN 1 ELSE 0 END) AS poles,
+           (SELECT COUNT(*) FROM tablas t WHERE t.idpiloto = p.id AND t.campeon = 1) AS campeonatos_ganados,
            ROUND(SUM(${pointsExpression}), 2) AS puntos
     FROM pilotos p
     LEFT JOIN resultados r ON r.idpiloto = p.id
@@ -236,6 +336,33 @@ const loadDriverKnowledge = async question => {
     LIMIT 8
   `, terms.map(term => `%${term}%`));
   return drivers;
+};
+
+const loadDriverHistory = async driverIds => {
+  if (!driverIds.length) return [];
+  const [rows] = await pool.query(`
+    SELECT i.idpiloto, i.idcampeonato, cat.categoria, c.temporada, c.anio,
+           i.numero, a.modelo, am.marca,
+           t.posicion,
+           COALESCE(t.puntos, (
+             SELECT ROUND(SUM(
+               COALESCE(rr.presentismo, 0) + COALESCE(rr.pts_qualy_sprint, 0) + COALESCE(rr.pts_sprint, 0)
+               + COALESCE(rr.pts_qualy_final, 0) + COALESCE(rr.pts_final, 0)
+             ), 2)
+             FROM resultados rr
+             WHERE rr.idcampeonato = i.idcampeonato AND rr.idpiloto = i.idpiloto
+           )) AS puntos,
+           t.victorias, t.apercibimientos, t.campeon
+    FROM inscriptos i
+    JOIN campeonatos c ON c.id = i.idcampeonato
+    JOIN categorias cat ON cat.id = c.idcategoria
+    LEFT JOIN autos a ON a.id = i.idauto
+    LEFT JOIN autos_marcas am ON am.id = a.marca
+    LEFT JOIN tablas t ON t.idcampeonato = i.idcampeonato AND t.idpiloto = i.idpiloto
+    WHERE i.idpiloto IN (?)
+    ORDER BY c.anio DESC, c.temporada DESC, c.id DESC
+  `, [driverIds]);
+  return rows;
 };
 
 const loadRecentResults = async championshipIds => {
@@ -422,11 +549,14 @@ const buildKnowledge = async question => {
   const base = await loadBaseKnowledge();
   const relevantChampionships = chooseRelevantChampionships(question, base.championships);
   const ids = [...new Set(relevantChampionships.map(item => Number(item.id)).filter(Boolean))];
+  const categoryIds = [...new Set(relevantChampionships.map(item => Number(item.idcategoria)).filter(Boolean))];
   const intents = getQuestionIntents(question);
   const liveTimingRequested = wantsLiveTiming(question) && !intents.club;
-  const [standings, drivers, recentResults, liveTiming, club, resultsCatalog, downloads, projects] = await Promise.all([
+  const [standings, drivers, championshipCalendars, categoryCars, recentResults, liveTiming, club, resultsCatalog, downloads, projects] = await Promise.all([
     loadStandings(ids),
     loadDriverKnowledge(question),
+    loadChampionshipCalendars(ids),
+    loadCategoryCars(categoryIds),
     loadRecentResults(ids),
     liveTimingRequested ? loadLiveTiming(relevantChampionships) : Promise.resolve([]),
     intents.club ? safeOptionalKnowledge(() => loadClubKnowledge(intents.clubLive)) : Promise.resolve(null),
@@ -434,16 +564,20 @@ const buildKnowledge = async question => {
     intents.downloads ? safeOptionalKnowledge(loadDownloadCatalog) : Promise.resolve(null),
     intents.projects ? safeOptionalKnowledge(loadProjectsKnowledge) : Promise.resolve(null),
   ]);
+  const driverHistory = await loadDriverHistory(drivers.map(driver => Number(driver.id)).filter(Boolean));
 
   return {
     generatedAt: new Date().toISOString(),
     timezone: 'America/Argentina/Buenos_Aires',
     summary: base.summary,
     relevantChampionships,
+    championshipCalendars,
+    categoryCars,
     nearbyEvents: base.events,
     visibleRegistrationForms: base.registrationForms,
     standings,
     matchingDrivers: drivers,
+    matchingDriverHistory: driverHistory,
     latestResults: recentResults,
     liveTiming: {
       requested: liveTimingRequested,

@@ -18,9 +18,9 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Notas de pista ordenables por circuito, con título e imágenes editables, reutilización selectiva entre variantes y visor emergente en el inicio.
 - Importador de escritorio para cargas masivas en MySQL.
 - Pantalla automática de mantenimiento cuando la API o la base de datos no están disponibles.
-- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre la información deportiva, CADPO CLUB, resultados publicados, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
+- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre campeonatos actuales, anteriores y futuros, tablas completas, calendarios, resultados publicados, pilotos, CADPO CLUB, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
 - Historial de consultas y respuestas de Ayrton en Cloudflare D1, con aviso por correo mediante el SMTP del sitio.
-- Memoria contextual aprobada en Cloudflare D1: desde **Administración > Ayrton** se mantiene un contexto general siempre disponible y se revisan conversaciones para convertirlas en conocimiento reutilizable sin aprender automáticamente datos potencialmente falsos enviados por visitantes.
+- Contexto general administrable en Cloudflare D1: desde **Administración > Ayrton** se mantiene un único texto oficial siempre disponible. El historial se conserva solo como registro y nunca se incorpora automáticamente a las respuestas.
 
 ### Gestión deportiva y resultados
 
@@ -301,9 +301,9 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Sortable per-circuit track notes with editable titles and images, selective reuse across variants, and a modal viewer on the home page.
 - Desktop importer for bulk MySQL operations.
 - Automatic maintenance screen when the API or database is unavailable.
-- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to sporting data, CADPO CLUB, published results, replays, templates and projects, plus on-demand access to live APIs.
+- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, full standings, calendars, published results, drivers, CADPO CLUB, replays, templates and projects, plus on-demand access to live APIs.
 - Ayrton question and answer history in Cloudflare D1, with email notifications through the website SMTP service.
-- Approved contextual memory in Cloudflare D1: **Administration > Ayrton** provides an always-available general context and can promote reviewed conversations to reusable knowledge without automatically learning potentially false visitor input.
+- General context stored in Cloudflare D1: **Administration > Ayrton** provides one always-available official text. Conversation history remains audit-only and is never incorporated into answers automatically.
 
 ### Sporting management and results
 
