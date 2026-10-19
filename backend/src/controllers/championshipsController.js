@@ -672,11 +672,12 @@ const getQualifyingBans = async (req, res, next) => {
       return res.status(400).json({ error: 'Campeonato inválido' });
     }
     const [rows] = await pool.query(
-      `SELECT sanction.idpiloto, p.nombre, i.numero
+      `SELECT sanction.idpiloto, p.nombre, MAX(i.numero) AS numero, sanction.nota
        FROM campeonato_sanciones_clasificacion sanction
        JOIN pilotos p ON p.id = sanction.idpiloto
        JOIN inscriptos i ON i.idcampeonato = sanction.idcampeonato AND i.idpiloto = sanction.idpiloto
        WHERE sanction.idcampeonato = ? AND sanction.tandas_pendientes > 0
+       GROUP BY sanction.idpiloto, p.nombre, sanction.nota
        ORDER BY p.nombre ASC`,
       [championshipId]
     );
@@ -689,7 +690,10 @@ const getQualifyingBans = async (req, res, next) => {
 const saveQualifyingBans = async (req, res, next) => {
   const championshipId = Number(req.params.id);
   const submitted = Array.isArray(req.body.sanciones) ? req.body.sanciones : [];
-  const sanctions = submitted.map(item => ({ idpiloto: Number(item.idpiloto) }));
+  const sanctions = submitted.map(item => ({
+    idpiloto: Number(item.idpiloto),
+    nota: String(item.nota || '').trim().toLocaleUpperCase('es-AR').slice(0, 500),
+  }));
   if (!Number.isInteger(championshipId) || championshipId < 1) {
     return res.status(400).json({ error: 'Campeonato inválido' });
   }
@@ -724,17 +728,19 @@ const saveQualifyingBans = async (req, res, next) => {
     await connection.query('DELETE FROM campeonato_sanciones_clasificacion WHERE idcampeonato = ?', [championshipId]);
     if (sanctions.length) {
       await connection.query(
-        'INSERT INTO campeonato_sanciones_clasificacion (idcampeonato, idpiloto) VALUES ?',
-        [sanctions.map(item => [championshipId, item.idpiloto])]
+        'INSERT INTO campeonato_sanciones_clasificacion (idcampeonato, idpiloto, nota) VALUES ?',
+        [sanctions.map(item => [championshipId, item.idpiloto, item.nota])]
       );
     }
     await connection.commit();
     const [rows] = await pool.query(
-      `SELECT sanction.idpiloto, p.nombre, i.numero
+      `SELECT sanction.idpiloto, p.nombre, MAX(i.numero) AS numero, sanction.nota
        FROM campeonato_sanciones_clasificacion sanction
        JOIN pilotos p ON p.id = sanction.idpiloto
        JOIN inscriptos i ON i.idcampeonato = sanction.idcampeonato AND i.idpiloto = sanction.idpiloto
-       WHERE sanction.idcampeonato = ? ORDER BY p.nombre ASC`,
+       WHERE sanction.idcampeonato = ?
+       GROUP BY sanction.idpiloto, p.nombre, sanction.nota
+       ORDER BY p.nombre ASC`,
       [championshipId]
     );
     res.json({ data: rows, message: 'Sanciones de clasificación guardadas correctamente' });

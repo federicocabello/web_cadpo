@@ -3296,7 +3296,7 @@ export default function Admin() {
     setQualifyingBans(current => {
       const exists = current.some(item => String(item.idpiloto) === String(driver.id));
       if (exists) return current;
-      return [...current, { idpiloto: driver.id, nombre: driver.nombre, numero: driver.numero }]
+      return [...current, { idpiloto: driver.id, nombre: driver.nombre, numero: driver.numero, nota: '' }]
         .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
     });
     setQualifyingBanDriverId('');
@@ -3311,6 +3311,7 @@ export default function Admin() {
       const response = await championshipsApi.saveQualifyingBans(resultChampionshipId, qualifyingBans);
       setQualifyingBans(response.data.data || []);
       setQualifyingBansMessage(response.data.message || 'Sanciones guardadas correctamente.');
+      setShowQualifyingBans(false);
     } catch (error) {
       setQualifyingBansMessage(error.response?.data?.error || 'No se pudieron guardar las sanciones de clasificación.');
     } finally {
@@ -6892,12 +6893,13 @@ export default function Admin() {
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                   <div className="grid gap-2 border border-red-400/20 bg-red-500/[0.04] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                    <label><span className="text-[9px] font-bold uppercase tracking-wider text-red-200">Piloto inscripto</span><select value={qualifyingBanDriverId} onChange={event => setQualifyingBanDriverId(event.target.value)} className="input-field mt-1 h-10 py-0 text-sm"><option value="">Seleccionar piloto</option>{resultRegisteredDrivers.filter(driver => !qualifyingBans.some(item => String(item.idpiloto) === String(driver.id))).map(driver => <option key={driver.id} value={driver.id}>{driver.numero != null ? `#${driver.numero} · ` : ''}{driver.nombre}</option>)}</select></label>
+                    <label><span className="text-[9px] font-bold uppercase tracking-wider text-red-200">Piloto inscripto</span><select value={qualifyingBanDriverId} onChange={event => setQualifyingBanDriverId(event.target.value)} className="input-field mt-1 h-10 py-0 text-sm"><option value="">Seleccionar piloto</option>{resultRegisteredDrivers.filter(driver => !qualifyingBans.some(item => Number(item.idpiloto) === Number(driver.id))).map(driver => <option key={driver.id} value={driver.id}>{driver.numero != null ? `#${driver.numero} · ` : ''}{driver.nombre}</option>)}</select></label>
                     <button type="button" onClick={addQualifyingBan} className="h-10 border border-red-400/50 bg-red-500/10 px-4 text-[10px] font-bold uppercase text-red-200 transition hover:bg-red-500 hover:text-white">Agregar</button>
                   </div>
                   <div className="mt-4 space-y-2">
-                    {qualifyingBans.map(item => <div key={item.idpiloto} className="grid items-center gap-2 border border-racing-border bg-black/20 p-2 sm:grid-cols-[minmax(0,1fr)_40px]">
+                    {qualifyingBans.map(item => <div key={item.idpiloto} className="grid items-center gap-2 border border-racing-border bg-black/20 p-2 sm:grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.2fr)_40px]">
                       <div className="min-w-0"><strong className="block truncate text-sm text-white">{item.numero != null ? `#${item.numero} · ` : ''}{item.nombre}</strong><span className="text-[9px] font-bold uppercase tracking-wider text-red-300">No puede clasificar</span></div>
+                      <label className="min-w-0"><span className="sr-only">Nota para {item.nombre}</span><input type="text" value={item.nota || ''} maxLength={500} onChange={event => { const nota = event.target.value.toLocaleUpperCase('es-AR'); setQualifyingBans(current => current.map(row => Number(row.idpiloto) === Number(item.idpiloto) ? { ...row, nota } : row)); setQualifyingBansMessage('Recordá guardar para confirmar los cambios.'); }} placeholder="NOTA OPCIONAL PARA EL PILOTO" className="input-field h-9 w-full uppercase text-xs" /></label>
                       <button type="button" onClick={() => { setQualifyingBans(current => current.filter(row => String(row.idpiloto) !== String(item.idpiloto))); setQualifyingBansMessage('Recordá guardar para confirmar la eliminación.'); }} className="inline-flex h-9 w-9 items-center justify-center border border-racing-border text-gray-500 transition hover:border-red-400 hover:text-red-400" aria-label={`Quitar sanción de ${item.nombre}`}><TrashIcon className="h-4 w-4"/></button>
                     </div>)}
                     {!loadingQualifyingBans && !qualifyingBans.length ? <p className="border border-dashed border-racing-border px-4 py-10 text-center text-sm text-gray-600">No hay pilotos con clasificaciones pendientes.</p> : null}
@@ -9574,7 +9576,7 @@ export default function Admin() {
         ) : (
           <>
             <nav className="mb-5 w-full" aria-label="Secciones de administración">
-              <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-11 min-[1800px]:grid-cols-[repeat(21,minmax(0,1fr))]">
+              <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-4 md:grid-cols-7 lg:grid-cols-11">
                 {adminSections.map(section => {
                   const Icon = section.icon;
                   const isActive = activeSection === section.id;
@@ -9583,13 +9585,13 @@ export default function Admin() {
                       key={section.id}
                       type="button"
                       onClick={() => setActiveSection(section.id)}
-                      className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 border px-1.5 py-1.5 text-center font-racing text-[9px] font-semibold leading-tight transition-colors xl:text-[8px] min-[1800px]:px-1 ${isActive
+                      className={`inline-flex min-h-11 min-w-0 items-center justify-center gap-2 border px-2 py-2 text-center font-racing text-[10px] font-semibold leading-tight transition-colors ${isActive
                         ? 'border-racing-red bg-racing-red text-white'
                         : 'border-transparent bg-racing-card/70 text-gray-400 hover:border-racing-border hover:bg-racing-card hover:text-white'
                         }`}
                       aria-current={isActive ? 'page' : undefined}
                     >
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <Icon className="h-4 w-4 shrink-0" />
                       <span className="min-w-0">{section.label}</span>
                     </button>
                   );

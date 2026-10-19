@@ -26,6 +26,7 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Historial de consultas y respuestas de Ayrton en Cloudflare D1, con aviso por correo mediante el SMTP del sitio.
 - Panel mensual de consumo de Ayrton en Administración, con el porcentaje utilizado cada día, solicitudes, tokens de entrada/salida y neuronas calculadas para el modelo activo; al alcanzar el tope local, el chat se oculta por completo y vuelve a habilitarse automáticamente con el reinicio de Cloudflare a las 00:00 UTC.
 - Contexto general administrable en Cloudflare D1: desde **Administración > Ayrton** se mantiene un único texto oficial siempre disponible. El historial se conserva solo como registro y nunca se incorpora automáticamente a las respuestas.
+- SEO por sección pública con títulos, descripciones, palabras relacionadas, URL canónica, Open Graph y datos estructurados; `sitemap.xml` se mantiene con las rutas canónicas y `robots.txt` evita el rastreo de API y videos de apelaciones.
 
 ### Gestión deportiva y resultados
 
@@ -39,7 +40,7 @@ El panel de resultados permite importar tandas de Assetto Corsa, trabajar sobre 
 - resultados visibles u ocultos por fecha, confirmación definitiva y plazo configurable para apelaciones;
 - apelaciones por tanda y piloto, con motivo, video opcional y publicación dentro del resultado de la fecha;
 - exclusión de pilotos por campeonato sin alterar sus resultados históricos, con puntaje general anulado y omisión en las tablas de lastre;
-- sanciones de clasificación pendientes por piloto y campeonato, administrables y visibles en Tiempos en vivo;
+- sanciones de clasificación pendientes por piloto y campeonato, sin asignaciones duplicadas y con una nota opcional por piloto visible en Tiempos en vivo;
 - tabla general del campeonato, estadísticas e imágenes exportables de posiciones.
 
 Las correcciones manuales permanecen editables antes del guardado definitivo. Los cambios pendientes se identifican visualmente en la planilla.
@@ -316,6 +317,7 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Ayrton question and answer history in Cloudflare D1, with email notifications through the website SMTP service.
 - Monthly Ayrton usage panel in Administration, showing daily percentage, requests, Cloudflare-reported input/output tokens, and calculated neurons for the active model; upon reaching the local cap, the chat is fully hidden and automatically returns with Cloudflare's 00:00 UTC reset.
 - General context stored in Cloudflare D1: **Administration > Ayrton** provides one always-available official text. Conversation history remains audit-only and is never incorporated into answers automatically.
+- Per-section SEO for public pages, including titles, descriptions, related terms, canonical URLs, Open Graph metadata, and structured data; `sitemap.xml` tracks canonical routes while `robots.txt` excludes the API and appeal videos from crawling.
 
 ### Sporting management and results
 

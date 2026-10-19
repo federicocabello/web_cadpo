@@ -906,6 +906,60 @@
   }
 }
 
+.live-timing-loading-flag {
+  transform-origin: 32% 82%;
+  animation: live-timing-flag-motion 1.1s ease-in-out infinite;
+}
+
+.live-timing-speed-line {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  width: 46px;
+  background: linear-gradient(90deg, transparent, rgba(225, 29, 72, 0.95));
+  animation: live-timing-speed-line 1.25s ease-in-out infinite;
+}
+
+.live-timing-speed-line--top {
+  top: 34%;
+  animation-delay: -0.15s;
+}
+
+.live-timing-speed-line--middle {
+  top: 50%;
+  width: 64px;
+  animation-delay: -0.55s;
+}
+
+.live-timing-speed-line--bottom {
+  top: 66%;
+  width: 38px;
+  animation-delay: -0.85s;
+}
+
+@keyframes live-timing-flag-motion {
+  0%, 100% {
+    transform: translate3d(-5px, 1px, 0) rotate(-4deg);
+  }
+  50% {
+    transform: translate3d(7px, -2px, 0) rotate(5deg);
+  }
+}
+
+@keyframes live-timing-speed-line {
+  0% {
+    opacity: 0;
+    transform: translateX(-16px) scaleX(0.35);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(72px) scaleX(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ayrton-radio-bar {
     animation: none;
@@ -926,5 +980,10 @@
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .live-timing-loading-flag,
+  .live-timing-speed-line {
+    animation: none;
   }
 }

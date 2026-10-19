@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /media/resultados/apelaciones/
 
 Sitemap: https://cadpotorneos.com/sitemap.xml

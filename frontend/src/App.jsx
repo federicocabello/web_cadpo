@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import AyrtonChat from './components/AyrtonChat'
+import SeoManager from './components/SeoManager'
 import Home from './pages/Home'
 import Events from './pages/Events'
 import Championships from './pages/Championships'
@@ -77,6 +78,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-racing-dark text-white flex flex-col">
+      <SeoManager pathname={location.pathname} />
       <Navbar />
       <main className="flex-1">
         <Routes>

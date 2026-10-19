@@ -19,6 +19,22 @@ import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
 const QUALIFYING_REFRESH_INTERVAL_MS = 1000;
 const REQUIRED_LAPS = 25;
+
+function CheckeredFlagIcon({ className = '' }) {
+  return (
+    <svg className={className} viewBox="0 0 72 72" fill="none" aria-hidden="true">
+      <defs>
+        <pattern id="live-timing-checker" width="16" height="16" patternUnits="userSpaceOnUse">
+          <rect width="8" height="8" fill="currentColor" />
+          <rect x="8" y="8" width="8" height="8" fill="currentColor" />
+        </pattern>
+      </defs>
+      <path d="M17 8v56" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+      <path d="M20 11c13-8 23 8 39 0v31c-16 8-26-8-39 0V11Z" fill="url(#live-timing-checker)" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const driverNameKey = value => String(value || '')
   .normalize('NFD')
   .replace(/\p{M}/gu, '')
@@ -668,6 +684,30 @@ export default function LiveTiming() {
   const calendarLoading = !calendarLoaded;
   const noAvailableDates = calendarLoaded && !calendarError && !raceEvent;
 
+  if (loading) {
+    return (
+      <main className="relative isolate flex min-h-[calc(100svh-7rem)] items-center justify-center overflow-hidden border-b border-racing-border bg-[#090a0d] px-5 animate-fade-in">
+        <div className="race-hero-grid absolute inset-0 -z-20 opacity-20" />
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),transparent_42%)]" />
+        <div className="flex flex-col items-center text-center">
+          <div className="relative flex h-32 w-40 items-center justify-center sm:h-40 sm:w-52">
+            <span className="absolute h-28 w-28 animate-spin rounded-full border-2 border-racing-red/15 border-t-racing-red sm:h-32 sm:w-32" />
+            <span className="absolute h-20 w-20 animate-ping rounded-full border border-white/10 sm:h-24 sm:w-24" />
+            <span className="live-timing-speed-line live-timing-speed-line--top" />
+            <span className="live-timing-speed-line live-timing-speed-line--middle" />
+            <span className="live-timing-speed-line live-timing-speed-line--bottom" />
+            <CheckeredFlagIcon className="live-timing-loading-flag relative h-20 w-20 text-white drop-shadow-[0_0_18px_rgba(225,29,72,0.65)] sm:h-24 sm:w-24" />
+          </div>
+          <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.3em] text-racing-red">Tiempos en vivo</p>
+          <h1 className="mt-2 font-racing text-xl font-bold uppercase tracking-[0.1em] text-white sm:text-2xl">Comprobando servidor</h1>
+          <div className="mt-4 flex items-center gap-1.5" aria-hidden="true">
+            {[0, 1, 2].map(index => <span key={index} className="h-2 w-2 animate-pulse rounded-full bg-racing-red" style={{ animationDelay: `${index * 180}ms` }} />)}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-racing-dark pb-8">
       <header className="relative min-h-[190px] shrink-0 overflow-hidden border-b border-racing-border bg-black px-4 py-4 sm:px-6 lg:px-8">
@@ -727,10 +767,6 @@ export default function LiveTiming() {
                 {Number(connectedDriverCount) > 0 ? <span className="inline-flex items-center gap-1.5 font-racing text-sm text-emerald-300 sm:text-base"><span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_7px_rgba(52,211,153,0.9)]" aria-hidden="true"/><strong className="text-base sm:text-lg">{connectedDriverCount}</strong> pilotos en pista</span> : null}
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 text-white"><span>{isQualifyingSession(timing?.session) ? 'Tiempo de clasificación' : `Clasificación ${formatCalendarDate(raceEvent?.fecha, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} H comienza en`}</span><strong className="font-racing text-base tabular-nums text-orange-400 sm:text-lg">{isQualifyingSession(timing?.session) ? formatSessionRemaining(timing, now) : formatCountdown(raceEvent?.fecha, now)}</strong></span>
               </div>
-              {qualifyingBans.length ? <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 border border-red-400/45 bg-red-500/10 px-3 py-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-300">No pueden clasificar</span>
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 uppercase leading-relaxed">{qualifyingBans.map((item, index) => <Fragment key={item.idpiloto}>{index > 0 ? <span className="text-[10px] text-gray-600">•</span> : null}<span className="inline-flex items-baseline gap-1.5"><span className="text-[10px] font-semibold text-gray-500">#{item.numero ?? 0}</span><strong className="font-racing text-sm font-bold text-white">{item.nombre}</strong></span></Fragment>)}</span>
-              </div> : null}
             </div>}
           </div>
 
@@ -740,6 +776,10 @@ export default function LiveTiming() {
             )}
           </div>
         </div>
+        {qualifyingBans.length ? <div className="relative z-10 mx-auto mt-3 flex w-full max-w-[1900px] flex-wrap items-center gap-x-4 gap-y-1.5 border-y border-red-400/45 bg-red-500/10 px-3 py-2 sm:px-4 lg:px-5">
+          <span className="shrink-0 text-[9px] font-bold uppercase tracking-[0.14em] text-red-300">No pueden clasificar</span>
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 uppercase leading-relaxed">{qualifyingBans.map((item, index) => <Fragment key={item.idpiloto}>{index > 0 ? <span className="text-[10px] text-gray-600">•</span> : null}<span className="inline-flex flex-wrap items-baseline gap-x-1.5"><span className="text-[10px] font-semibold text-gray-500">#{item.numero ?? 0}</span><strong className="font-racing text-sm font-bold text-white">{item.nombre}</strong>{item.nota ? <span className="text-[9px] font-extrabold tracking-[0.08em] text-[#ff3b78]">{item.nota}</span> : null}</span></Fragment>)}</span>
+        </div> : null}
       </header>
 
       <div className="mx-auto w-full max-w-[1900px] px-2 py-3 sm:px-4 lg:px-6">
@@ -963,12 +1003,6 @@ export default function LiveTiming() {
               </div>
             )}
 
-            {loading && (
-              <div className="px-6 py-16 text-center">
-                <ArrowPathIcon className="mx-auto mb-3 h-8 w-8 animate-spin text-racing-red" />
-                <p className="text-sm text-gray-400">Conectando con el servidor...</p>
-              </div>
-            )}
           </section>
         </>}
       </div>

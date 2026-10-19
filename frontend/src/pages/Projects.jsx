@@ -45,39 +45,6 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [gallery, setGallery] = useState(null);
-  useEffect(() => {
-    const description = document.querySelector('meta[name="description"]');
-    const keywords = document.querySelector('meta[name="keywords"]');
-    const canonical = document.querySelector('link[rel="canonical"]');
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    const ogDescription = document.querySelector('meta[property="og:description"]');
-    const ogUrl = document.querySelector('meta[property="og:url"]');
-    const previous = {
-      title: document.title,
-      description: description?.getAttribute('content') || '',
-      keywords: keywords?.getAttribute('content') || '',
-      canonical: canonical?.getAttribute('href') || '',
-      ogTitle: ogTitle?.getAttribute('content') || '',
-      ogDescription: ogDescription?.getAttribute('content') || '',
-      ogUrl: ogUrl?.getAttribute('content') || '',
-    };
-    document.title = projectsSeoTitle;
-    description?.setAttribute('content', projectsSeoDescription);
-    keywords?.setAttribute('content', 'Assetto Corsa, circuitos Assetto Corsa, categorías Assetto Corsa, mods Assetto Corsa, CADPO TORNEOS, simracing Argentina');
-    canonical?.setAttribute('href', projectsCanonicalUrl);
-    ogTitle?.setAttribute('content', projectsSeoTitle);
-    ogDescription?.setAttribute('content', projectsSeoDescription);
-    ogUrl?.setAttribute('content', projectsCanonicalUrl);
-    return () => {
-      document.title = previous.title;
-      description?.setAttribute('content', previous.description);
-      keywords?.setAttribute('content', previous.keywords);
-      canonical?.setAttribute('href', previous.canonical);
-      ogTitle?.setAttribute('content', previous.ogTitle);
-      ogDescription?.setAttribute('content', previous.ogDescription);
-      ogUrl?.setAttribute('content', previous.ogUrl);
-    };
-  }, []);
   useEffect(() => { projectsApi.getAll().then(response => setProjects(response.data.data || [])).catch(requestError => setError(requestError.response?.data?.error || 'No se pudieron cargar los proyectos.')).finally(() => setLoading(false)); }, []);
   useEffect(() => {
     if (!projects.length) return undefined;
