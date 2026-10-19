@@ -175,6 +175,7 @@ export const resultsApi = {
   getAppeals: params => api.get('/results/appeals', { params }),
   createAppeal: (data, onUploadProgress) => api.post('/results/appeals', data, { timeout: 0, onUploadProgress }),
   updateAppeal: (id, data, onUploadProgress) => api.put(`/results/appeals/${id}`, data, { timeout: 0, onUploadProgress }),
+  updateAppealStatus: (id, estado) => api.patch(`/results/appeals/${id}/status`, { estado }),
   removeAppeal: id => api.delete(`/results/appeals/${id}`),
   create: data => api.post('/results', data),
   saveBulk: changes => api.post('/results/bulk', { changes }),

@@ -11,62 +11,62 @@ const pageSeo = {
     keywords: 'CADPO TORNEOS, Comunidad Argentina De Pilotos Online, simracing Argentina, campeonatos Assetto Corsa',
   },
   '/proximas-fechas': {
-    title: 'Próximas fechas y calendario • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Próximas Fechas',
     description: 'Consultá las próximas fechas de CADPO, circuitos, horarios, transmisiones, reglamentos y actividad de cada campeonato de simracing.',
     keywords: 'próximas fechas CADPO, calendario simracing, carreras Assetto Corsa Argentina, circuitos CADPO',
   },
   '/campeonatos': {
-    title: 'Campeonatos e inscripciones • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Campeonatos',
     description: 'Descubrí campeonatos actuales, finalizados y con inscripciones disponibles en CADPO, organizados por categoría y temporada.',
     keywords: 'campeonatos CADPO, inscripciones simracing, torneos Assetto Corsa, automovilismo virtual Argentina',
   },
   '/tiempos-en-vivo': {
-    title: 'Tiempos en vivo • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Tiempos en Vivo',
     description: 'Seguí los tiempos en vivo de CADPO: posiciones, vueltas, diferencias, lastres y requisitos de habilitación para cada fecha.',
     keywords: 'tiempos en vivo CADPO, live timing Assetto Corsa, clasificación simracing, vueltas en vivo',
   },
   '/resultados': {
-    title: 'Resultados y tablas de campeonato • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Resultados',
     description: 'Revisá resultados por fecha, sanciones, apelaciones, puntos acumulados y tablas de posiciones de los campeonatos CADPO.',
     keywords: 'resultados CADPO, tabla de posiciones simracing, puntos campeonato, sanciones automovilismo virtual',
   },
   '/estadisticas': {
-    title: 'Estadísticas de pilotos • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Estadísticas',
     description: 'Consultá estadísticas de pilotos de CADPO: carreras, victorias, poles, podios, campeonatos y trayectoria en la comunidad.',
     keywords: 'estadísticas CADPO, pilotos simracing, victorias poles podios, campeones CADPO',
   },
   '/replays': {
-    title: 'Repeticiones de carreras • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Repeticiones',
     description: 'Descargá repeticiones de clasificación, sprint y final organizadas por campeonato, fecha y circuito.',
     keywords: 'repeticiones CADPO, replays Assetto Corsa, descargar repetición carrera, simracing Argentina',
   },
   '/plantillas': {
-    title: 'Plantillas de autos • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Plantillas',
     description: 'Descargá las plantillas oficiales disponibles para crear los diseños de los autos de cada campeonato CADPO.',
     keywords: 'plantillas CADPO, templates Assetto Corsa, diseño autos simracing, skins Assetto Corsa',
   },
   '/denuncias': {
-    title: 'Formulario de denuncias • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Denuncias',
     description: 'Accedé al formulario de denuncias deportivas habilitado para las fechas de los campeonatos CADPO.',
     keywords: 'denuncias CADPO, comisario deportivo simracing, reglamento CADPO, incidentes de carrera',
   },
   '/proyectos': {
-    title: 'Proyectos para Assetto Corsa • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Proyectos',
     description: 'Conocé los autos, categorías y circuitos para Assetto Corsa que se encuentran en desarrollo dentro de CADPO.',
     keywords: 'mods Assetto Corsa Argentina, circuitos Assetto Corsa, proyectos CADPO, autos argentinos Assetto Corsa',
   },
   '/club': {
-    title: 'CADPO CLUB • Servidores gratuitos de Assetto Corsa',
+    title: 'CADPO TORNEOS • Club',
     description: 'Ingresá gratis a los servidores abiertos de CADPO CLUB, conocé las categorías, autos, circuitos y sesiones disponibles.',
     keywords: 'CADPO CLUB, servidor Assetto Corsa gratis, simracing gratuito Argentina, carreras online Assetto Corsa',
   },
   '/inscripcion': {
-    title: 'Inscripción a campeonatos • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Inscripción',
     description: 'Completá tu inscripción a los campeonatos CADPO, elegí auto, número y modalidad de diseño.',
     keywords: 'inscripción CADPO, anotarse campeonato simracing, inscripción Assetto Corsa, pilotos CADPO',
   },
   '/categorias': {
-    title: 'Categorías y temporadas • CADPO TORNEOS',
+    title: 'CADPO TORNEOS • Categorías',
     description: 'Explorá las categorías de CADPO, sus temporadas, autos, campeonatos y galerías de imágenes.',
     keywords: 'categorías CADPO, Turismo Nacional Assetto Corsa, autos argentinos simracing, temporadas CADPO',
   },
@@ -88,7 +88,7 @@ export default function SeoManager({ pathname }) {
     const seo = pageSeo[canonicalPath];
     const isAdmin = pathname.startsWith('/admin');
     const indexable = Boolean(seo) && !isAdmin;
-    const title = seo?.title || defaultTitle;
+    const title = isAdmin ? 'CADPO TORNEOS • Administración' : seo?.title || defaultTitle;
     const description = seo?.description || defaultDescription;
     const canonicalUrl = `${siteUrl}${canonicalPath === '/' ? '/' : canonicalPath}`;
 

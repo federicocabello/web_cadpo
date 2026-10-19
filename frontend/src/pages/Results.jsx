@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDaysIcon, CheckBadgeIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, CheckBadgeIcon, CheckCircleIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { championshipsApi, eventsApi, resultsApi } from '../services/api';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
@@ -169,10 +169,17 @@ const EventBannerGallery = ({ banners = [], round }) => {
   </div>;
 };
 
+const AppealStatusBadge = ({ status }) => {
+  const normalized = String(status || 'pendiente').toLowerCase();
+  if (normalized === 'aprobada') return <span className="inline-flex shrink-0 items-center gap-1 border border-emerald-400/35 bg-emerald-500/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-emerald-300"><CheckCircleIcon className="h-3.5 w-3.5"/>Aprobada</span>;
+  if (normalized === 'denegada') return <span className="inline-flex shrink-0 items-center gap-1 border border-red-400/35 bg-red-500/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-red-300"><XCircleIcon className="h-3.5 w-3.5"/>Denegada</span>;
+  return <span className="inline-flex shrink-0 items-center gap-1 border border-amber-300/30 bg-amber-300/[0.07] px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-amber-200"><ClockIcon className="h-3.5 w-3.5"/>Pendiente</span>;
+};
+
 const AppealColumn = ({ title, items, onOpenVideo }) => <div className="overflow-hidden border border-blue-400/20 bg-black/25">
   <h4 className="border-b border-blue-400/20 bg-blue-400/[0.07] px-4 py-2 font-racing text-sm font-bold uppercase tracking-wider text-blue-200">{title}</h4>
   <div className="divide-y divide-racing-border">{items.map(appeal => <article key={appeal.id} className="px-4 py-3">
-    <div className="inline-flex min-w-0 items-center gap-1.5"><img src="/corredor.png" alt="" className="h-5 w-5 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{appeal.piloto}</strong></div>
+    <div className="flex min-w-0 items-center justify-between gap-3"><span className="inline-flex min-w-0 items-center gap-1.5"><img src="/corredor.png" alt="" className="h-5 w-5 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{appeal.piloto}</strong></span><AppealStatusBadge status={appeal.estado}/></div>
     <p className="mt-2 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{appeal.motivo}</span></p>
     {appeal.video ? <button type="button" onClick={event => onOpenVideo(appeal, event.currentTarget)} className="mt-3 border border-blue-300/35 bg-blue-400/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-200 transition hover:border-blue-200 hover:bg-blue-400/20 hover:text-white">Ver video</button> : null}
   </article>)}</div>
@@ -500,7 +507,7 @@ export default function Results() {
             <div className="shrink-0 sm:text-right">
               <p className={`font-racing text-lg font-bold uppercase tabular-nums sm:text-xl ${appealStatus.expired ? 'text-red-300' : 'text-white'}`}>{appealStatus.countdown}</p>
             </div>
-          </div><div className="w-full border-b border-orange-400/35 bg-orange-500/10 px-5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-300 sm:px-6 sm:text-xs">Los resultados aún no están confirmados; se están evaluando revisiones y apelaciones.</div></> : null}
+          </div><div className="w-full border-b border-orange-400/35 bg-orange-500/10 px-5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-300 sm:px-6 sm:text-xs">Resultados sujetos a evaluación de apelaciones y revisiones</div></> : null}
           {resultDetailsVisible ? <>
             <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
             <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
@@ -509,7 +516,6 @@ export default function Results() {
               <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
               <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
             </div>
-            {sprintAppeals.length || finalAppeals.length ? <section className="border-t border-blue-400/25 bg-blue-400/[0.035] p-4 sm:p-5"><header className="mb-4"><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-blue-300">Revisión deportiva</p><h3 className="font-racing text-xl font-bold uppercase text-white sm:text-2xl">Apelaciones de la fecha</h3></header><div className="grid gap-3 md:grid-cols-2">{sprintAppeals.length ? <AppealColumn title="Sprint" items={sprintAppeals} onOpenVideo={openAppealVideo}/> : null}{finalAppeals.length ? <AppealColumn title="Final" items={finalAppeals} onOpenVideo={openAppealVideo}/> : null}</div></section> : null}
           </> : <div className="flex min-h-64 flex-col items-center justify-center border-t border-[#3030a1]/60 bg-[linear-gradient(180deg,rgba(48,48,161,0.24),rgba(10,10,35,0.3))] px-6 py-10 text-center">
             <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
               <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-r-[#3030a1] border-t-[#8585ff] shadow-[0_0_26px_rgba(48,48,161,0.48)]" />
@@ -518,6 +524,7 @@ export default function Results() {
             </div>
             <p className="mt-6 font-racing text-xl font-bold uppercase tracking-[0.24em] text-[#9898ff] drop-shadow-[0_0_12px_rgba(48,48,161,0.65)] sm:text-2xl">Resultados en proceso</p>
           </div>}
+          {sprintAppeals.length || finalAppeals.length ? <section className="border-t border-blue-400/25 bg-blue-400/[0.035] p-4 sm:p-5"><header className="mb-4"><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-blue-300">Revisión deportiva</p><h3 className="font-racing text-xl font-bold uppercase text-white sm:text-2xl">Apelaciones de la fecha</h3></header><div className="grid gap-3 md:grid-cols-2">{sprintAppeals.length ? <AppealColumn title="Sprint" items={sprintAppeals} onOpenVideo={openAppealVideo}/> : null}{finalAppeals.length ? <AppealColumn title="Final" items={finalAppeals} onOpenVideo={openAppealVideo}/> : null}</div></section> : null}
         </section> : null}
 
         <section className="overflow-hidden rounded-lg border border-racing-border border-t-2 border-t-yellow-300/40 bg-racing-card">
@@ -615,7 +622,7 @@ export default function Results() {
       {activeAppealVideo ? <div className="fixed inset-0 z-[80]" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setActiveAppealVideo(null); }}>
         <section role="dialog" aria-modal="false" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`} style={{ left: activeAppealVideo.left, width: activeAppealVideo.width, ...(activeAppealVideo.placement === 'below' ? { top: activeAppealVideo.top } : { bottom: activeAppealVideo.bottom }) }} className="fixed max-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border border-blue-300/35 bg-[#111827] shadow-[0_24px_80px_rgba(0,0,0,0.75)]">
           <header className="flex items-center justify-between gap-3 border-b border-blue-300/20 bg-blue-400/[0.08] px-4 py-3">
-            <span className="inline-flex min-w-0 items-center gap-2"><img src="/corredor.png" alt="" className="h-6 w-6 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{activeAppealVideo.piloto}</strong></span>
+            <span className="inline-flex min-w-0 items-center gap-2"><img src="/corredor.png" alt="" className="h-6 w-6 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{activeAppealVideo.piloto}</strong></span><AppealStatusBadge status={activeAppealVideo.estado}/>
             <button type="button" onClick={() => setActiveAppealVideo(null)} aria-label="Cerrar video" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-xl leading-none text-gray-300 transition hover:border-white/35 hover:text-white">×</button>
           </header>
           <div className="overflow-y-auto p-3 sm:p-4"><p className="mb-3 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{activeAppealVideo.motivo}</span></p><video src={activeAppealVideo.video} controls autoPlay preload="metadata" className="max-h-[42vh] w-full rounded-lg bg-black" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`}>Tu navegador no puede reproducir este video.</video></div>

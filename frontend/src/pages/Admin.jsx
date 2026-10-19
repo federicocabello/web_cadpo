@@ -33,6 +33,7 @@ import {
   RectangleStackIcon,
   ChartBarIcon,
   CheckCircleIcon,
+  XCircleIcon,
   VideoCameraIcon,
   ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
@@ -909,6 +910,7 @@ export default function Admin() {
   const [resultAppealUploadProgress, setResultAppealUploadProgress] = useState(0);
   const [editingResultAppealId, setEditingResultAppealId] = useState(null);
   const [savingResultAppeal, setSavingResultAppeal] = useState(false);
+  const [savingResultAppealStatusId, setSavingResultAppealStatusId] = useState(null);
   const [resultAppealMessage, setResultAppealMessage] = useState('');
   const [resultMultiplierMessage, setResultMultiplierMessage] = useState('');
   const [resultImportSession, setResultImportSession] = useState('sprint');
@@ -2721,7 +2723,7 @@ export default function Admin() {
     };
   };
 
-  const applyAssettoSessionToGrid = (sessionKey, orderedRows, { preservePoints = false } = {}) => {
+  const applyAssettoSessionToGrid = (sessionKey, orderedRows, { preserveScoringByRow = false } = {}) => {
     if (!resultRound) return;
     const session = assettoSessionOptions.find(option => option.key === sessionKey);
     if (!session) return;
@@ -2823,11 +2825,17 @@ export default function Admin() {
     const scoringConfig = resultScoringByPosition[session.positionField];
     const pointsField = scoringConfig?.pointsField;
     const ballastField = scoringConfig?.ballastField;
+    const scoringByRow = preserveScoringByRow
+      ? currentRoundRows.map(result => ({
+          points: pointsField ? result[pointsField] ?? '' : '',
+          ballast: ballastField ? result[ballastField] ?? '' : '',
+        }))
+      : [];
 
     canonicalByDriver.forEach(canonical => {
       const clearPatch = { ...sessionConfig.clear };
-      if (preservePoints && pointsField) delete clearPatch[pointsField];
-      if (preservePoints && ballastField) delete clearPatch[ballastField];
+      if (preserveScoringByRow && pointsField) delete clearPatch[pointsField];
+      if (preserveScoringByRow && ballastField) delete clearPatch[ballastField];
       Object.assign(canonical, clearPatch);
       canonical.sanciones_detalle = {
         ...parseResultSanctionDetails(canonical.sanciones_detalle),
@@ -2841,7 +2849,7 @@ export default function Admin() {
       const canonical = ensureCanonicalResult(entry.driverName, index);
       if (!canonical) return;
       const sanction = aggregateAssettoSanctions(entry.sanction || emptyAssettoSanction());
-      Object.assign(canonical, preservePoints ? {} : getScoringPatch(session.positionField, entry.positionLabel), {
+      Object.assign(canonical, preserveScoringByRow ? {} : getScoringPatch(session.positionField, entry.positionLabel), {
         [session.positionField]: entry.positionLabel,
         [session.sanctionField]: String(entry.sanctionLabel || '').slice(0, 500),
       });
@@ -2863,7 +2871,7 @@ export default function Admin() {
     const missingPosition = sessionKey.startsWith('qualy') ? 'S/TIEMPO' : 'NO LARGÓ';
     canonicalByDriver.forEach((canonical, driverKey) => {
       if (importedDriverKeys.has(driverKey)) return;
-      Object.assign(canonical, preservePoints ? {} : getScoringPatch(session.positionField, missingPosition), {
+      Object.assign(canonical, preserveScoringByRow ? {} : getScoringPatch(session.positionField, missingPosition), {
         [session.positionField]: missingPosition,
         [session.sanctionField]: '',
       });
@@ -2871,14 +2879,22 @@ export default function Admin() {
 
     const canonicalRoundRows = [...canonicalByDriver.values()];
     const editableRoundRows = buildEditableResultRows(canonicalRoundRows);
+    if (preserveScoringByRow) {
+      editableRoundRows.forEach((result, index) => {
+        const rowScoring = scoringByRow[index];
+        if (!rowScoring) return;
+        if (pointsField) result[pointsField] = rowScoring.points;
+        if (ballastField) result[ballastField] = rowScoring.ballast;
+      });
+    }
     const nextResults = [...outsideRound, ...editableRoundRows];
     const dirty = Object.fromEntries(editableRoundRows.map(result => [result._key || `id-${result.id}`, true]));
     const modifiedCells = {};
     editableRoundRows.forEach(result => {
       const resultKey = result._key || `id-${result.id}`;
       modifiedCells[`${resultKey}:${session.positionField}`] = true;
-      if (!preservePoints && pointsField) modifiedCells[`${resultKey}:${pointsField}`] = true;
-      if (!preservePoints && ballastField) modifiedCells[`${resultKey}:${ballastField}`] = true;
+      if (!preserveScoringByRow && pointsField) modifiedCells[`${resultKey}:${pointsField}`] = true;
+      if (!preserveScoringByRow && ballastField) modifiedCells[`${resultKey}:${ballastField}`] = true;
     });
     setResults(nextResults);
     setDirtyResults(current => ({ ...current, ...dirty }));
@@ -2908,7 +2924,11 @@ export default function Admin() {
           orderedRows,
         },
       }));
-      applyAssettoSessionToGrid(resultImportSession, orderedRows);
+      const importedSession = assettoSessionOptions.find(option => option.key === resultImportSession);
+      const preserveScoringByRow = Boolean(importedSession && resultRoundResults.some(result => (
+        String(result[importedSession.positionField] ?? '').trim()
+      )));
+      applyAssettoSessionToGrid(resultImportSession, orderedRows, { preserveScoringByRow });
       const matched = orderedRows.filter(entry => findRegisteredResultDriver(entry.driverName)).length;
       setResultMessage(`${file.name}: ${orderedRows.length} pilotos reemplazaron por completo la tanda ${assettoSessionOptions.find(option => option.key === resultImportSession)?.label}. Las demás tandas no fueron modificadas. ${matched} vinculados con inscriptos; ${orderedRows.length - matched} pendientes de revisar.`);
     } catch (error) {
@@ -3075,7 +3095,7 @@ export default function Admin() {
       ...current,
       [sessionKey]: { ...imported, sanctions, orderedRows },
     }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows);
+    applyAssettoSessionToGrid(sessionKey, orderedRows, { preserveScoringByRow: true });
     setAssettoSanctionDraft(emptyAssettoSanction());
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
@@ -3083,7 +3103,7 @@ export default function Admin() {
     const reachedWarningText = warningProjection.reachedLevels.length
       ? ` Llegó a ${warningProjection.projectedTotal} AP: ${warningProjection.reachedLevels.map(level => `${level.cantidad} AP · ${level.sancion}`).join(' / ')}.`
       : normalizedDraft.warnings > 0 ? ` Acumula ${warningProjection.projectedTotal}${warningProjection.limit ? ` de ${warningProjection.limit}` : ''} AP.` : '';
-    setResultMessage(`Sanción aplicada; posiciones y puntajes recalculados.${reachedWarningText} Podés continuar con otro piloto; al terminar, cerrá el modal y presioná Guardar.`);
+    setResultMessage(`Sanción aplicada; se recalcularon las posiciones conservando los puntos y lastres configurados por fila.${reachedWarningText} Podés continuar con otro piloto; al terminar, cerrá el modal y presioná Guardar.`);
   };
 
   const removeAssettoSanction = (entryKey, sanctionIndex) => {
@@ -3117,11 +3137,11 @@ export default function Admin() {
 
     const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows);
+    applyAssettoSessionToGrid(sessionKey, orderedRows, { preserveScoringByRow: true });
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
     setAssettoRepositionTarget('');
-    setResultMessage('Sanción eliminada; posiciones y puntajes recalculados.');
+    setResultMessage('Sanción eliminada; se recalcularon las posiciones conservando los puntos y lastres configurados por fila.');
   };
 
   const updateAssettoSanctionDetailsWithoutReordering = (sessionKey, entryKey, imported, items) => {
@@ -3243,13 +3263,13 @@ export default function Admin() {
 
     const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
-    applyAssettoSessionToGrid(sessionKey, orderedRows);
+    applyAssettoSessionToGrid(sessionKey, orderedRows, { preserveScoringByRow: true });
     setAssettoSanctionEdit(null);
     setAssettoSanctionMessage('');
     const reachedWarningText = warningProjection.reachedLevels.length
       ? ` Llegó a ${warningProjection.projectedTotal} AP: ${warningProjection.reachedLevels.map(level => `${level.cantidad} AP · ${level.sancion}`).join(' / ')}.`
       : normalizedEdit.warnings > 0 ? ` Acumula ${warningProjection.projectedTotal}${warningProjection.limit ? ` de ${warningProjection.limit}` : ''} AP.` : '';
-    setResultMessage(`Sanción actualizada; posiciones y puntajes recalculados.${reachedWarningText} Presioná Guardar para confirmar.`);
+    setResultMessage(`Sanción actualizada; se recalcularon las posiciones conservando los puntos y lastres configurados por fila.${reachedWarningText} Presioná Guardar para confirmar.`);
   };
 
   const addChampionshipWarningLevel = () => {
@@ -3987,6 +4007,24 @@ export default function Admin() {
       setResultAppealMessage(response.data.message || 'Apelación eliminada.');
     } catch (error) {
       setResultAppealMessage(error.response?.data?.error || 'No se pudo eliminar la apelación.');
+    }
+  };
+
+  const updateResultAppealStatus = async (appeal, requestedStatus) => {
+    if (savingResultAppealStatusId) return;
+    const currentStatus = String(appeal.estado || 'pendiente').toLowerCase();
+    const nextStatus = currentStatus === requestedStatus ? 'pendiente' : requestedStatus;
+    setSavingResultAppealStatusId(Number(appeal.id));
+    setResultAppealMessage('');
+    try {
+      const response = await resultsApi.updateAppealStatus(appeal.id, nextStatus);
+      const saved = response.data.data;
+      setResultAppeals(current => current.map(item => Number(item.id) === Number(saved.id) ? saved : item));
+      setResultAppealMessage(response.data.message || 'Estado de la apelación actualizado.');
+    } catch (error) {
+      setResultAppealMessage(error.response?.data?.error || 'No se pudo cambiar el estado de la apelación.');
+    } finally {
+      setSavingResultAppealStatusId(null);
     }
   };
 
@@ -6445,7 +6483,7 @@ export default function Admin() {
                   {savingResultAppeal && resultAppealVideo ? <div className="mt-2"><div className="mb-1 flex justify-between text-[9px] font-bold uppercase text-blue-200"><span>Subiendo video</span><span>{resultAppealUploadProgress}%</span></div><div className="h-1.5 overflow-hidden bg-black"><div className="h-full bg-blue-500 transition-[width]" style={{ width: `${resultAppealUploadProgress}%` }}/></div></div> : null}
                 </form>
                 {resultAppealMessage ? <p className="mt-2 text-[10px] font-semibold text-blue-200">{resultAppealMessage}</p> : null}
-                {resultAppeals.length ? <div className="mt-2 space-y-1 border-t border-blue-400/15 pt-2">{resultAppeals.map(appeal => <article key={appeal.id} className="grid gap-2 border border-racing-border bg-black/25 p-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="border border-blue-400/30 bg-blue-400/10 px-1.5 py-0.5 text-[8px] font-bold uppercase text-blue-200">{assettoSessionOptions.find(option => option.key === appeal.tanda)?.label || appeal.tanda}</span><strong className="text-xs text-white">{appeal.piloto}</strong>{appeal.video ? <a href={appeal.video} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[8px] font-bold uppercase text-cyan-300 hover:text-white"><PlayCircleIcon className="h-3.5 w-3.5"/>Ver video</a> : null}</div><p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-gray-400">{appeal.motivo}</p></div><div className="flex gap-1"><button type="button" onClick={() => editResultAppeal(appeal)} title="Modificar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-blue-400/30 text-blue-200 transition hover:bg-blue-500 hover:text-white" aria-label={`Editar apelación de ${appeal.piloto}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeResultAppeal(appeal)} title="Eliminar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-red-400/30 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar apelación de ${appeal.piloto}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></article>)}</div> : <p className="mt-2 border border-dashed border-racing-border px-3 py-2 text-center text-[10px] text-gray-600">Todavía no se cargaron apelaciones.</p>}
+                {resultAppeals.length ? <div className="mt-2 space-y-1 border-t border-blue-400/15 pt-2">{resultAppeals.map(appeal => { const appealStatus = String(appeal.estado || 'pendiente').toLowerCase(); const savingStatus = Number(savingResultAppealStatusId) === Number(appeal.id); return <article key={appeal.id} className="grid gap-2 border border-racing-border bg-black/25 p-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="border border-blue-400/30 bg-blue-400/10 px-1.5 py-0.5 text-[8px] font-bold uppercase text-blue-200">{assettoSessionOptions.find(option => option.key === appeal.tanda)?.label || appeal.tanda}</span><strong className="text-xs text-white">{appeal.piloto}</strong><span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-bold uppercase ${appealStatus === 'aprobada' ? 'bg-emerald-500/15 text-emerald-300' : appealStatus === 'denegada' ? 'bg-red-500/15 text-red-300' : 'bg-amber-400/10 text-amber-200'}`}>{appealStatus === 'aprobada' ? <CheckCircleIcon className="h-3 w-3"/> : appealStatus === 'denegada' ? <XCircleIcon className="h-3 w-3"/> : null}{appealStatus}</span>{appeal.video ? <a href={appeal.video} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[8px] font-bold uppercase text-cyan-300 hover:text-white"><PlayCircleIcon className="h-3.5 w-3.5"/>Ver video</a> : null}</div><p className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-gray-400">{appeal.motivo}</p></div><div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => updateResultAppealStatus(appeal, 'aprobada')} disabled={savingResultAppealStatusId !== null} title={appealStatus === 'aprobada' ? 'Volver a pendiente' : 'Aprobar apelación'} className={`inline-flex h-7 items-center justify-center gap-1 border px-2 text-[8px] font-bold uppercase transition disabled:opacity-40 ${appealStatus === 'aprobada' ? 'border-emerald-400 bg-emerald-500 text-black' : 'border-emerald-400/35 text-emerald-300 hover:bg-emerald-500 hover:text-black'}`}><CheckCircleIcon className={`h-3.5 w-3.5 ${savingStatus ? 'animate-pulse' : ''}`}/>Aprobada</button><button type="button" onClick={() => updateResultAppealStatus(appeal, 'denegada')} disabled={savingResultAppealStatusId !== null} title={appealStatus === 'denegada' ? 'Volver a pendiente' : 'Denegar apelación'} className={`inline-flex h-7 items-center justify-center gap-1 border px-2 text-[8px] font-bold uppercase transition disabled:opacity-40 ${appealStatus === 'denegada' ? 'border-red-400 bg-red-600 text-white' : 'border-red-400/35 text-red-300 hover:bg-red-600 hover:text-white'}`}><XCircleIcon className={`h-3.5 w-3.5 ${savingStatus ? 'animate-pulse' : ''}`}/>Denegada</button><button type="button" onClick={() => editResultAppeal(appeal)} title="Modificar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-blue-400/30 text-blue-200 transition hover:bg-blue-500 hover:text-white" aria-label={`Editar apelación de ${appeal.piloto}`}><PencilSquareIcon className="h-3.5 w-3.5"/></button><button type="button" onClick={() => removeResultAppeal(appeal)} title="Eliminar apelación" className="inline-flex h-7 w-7 items-center justify-center border border-red-400/30 text-red-300 transition hover:bg-red-600 hover:text-white" aria-label={`Eliminar apelación de ${appeal.piloto}`}><TrashIcon className="h-3.5 w-3.5"/></button></div></article>; })}</div> : <p className="mt-2 border border-dashed border-racing-border px-3 py-2 text-center text-[10px] text-gray-600">Todavía no se cargaron apelaciones.</p>}
               </section>
               <section className="mb-3 border border-racing-border bg-racing-dark/70 p-2.5">
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">

@@ -7,6 +7,7 @@ const ensureChampionshipExclusions = require('../utils/ensureChampionshipExclusi
 
 let appealsSchemaPromise;
 const APPEAL_SESSIONS = new Set(['qualy_sprint', 'sprint', 'qualy_final', 'final']);
+const APPEAL_STATUSES = new Set(['pendiente', 'aprobada', 'denegada']);
 
 const ensureAppealsSchema = () => {
   if (!appealsSchemaPromise) {
@@ -17,6 +18,7 @@ const ensureAppealsSchema = () => {
       tanda VARCHAR(30) NOT NULL,
       idpiloto INT NOT NULL,
       motivo TEXT NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
       video VARCHAR(500) NULL,
       video_nombre VARCHAR(255) NULL,
       creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -24,12 +26,22 @@ const ensureAppealsSchema = () => {
       PRIMARY KEY (id),
       KEY idx_resultado_apelaciones_fecha (idcampeonato, ronda, tanda),
       KEY idx_resultado_apelaciones_piloto (idpiloto)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`).catch(error => {
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`).then(async () => {
+      const [columns] = await pool.query("SHOW COLUMNS FROM resultado_apelaciones LIKE 'estado'");
+      if (!columns.length) {
+        await pool.query("ALTER TABLE resultado_apelaciones ADD COLUMN estado VARCHAR(20) NOT NULL DEFAULT 'pendiente' AFTER motivo");
+      }
+    }).catch(error => {
       appealsSchemaPromise = null;
       throw error;
     });
   }
   return appealsSchemaPromise;
+};
+
+const normalizeAppealStatus = value => {
+  const status = String(value || 'pendiente').trim().toLowerCase();
+  return APPEAL_STATUSES.has(status) ? status : null;
 };
 
 const appealVideoPath = file => file ? `/media/resultados/apelaciones/${file.filename}` : null;
@@ -329,7 +341,7 @@ const getAppeals = async (req, res, next) => {
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const [rows] = await pool.query(
-      `SELECT a.id, a.idcampeonato, a.ronda, a.tanda, a.idpiloto, a.motivo,
+      `SELECT a.id, a.idcampeonato, a.ronda, a.tanda, a.idpiloto, a.motivo, a.estado,
               a.video, a.video_nombre, a.creado, a.actualizado,
               p.nombre AS piloto
        FROM resultado_apelaciones a
@@ -393,14 +405,16 @@ const updateAppeal = async (req, res, next) => {
     const driverId = Number(req.body.idpiloto || current.idpiloto);
     const session = String(req.body.tanda || current.tanda).trim().toLowerCase();
     const reason = String(req.body.motivo ?? current.motivo).trim().slice(0, 10000);
+    const status = normalizeAppealStatus(req.body.estado ?? current.estado);
+    if (!status) return res.status(400).json({ error: 'Estado de apelación inválido' });
     await validateAppealData({ championshipId, round, driverId, session, reason });
     const video = req.file ? appealVideoPath(req.file) : current.video;
     const videoName = req.file ? path.basename(String(req.file.originalname || '')).slice(0, 255) : current.video_nombre;
     await pool.query(
       `UPDATE resultado_apelaciones
-       SET idcampeonato = ?, ronda = ?, tanda = ?, idpiloto = ?, motivo = ?, video = ?, video_nombre = ?
+       SET idcampeonato = ?, ronda = ?, tanda = ?, idpiloto = ?, motivo = ?, estado = ?, video = ?, video_nombre = ?
        WHERE id = ?`,
-      [championshipId, round, session, driverId, reason, video, videoName, appealId],
+      [championshipId, round, session, driverId, reason, status, video, videoName, appealId],
     );
     saved = true;
     if (req.file && current.video && current.video !== video) {
@@ -415,6 +429,39 @@ const updateAppeal = async (req, res, next) => {
     res.json({ data: updated, message: 'Apelación actualizada' });
   } catch (error) {
     if (req.file && !saved) await removeAppealVideo(appealVideoPath(req.file)).catch(() => {});
+    next(error);
+  }
+};
+
+const updateAppealStatus = async (req, res, next) => {
+  try {
+    await ensureAppealsSchema();
+    const appealId = Number(req.params.appealId);
+    const status = normalizeAppealStatus(req.body.estado);
+    if (!Number.isInteger(appealId) || appealId < 1) return res.status(400).json({ error: 'Apelación inválida' });
+    if (!status) return res.status(400).json({ error: 'Seleccioná un estado válido para la apelación' });
+
+    const [result] = await pool.query(
+      'UPDATE resultado_apelaciones SET estado = ? WHERE id = ?',
+      [status, appealId],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Apelación no encontrada' });
+
+    const [[updated]] = await pool.query(
+      `SELECT a.*, p.nombre AS piloto
+       FROM resultado_apelaciones a INNER JOIN pilotos p ON p.id = a.idpiloto
+       WHERE a.id = ?`,
+      [appealId],
+    );
+    res.json({
+      data: updated,
+      message: status === 'aprobada'
+        ? 'Apelación aprobada'
+        : status === 'denegada'
+          ? 'Apelación denegada'
+          : 'Apelación marcada como pendiente',
+    });
+  } catch (error) {
     next(error);
   }
 };
@@ -444,4 +491,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, saveBulk, getAppeals, createAppeal, updateAppeal, removeAppeal, remove };
+module.exports = { getAll, getById, create, update, saveBulk, getAppeals, createAppeal, updateAppeal, updateAppealStatus, removeAppeal, remove };

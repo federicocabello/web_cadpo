@@ -34,11 +34,11 @@ El panel de resultados permite importar tandas de Assetto Corsa, trabajar sobre 
 
 - clasificación Sprint, Sprint, clasificación Final y Final administradas por separado;
 - sanciones múltiples por piloto, recargos de tiempo o posiciones, DQ, apercibimientos y lastre;
-- recálculo de posiciones y puntajes al aplicar sanciones deportivas;
-- escalas configurables por campeonato para puntos y lastres de Sprint y Final;
+- recálculo de posiciones al aplicar sanciones deportivas, conservando por fila los puntos y lastres que ya fueron ajustados manualmente;
+- escalas configurables por campeonato para aplicar automáticamente los puntos y lastres de Sprint y Final durante la carga inicial;
 - lastre debut, lastre por fecha, lastre por sanciones y total proyectado antes de guardar;
 - resultados visibles u ocultos por fecha, confirmación definitiva y plazo configurable para apelaciones;
-- apelaciones por tanda y piloto, con motivo, video opcional y publicación dentro del resultado de la fecha;
+  - apelaciones por tanda y piloto, con motivo, video opcional, gestión de estado pendiente/aprobada/denegada y publicación diferenciada dentro del resultado de la fecha;
 - exclusión de pilotos por campeonato sin alterar sus resultados históricos, con puntaje general anulado y omisión en las tablas de lastre;
 - sanciones de clasificación pendientes por piloto y campeonato, sin asignaciones duplicadas y con una nota opcional por piloto visible en Tiempos en vivo;
 - tabla general del campeonato, estadísticas e imágenes exportables de posiciones.
