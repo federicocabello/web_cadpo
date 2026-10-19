@@ -389,7 +389,7 @@ const getLatestActiveStandings = async (req, res, next) => {
 
 const getWarnings = async (req, res, next) => {
   try {
-    await Promise.all([ensureResultAchievements(), ensureChampionshipWarnings()]);
+    await Promise.all([ensureResultAchievements(), ensureChampionshipWarnings(), ensureChampionshipExclusions()]);
     const championshipId = Number(req.params.id);
     if (!Number.isInteger(championshipId) || championshipId < 1) {
       return res.status(400).json({ error: 'Campeonato inválido' });
@@ -408,6 +408,12 @@ const getWarnings = async (req, res, next) => {
        FROM resultados r
        JOIN pilotos p ON p.id = r.idpiloto
        WHERE r.idcampeonato = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM campeonato_pilotos_excluidos exclusion
+           WHERE exclusion.idcampeonato = r.idcampeonato
+             AND exclusion.idpiloto = r.idpiloto
+         )
        GROUP BY p.id, p.nombre
        HAVING apercibimientos > 0
        ORDER BY apercibimientos DESC, p.nombre ASC`,

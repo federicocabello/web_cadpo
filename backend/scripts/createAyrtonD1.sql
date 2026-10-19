@@ -15,6 +15,20 @@ CREATE INDEX IF NOT EXISTS idx_ayrton_messages_created_at
 CREATE INDEX IF NOT EXISTS idx_ayrton_messages_session_id
   ON ayrton_messages (session_id);
 
+CREATE TABLE IF NOT EXISTS ayrton_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  neurons REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ayrton_usage_created_at
+  ON ayrton_usage (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS ayrton_knowledge (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,

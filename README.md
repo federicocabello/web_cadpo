@@ -18,8 +18,13 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Notas de pista ordenables por circuito, con título e imágenes editables, reutilización selectiva entre variantes y visor emergente en el inicio.
 - Importador de escritorio para cargas masivas en MySQL.
 - Pantalla automática de mantenimiento cuando la API o la base de datos no están disponibles.
-- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre campeonatos actuales, anteriores y futuros, tablas completas, calendarios, resultados publicados, pilotos, CADPO CLUB, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
+- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre campeonatos actuales, anteriores y futuros, días y horarios de sus calendarios, tablas completas, resultados publicados, pilotos, CADPO CLUB, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
+- Ayrton prioriza siempre los campeonatos en curso y las inscripciones abiertas, y distingue resultados en proceso, provisorios o definitivos junto con sus plazos y apelaciones visibles.
+- Conocimiento técnico curado para que Ayrton responda consultas de puesta a punto en Assetto Corsa sobre neumáticos, alineación, suspensión, amortiguadores, frenos, diferencial, aerodinámica y relaciones de caja.
+- Referencia 2026 de categorías argentinas para Ayrton, con siglas, modelos, mecánica, tracción y comportamiento, diferenciando el parque real de los mods históricos o balanceados por CADPO.
+- Catálogo contextual de autódromos y circuitos zonales argentinos para Ayrton, incluidos trazados chicos de asfalto y tierra, variantes, estado histórico/actual, usos pasados y futuros confirmados en calendarios de CADPO, más el calendario oficial vigente de Fórmula 1 2026.
 - Historial de consultas y respuestas de Ayrton en Cloudflare D1, con aviso por correo mediante el SMTP del sitio.
+- Panel mensual de consumo de Ayrton en Administración, con el porcentaje utilizado cada día, solicitudes, tokens de entrada/salida y neuronas calculadas para el modelo activo; al alcanzar el tope local, el chat se oculta por completo y vuelve a habilitarse automáticamente con el reinicio de Cloudflare a las 00:00 UTC.
 - Contexto general administrable en Cloudflare D1: desde **Administración > Ayrton** se mantiene un único texto oficial siempre disponible. El historial se conserva solo como registro y nunca se incorpora automáticamente a las respuestas.
 
 ### Gestión deportiva y resultados
@@ -131,6 +136,8 @@ Variables adicionales admitidas:
 | `CLOUDFLARE_D1_API_TOKEN` | Token con permiso `D1 Edit`; puede omitirse si el token de IA también tiene ese permiso | `CLOUDFLARE_AI_API_TOKEN` |
 | `AYRTON_IP_SECRET` | Secreto utilizado para guardar un hash irreversible de la IP | `POLL_IP_SECRET` |
 | `AYRTON_EMAIL_NOTIFICATIONS` | Envía un correo por cada respuesta de Ayrton | `true` |
+| `AYRTON_ERROR_EMAIL_NOTIFICATIONS` | Envía un correo con la consulta y el error cuando Ayrton no puede responder | `true` |
+| `AYRTON_DAILY_NEURON_LIMIT` | Tope diario local de Ayrton, reiniciado a las 00:00 UTC | `10000` |
 | `AYRTON_NOTIFY_EMAIL` | Destinatario de las notificaciones de Ayrton | `LIVE_MONITOR_EMAIL` |
 
 No subas archivos `.env` ni credenciales al repositorio.
@@ -301,8 +308,13 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Sortable per-circuit track notes with editable titles and images, selective reuse across variants, and a modal viewer on the home page.
 - Desktop importer for bulk MySQL operations.
 - Automatic maintenance screen when the API or database is unavailable.
-- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, full standings, calendars, published results, drivers, CADPO CLUB, replays, templates and projects, plus on-demand access to live APIs.
+- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, calendar weekdays and times, full standings, published results, drivers, CADPO CLUB, replays, templates and projects, plus on-demand access to live APIs.
+- Ayrton always prioritizes championships in progress and open registrations, distinguishing results in progress, provisional or final together with visible appeal windows and appeals.
+- Curated technical knowledge enabling Ayrton to answer Assetto Corsa setup questions about tyres, alignment, suspension, dampers, brakes, differential, aerodynamics, and gearing.
+- A 2026 Argentine racing-category reference for Ayrton covering acronyms, models, mechanics, drivetrain, and handling while keeping real-world grids separate from CADPO's historical or balanced mods.
+- Contextual Argentine circuit knowledge for Ayrton, including smaller asphalt and dirt venues, layouts, historical/current status, confirmed past and future CADPO usage, and the current official 2026 Formula 1 calendar.
 - Ayrton question and answer history in Cloudflare D1, with email notifications through the website SMTP service.
+- Monthly Ayrton usage panel in Administration, showing daily percentage, requests, Cloudflare-reported input/output tokens, and calculated neurons for the active model; upon reaching the local cap, the chat is fully hidden and automatically returns with Cloudflare's 00:00 UTC reset.
 - General context stored in Cloudflare D1: **Administration > Ayrton** provides one always-available official text. Conversation history remains audit-only and is never incorporated into answers automatically.
 
 ### Sporting management and results
@@ -412,6 +424,8 @@ Additional supported variables:
 | `CLOUDFLARE_D1_API_TOKEN` | Token with `D1 Edit`; optional when the AI token already has this permission | `CLOUDFLARE_AI_API_TOKEN` |
 | `AYRTON_IP_SECRET` | Secret used to create an irreversible IP hash | `POLL_IP_SECRET` |
 | `AYRTON_EMAIL_NOTIFICATIONS` | Sends an email for each Ayrton response | `true` |
+| `AYRTON_ERROR_EMAIL_NOTIFICATIONS` | Emails the question and error when Ayrton cannot respond | `true` |
+| `AYRTON_DAILY_NEURON_LIMIT` | Ayrton local daily cap, reset at 00:00 UTC | `10000` |
 | `AYRTON_NOTIFY_EMAIL` | Ayrton notification recipient | `LIVE_MONITOR_EMAIL` |
 
 Never commit `.env` files or credentials.

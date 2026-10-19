@@ -27,6 +27,15 @@ const extractAnswer = payload => {
   throw error;
 };
 
+const extractUsage = payload => {
+  const response = payload?.result || payload;
+  const usage = response?.usage || payload?.usage || {};
+  const inputTokens = Math.max(0, Math.round(Number(usage.prompt_tokens || usage.input_tokens || 0)));
+  const outputTokens = Math.max(0, Math.round(Number(usage.completion_tokens || usage.output_tokens || 0)));
+  const totalTokens = Math.max(0, Math.round(Number(usage.total_tokens || (inputTokens + outputTokens))));
+  return { inputTokens, outputTokens, totalTokens };
+};
+
 const createChatCompletion = async messages => {
   const { accountId, apiToken, gatewayId, model } = getConfig();
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
@@ -66,7 +75,11 @@ const createChatCompletion = async messages => {
     throw error;
   }
 
-  return extractAnswer(payload);
+  return {
+    answer: extractAnswer(payload),
+    usage: extractUsage(payload),
+    model,
+  };
 };
 
 module.exports = { createChatCompletion };

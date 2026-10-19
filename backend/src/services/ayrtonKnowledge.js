@@ -47,6 +47,7 @@ const getQuestionIntents = question => {
     results: /\b(resultado|resultados|posiciones|clasificacion|tabla|tabla de puntos|puntos|puntaje|ganador|ganadores|lider|campeon|campeones)\b/.test(normalized),
     downloads: /\b(descarga|descargar|archivo|archivos|repeticion|repeticiones|replay|replays|plantilla|plantillas|template|templates)\b/.test(normalized),
     projects: /\b(proyecto|proyectos|desarrollo|desarrollando|proximamente)\b/.test(normalized),
+    circuits: /\b(autodromo|autodromos|circuito|circuitos|trazado|trazados|formula 1|formula uno|f1|gran premio)\b/.test(normalized),
   };
 };
 
@@ -143,6 +144,12 @@ const loadBaseKnowledge = async () => {
     `),
     pool.query(`
       SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especialidad,
+             CASE DAYOFWEEK(cal.fecha)
+               WHEN 1 THEN 'domingo' WHEN 2 THEN 'lunes' WHEN 3 THEN 'martes'
+               WHEN 4 THEN 'miércoles' WHEN 5 THEN 'jueves' WHEN 6 THEN 'viernes'
+               WHEN 7 THEN 'sábado'
+             END AS dia_semana,
+             TIME_FORMAT(cal.fecha, '%H:%i') AS hora_24h,
              cat.categoria, c.temporada, c.anio,
              ci.nombre AS circuito, ci.variante, ci.localidad, ci.provincia, ci.pais,
              CASE WHEN cal.fecha >= NOW() THEN 'próxima' ELSE 'disputada' END AS estado
@@ -166,8 +173,8 @@ const loadBaseKnowledge = async () => {
       JOIN campeonatos c ON c.id = cfg.idcampeonato
       JOIN categorias cat ON cat.id = c.idcategoria
       WHERE cfg.visible <> 0
-      ORDER BY cfg.fecha_apertura DESC
-      LIMIT 12
+      ORDER BY FIELD(estado, 'abierta', 'prÃ³xima', 'completa', 'cerrada'), cfg.fecha_apertura DESC
+      LIMIT 30
     `),
     pool.query(`
       SELECT (SELECT COUNT(*) FROM pilotos) AS pilotos,
@@ -223,10 +230,16 @@ const chooseRelevantChampionships = (question, championships) => {
     selected = candidates.filter(item => item.estado === 'en curso').sort(byNewest);
     if (!selected.length) selected = candidates.filter(item => item.estado === 'próximo').sort(byUpcoming);
     if (!selected.length) selected = candidates.filter(item => item.estado === 'finalizado').sort(byNewest);
-  } else selected = candidates.sort(byNewest);
+  } else if (requestedSeason || requestedYear) selected = candidates.sort(byNewest);
+  else {
+    selected = candidates.filter(item => item.estado === 'en curso').sort(byNewest);
+    if (!selected.length) selected = candidates.filter(item => item.estado === 'próximo').sort(byUpcoming);
+    if (!selected.length) selected = candidates.filter(item => item.estado === 'finalizado').sort(byNewest);
+  }
 
   const broadTemporalSearch = wantsPlural && (wantsPast || wantsFuture || wantsCurrent || exactCategoryIds.size > 0 || requestedSeason || requestedYear);
-  if (selected.length) return selected.slice(0, broadTemporalSearch ? 8 : 1);
+  const genericCurrentSearch = !exactCategoryIds.size && !requestedSeason && !requestedYear && !wantsPast && !wantsFuture;
+  if (selected.length) return selected.slice(0, broadTemporalSearch ? 8 : genericCurrentSearch ? 6 : 1);
   if (wantsPast || wantsFuture || wantsCurrent || exactCategoryIds.size || requestedSeason || requestedYear) return [];
   return championships.filter(item => item.estado === 'en curso').sort(byNewest).slice(0, 3)
     .concat(championships.filter(item => item.estado === 'próximo').sort(byUpcoming).slice(0, 3))
@@ -290,6 +303,12 @@ const loadChampionshipCalendars = async championshipIds => {
   if (!championshipIds.length) return [];
   const [rows] = await pool.query(`
     SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial, cal.especialidad,
+           CASE DAYOFWEEK(cal.fecha)
+             WHEN 1 THEN 'domingo' WHEN 2 THEN 'lunes' WHEN 3 THEN 'martes'
+             WHEN 4 THEN 'miércoles' WHEN 5 THEN 'jueves' WHEN 6 THEN 'viernes'
+             WHEN 7 THEN 'sábado'
+           END AS dia_semana,
+           TIME_FORMAT(cal.fecha, '%H:%i') AS hora_24h,
            cal.resultados_visibles, cal.resultados_confirmados,
            ci.nombre AS circuito, ci.variante, ci.localidad, ci.provincia, ci.pais,
            CASE WHEN cal.fecha >= NOW() THEN 'próxima' ELSE 'disputada' END AS estado
@@ -371,6 +390,8 @@ const loadRecentResults = async championshipIds => {
     SELECT r.idcampeonato, r.ronda, r.fecha, p.nombre AS piloto,
            r.pos_sprint, r.pos_final, r.pts_sprint, r.pts_final,
            r.pole_sprint, r.ganador_sprint, r.pole_final, r.ganador_final,
+           r.desc_sancion_qualy_sprint, r.desc_sancion_sprint,
+           r.desc_sancion_qualy_final, r.desc_sancion_final, r.sanciones_detalle,
            ci.nombre AS circuito, ci.localidad
     FROM resultados r
     JOIN pilotos p ON p.id = r.idpiloto
@@ -390,6 +411,56 @@ const loadRecentResults = async championshipIds => {
     LIMIT 90
   `, [championshipIds]);
   return rows;
+};
+
+const loadChampionshipActivity = async championshipIds => {
+  if (!championshipIds.length) return { rounds: [], appeals: [] };
+  const [roundsResult, appealsResult] = await Promise.all([
+    pool.query(`
+      SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.resultados_visibles,
+             cal.resultados_confirmados, cal.limite_apelaciones,
+             cat.categoria, c.temporada, c.anio,
+             ci.nombre AS circuito, ci.variante, ci.localidad,
+             COUNT(DISTINCT r.id) AS pilotos_con_resultado,
+             (SELECT COUNT(*) FROM resultado_apelaciones ap
+              WHERE ap.idcampeonato = cal.idcampeonato AND ap.ronda = cal.ronda) AS cantidad_apelaciones,
+             CASE
+               WHEN COUNT(DISTINCT r.id) = 0 THEN 'sin_resultados_cargados'
+               WHEN cal.resultados_visibles = 0 THEN 'resultados_en_proceso'
+               WHEN cal.resultados_confirmados = 1 THEN 'resultados_confirmados_definitivos'
+               ELSE 'resultados_publicados_provisorios'
+             END AS estado_resultados,
+             CASE
+               WHEN cal.limite_apelaciones IS NULL THEN 'sin_plazo_configurado'
+               WHEN cal.limite_apelaciones > NOW() THEN 'apelaciones_abiertas'
+               ELSE 'plazo_de_apelaciones_finalizado'
+             END AS estado_apelaciones
+      FROM calendario cal
+      JOIN campeonatos c ON c.id = cal.idcampeonato
+      JOIN categorias cat ON cat.id = c.idcategoria
+      LEFT JOIN circuitos ci ON ci.id = cal.idcircuito
+      LEFT JOIN resultados r ON r.idcampeonato = cal.idcampeonato AND r.ronda = cal.ronda
+      WHERE cal.idcampeonato IN (?)
+      GROUP BY cal.idcampeonato, cal.ronda, cal.fecha, cal.resultados_visibles,
+               cal.resultados_confirmados, cal.limite_apelaciones,
+               cat.categoria, c.temporada, c.anio, ci.nombre, ci.variante, ci.localidad
+      ORDER BY cal.fecha DESC, cal.idcampeonato DESC, cal.ronda DESC
+    `, [championshipIds]),
+    pool.query(`
+      SELECT ap.id, ap.idcampeonato, ap.ronda, ap.tanda, ap.motivo,
+             ap.creado, ap.actualizado, p.nombre AS piloto,
+             CASE WHEN ap.video IS NULL OR ap.video = '' THEN 0 ELSE 1 END AS tiene_video
+      FROM resultado_apelaciones ap
+      JOIN pilotos p ON p.id = ap.idpiloto
+      JOIN calendario cal ON cal.idcampeonato = ap.idcampeonato AND cal.ronda = ap.ronda
+      WHERE ap.idcampeonato IN (?) AND cal.resultados_visibles = 1
+      ORDER BY ap.idcampeonato DESC, ap.ronda DESC,
+               FIELD(ap.tanda, 'qualy_sprint', 'sprint', 'qualy_final', 'final'),
+               ap.creado ASC, ap.id ASC
+      LIMIT 60
+    `, [championshipIds]),
+  ]);
+  return { rounds: roundsResult[0], appeals: appealsResult[0] };
 };
 
 const loadClubKnowledge = async includeLiveStatus => {
@@ -537,6 +608,32 @@ const loadProjectsKnowledge = async () => {
   }));
 };
 
+const loadCircuitsKnowledge = async () => {
+  const [rows] = await pool.query(`
+    SELECT ci.id, ci.nombre, ci.variante, ci.localidad, ci.provincia, ci.pais,
+           COUNT(cal.ronda) AS fechas_cadpo,
+           COUNT(DISTINCT cal.idcampeonato) AS campeonatos_cadpo,
+           SUM(CASE WHEN cal.fecha < NOW() THEN 1 ELSE 0 END) AS fechas_disputadas_cadpo,
+           SUM(CASE WHEN cal.fecha >= NOW() THEN 1 ELSE 0 END) AS fechas_programadas_cadpo,
+           MIN(cal.fecha) AS primera_fecha_cadpo,
+           MAX(cal.fecha) AS ultima_fecha_cadpo,
+           MIN(CASE WHEN cal.fecha >= NOW() THEN cal.fecha END) AS proxima_fecha_cadpo,
+           GROUP_CONCAT(
+             DISTINCT CONCAT(cat.categoria, ' • T', c.temporada, ' (', c.anio, ')')
+             ORDER BY c.anio DESC, c.temporada DESC
+             SEPARATOR ' | '
+           ) AS usos_cadpo
+    FROM circuitos ci
+    LEFT JOIN calendario cal ON cal.idcircuito = ci.id
+    LEFT JOIN campeonatos c ON c.id = cal.idcampeonato
+    LEFT JOIN categorias cat ON cat.id = c.idcategoria
+    GROUP BY ci.id, ci.nombre, ci.variante, ci.localidad, ci.provincia, ci.pais
+    ORDER BY fechas_cadpo DESC, ci.pais, ci.provincia, ci.localidad, ci.nombre, ci.variante
+    LIMIT 120
+  `);
+  return rows;
+};
+
 const safeOptionalKnowledge = async loader => {
   try {
     return { available: true, data: await loader() };
@@ -548,21 +645,34 @@ const safeOptionalKnowledge = async loader => {
 const buildKnowledge = async question => {
   const base = await loadBaseKnowledge();
   const relevantChampionships = chooseRelevantChampionships(question, base.championships);
-  const ids = [...new Set(relevantChampionships.map(item => Number(item.id)).filter(Boolean))];
-  const categoryIds = [...new Set(relevantChampionships.map(item => Number(item.idcategoria)).filter(Boolean))];
+  const inProgressChampionships = base.championships.filter(item => item.estado === 'en curso').slice(0, 8);
+  const openRegistrationForms = base.registrationForms.filter(item => item.estado === 'abierta');
+  const priorityIds = [...new Set([
+    ...inProgressChampionships.map(item => Number(item.id)),
+    ...openRegistrationForms.map(item => Number(item.idcampeonato)),
+  ].filter(Boolean))];
+  const contextualChampionships = [...new Map([
+    ...relevantChampionships,
+    ...inProgressChampionships,
+    ...base.championships.filter(item => priorityIds.includes(Number(item.id))),
+  ].map(item => [Number(item.id), item])).values()].slice(0, 12);
+  const ids = [...new Set(contextualChampionships.map(item => Number(item.id)).filter(Boolean))];
+  const categoryIds = [...new Set(contextualChampionships.map(item => Number(item.idcategoria)).filter(Boolean))];
   const intents = getQuestionIntents(question);
   const liveTimingRequested = wantsLiveTiming(question) && !intents.club;
-  const [standings, drivers, championshipCalendars, categoryCars, recentResults, liveTiming, club, resultsCatalog, downloads, projects] = await Promise.all([
+  const [standings, drivers, championshipCalendars, categoryCars, recentResults, championshipActivity, liveTiming, club, resultsCatalog, downloads, projects, circuits] = await Promise.all([
     loadStandings(ids),
     loadDriverKnowledge(question),
     loadChampionshipCalendars(ids),
     loadCategoryCars(categoryIds),
     loadRecentResults(ids),
+    safeOptionalKnowledge(() => loadChampionshipActivity(ids)),
     liveTimingRequested ? loadLiveTiming(relevantChampionships) : Promise.resolve([]),
     intents.club ? safeOptionalKnowledge(() => loadClubKnowledge(intents.clubLive)) : Promise.resolve(null),
     intents.results ? safeOptionalKnowledge(loadResultsCatalog) : Promise.resolve(null),
     intents.downloads ? safeOptionalKnowledge(loadDownloadCatalog) : Promise.resolve(null),
-    intents.projects ? safeOptionalKnowledge(loadProjectsKnowledge) : Promise.resolve(null),
+    (intents.projects || intents.circuits) ? safeOptionalKnowledge(loadProjectsKnowledge) : Promise.resolve(null),
+    intents.circuits ? safeOptionalKnowledge(loadCircuitsKnowledge) : Promise.resolve(null),
   ]);
   const driverHistory = await loadDriverHistory(drivers.map(driver => Number(driver.id)).filter(Boolean));
 
@@ -571,6 +681,10 @@ const buildKnowledge = async question => {
     timezone: 'America/Argentina/Buenos_Aires',
     summary: base.summary,
     relevantChampionships,
+    priorityChampionships: {
+      inProgress: inProgressChampionships,
+      openRegistrations: openRegistrationForms,
+    },
     championshipCalendars,
     categoryCars,
     nearbyEvents: base.events,
@@ -579,6 +693,7 @@ const buildKnowledge = async question => {
     matchingDrivers: drivers,
     matchingDriverHistory: driverHistory,
     latestResults: recentResults,
+    championshipActivity,
     liveTiming: {
       requested: liveTimingRequested,
       source: liveTimingRequested ? 'API en vivo de CADPO Server Manager' : null,
@@ -589,6 +704,7 @@ const buildKnowledge = async question => {
       results: resultsCatalog,
       downloads,
       projects,
+      circuits,
     },
     siteSections: {
       club: 'https://cadpotorneos.com/club',

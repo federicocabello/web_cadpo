@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { ayrtonApi } from '../services/api'
 
@@ -68,16 +68,47 @@ function AyrtonChat() {
   const sessionIdRef = useRef(null)
   const radioAudioRef = useRef(null)
   const closeTimerRef = useRef(null)
+  const availabilityTimerRef = useRef(null)
 
   if (!sessionIdRef.current) {
     sessionIdRef.current = crypto.randomUUID()
   }
 
-  useEffect(() => {
-    ayrtonApi.getStatus()
-      .then(response => setConfigured(Boolean(response.data?.data?.configured)))
-      .catch(() => setConfigured(false))
+  const refreshAvailability = useCallback(async () => {
+    clearTimeout(availabilityTimerRef.current)
+
+    try {
+      const response = await ayrtonApi.getStatus()
+      const statusData = response.data?.data || {}
+      const available = Boolean(statusData.configured && statusData.available !== false)
+      setConfigured(available)
+
+      if (!available) {
+        clearTimeout(closeTimerRef.current)
+        setOpen(false)
+        setClosing(false)
+        radioAudioRef.current?.pause()
+        if (radioAudioRef.current) radioAudioRef.current.currentTime = 0
+      }
+
+      const resetAt = statusData.limitReached && statusData.resetAt
+        ? new Date(statusData.resetAt).getTime()
+        : 0
+      const nextCheckMs = resetAt > Date.now()
+        ? Math.max(5_000, resetAt - Date.now() + 2_000)
+        : 5 * 60_000
+
+      availabilityTimerRef.current = setTimeout(refreshAvailability, nextCheckMs)
+    } catch {
+      setConfigured(false)
+      availabilityTimerRef.current = setTimeout(refreshAvailability, 60_000)
+    }
   }, [])
+
+  useEffect(() => {
+    refreshAvailability()
+    return () => clearTimeout(availabilityTimerRef.current)
+  }, [refreshAvailability])
 
   useEffect(() => () => clearTimeout(closeTimerRef.current), [])
 
@@ -139,7 +170,7 @@ function AyrtonChat() {
     if (!message || sending) return
 
     const userMessage = { role: 'user', content: message }
-    const history = messages.slice(-8)
+    const history = messages.slice(-10)
     setMessages(current => [...current, userMessage])
     setInput('')
     setSending(true)
@@ -156,6 +187,7 @@ function AyrtonChat() {
       }])
     } finally {
       setSending(false)
+      refreshAvailability()
     }
   }
 

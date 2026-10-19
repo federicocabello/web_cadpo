@@ -57,6 +57,7 @@ export const ayrtonApi = {
   updateAdminContext: content => api.put('/ayrton/admin/context', { content }),
   getAdminKnowledge: () => api.get('/ayrton/admin/knowledge'),
   getAdminMessages: (limit = 40) => api.get('/ayrton/admin/messages', { params: { limit } }),
+  getAdminUsage: () => api.get('/ayrton/admin/usage'),
   createKnowledge: data => api.post('/ayrton/admin/knowledge', data),
   updateKnowledge: (id, data) => api.put(`/ayrton/admin/knowledge/${id}`, data),
   removeKnowledge: id => api.delete(`/ayrton/admin/knowledge/${id}`),

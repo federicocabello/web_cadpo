@@ -3476,6 +3476,16 @@ export default function Admin() {
           : registration));
       setResults(current => current.map(result => String(result.idpiloto) === driverKey ? { ...result, excluido: excludedValue } : result));
       setSavedResults(current => current.map(result => String(result.idpiloto) === driverKey ? { ...result, excluido: excludedValue } : result));
+      if (checked) {
+        setChampionshipWarningDrivers(current => current.filter(driver => String(driver.idpiloto) !== driverKey));
+      } else {
+        try {
+          const warningsResponse = await championshipsApi.getWarnings(resultChampionshipId);
+          setChampionshipWarningDrivers(warningsResponse.data.data?.pilotos || []);
+        } catch {
+          // La exclusión ya fue actualizada; los AP se refrescarán en la próxima carga.
+        }
+      }
       setChampionshipChampionMessage(response.data.message || (checked ? 'Piloto excluido del campeonato.' : 'Exclusión eliminada.'));
     } catch (error) {
       setChampionshipChampionMessage(error.response?.data?.error || 'No se pudo cambiar la exclusión del piloto.');
@@ -6706,7 +6716,7 @@ export default function Admin() {
                           </div>
                         </td>
                         <td className={`border px-2 py-2 align-top ${standing.excluido ? 'border-racing-border bg-black' : 'border-amber-400/25 bg-amber-400/[0.035]'}`}>
-                          <div className="flex min-w-44 flex-col items-center gap-1.5">
+                          {!standing.excluido ? <div className="flex min-w-44 flex-col items-center gap-1.5">
                             <span className={`inline-flex min-w-14 items-center justify-center px-2.5 py-1 font-racing text-sm font-bold ${warningTotal > 0 ? 'bg-amber-400 text-black' : 'border border-racing-border bg-black/20 text-gray-600'}`}>
                               {loadingChampionshipWarnings ? '…' : `${warningTotal} AP`}
                             </span>
@@ -6730,7 +6740,7 @@ export default function Admin() {
                               );
                             })}
                             {!loadingChampionshipWarnings && warningTotal > 0 && !reachedSanctions.length ? <span className="text-center text-[9px] text-gray-600">Sin nivel de sanción alcanzado</span> : null}
-                          </div>
+                          </div> : null}
                         </td>
                         {resultRounds.flatMap(round => {
                           const detail = standing.rounds.get(String(round.ronda));
@@ -9563,8 +9573,8 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="scrollbar-hidden mb-5 overflow-x-auto pb-1" aria-label="Secciones de administración">
-              <div className="flex w-full min-w-max flex-nowrap items-center justify-between gap-1">
+            <nav className="mb-5 w-full" aria-label="Secciones de administración">
+              <div className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-11 min-[1800px]:grid-cols-[repeat(21,minmax(0,1fr))]">
                 {adminSections.map(section => {
                   const Icon = section.icon;
                   const isActive = activeSection === section.id;
@@ -9573,14 +9583,14 @@ export default function Admin() {
                       key={section.id}
                       type="button"
                       onClick={() => setActiveSection(section.id)}
-                      className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap border px-2.5 font-racing text-[9px] font-semibold transition-colors ${isActive
+                      className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 border px-1.5 py-1.5 text-center font-racing text-[9px] font-semibold leading-tight transition-colors xl:text-[8px] min-[1800px]:px-1 ${isActive
                         ? 'border-racing-red bg-racing-red text-white'
                         : 'border-transparent bg-racing-card/70 text-gray-400 hover:border-racing-border hover:bg-racing-card hover:text-white'
                         }`}
                       aria-current={isActive ? 'page' : undefined}
                     >
                       <Icon className="h-3.5 w-3.5 shrink-0" />
-                      <span>{section.label}</span>
+                      <span className="min-w-0">{section.label}</span>
                     </button>
                   );
                 })}
