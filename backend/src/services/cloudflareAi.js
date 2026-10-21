@@ -71,7 +71,9 @@ const createChatCompletion = async messages => {
   if (!response.ok || payload?.success === false) {
     const detail = payload?.errors?.[0]?.message || payload?.error?.message || `HTTP ${response.status}`;
     const error = new Error(`Cloudflare AI rechazó la solicitud: ${detail}`);
-    error.statusCode = response.status === 401 || response.status === 403 ? 503 : 502;
+    const dailyLimitReached = /(?:used up your daily free allocation|daily free allocation|10[,.]?000 neurons)/i.test(detail);
+    error.code = dailyLimitReached ? 'CLOUDFLARE_DAILY_LIMIT' : 'CLOUDFLARE_AI_ERROR';
+    error.statusCode = dailyLimitReached ? 429 : response.status === 401 || response.status === 403 ? 503 : 502;
     throw error;
   }
 

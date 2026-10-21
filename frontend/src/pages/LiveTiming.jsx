@@ -18,7 +18,7 @@ import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
 const QUALIFYING_REFRESH_INTERVAL_MS = 1000;
-const REQUIRED_LAPS = 25;
+const DEFAULT_REQUIRED_LAPS = 25;
 
 function CheckeredFlagIcon({ className = '' }) {
   return (
@@ -188,6 +188,8 @@ export default function LiveTiming() {
   const [enrolledDrivers, setEnrolledDrivers] = useState(new Map());
   const [qualifyingBans, setQualifyingBans] = useState([]);
   const [percentageRule, setPercentageRule] = useState(0);
+  const [percentageExemption, setPercentageExemption] = useState(101);
+  const [requiredLaps, setRequiredLaps] = useState(DEFAULT_REQUIRED_LAPS);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -248,6 +250,8 @@ export default function LiveTiming() {
       setEnrolledDrivers(new Map());
       setQualifyingBans([]);
       setPercentageRule(0);
+      setPercentageExemption(101);
+      setRequiredLaps(DEFAULT_REQUIRED_LAPS);
       return undefined;
     }
 
@@ -285,13 +289,22 @@ export default function LiveTiming() {
     if (!selectedChampionshipId) return undefined;
     let active = true;
     setPercentageRule(0);
+    setPercentageExemption(101);
+    setRequiredLaps(DEFAULT_REQUIRED_LAPS);
     championshipsApi.getById(selectedChampionshipId)
       .then(response => {
-        if (active) setPercentageRule(Number(response.data.data?.regla_porcentaje || 0));
+        if (!active) return;
+        setPercentageRule(Number(response.data.data?.regla_porcentaje || 0));
+        setPercentageExemption(Number(response.data.data?.regla_porcentaje_libre || 101));
+        setRequiredLaps(Number(response.data.data?.vueltas_minimas || DEFAULT_REQUIRED_LAPS));
       })
       .catch(error => {
         console.error('No se pudo cargar la regla porcentual del campeonato:', error);
-        if (active) setPercentageRule(0);
+        if (active) {
+          setPercentageRule(0);
+          setPercentageExemption(101);
+          setRequiredLaps(DEFAULT_REQUIRED_LAPS);
+        }
       });
     return () => { active = false; };
   }, [selectedChampionshipId]);
@@ -423,26 +436,37 @@ export default function LiveTiming() {
   );
   const percentageRuleActive = percentageRule > 0;
   const qualifyingSession = isQualifyingSession(timing?.session);
-  const percentageCutoff = percentageRuleActive && bestLap ? bestLap * (percentageRule / 100) : 0;
-  const percentageDividerIndex = percentageRuleActive && percentageCutoff
-    ? drivers.findIndex(driver => !driver.bestLap || driver.bestLap > percentageCutoff)
+  const percentageExemptionCutoff = percentageRuleActive && bestLap ? bestLap * (percentageExemption / 100) : 0;
+  const percentageMaximumCutoff = percentageRuleActive && bestLap ? bestLap * (percentageRule / 100) : 0;
+  const lapsRequirementDividerIndex = percentageRuleActive && percentageExemptionCutoff
+    ? drivers.findIndex(driver => !driver.bestLap || driver.bestLap > percentageExemptionCutoff)
+    : -1;
+  const exclusionDividerIndex = percentageRuleActive && percentageMaximumCutoff
+    ? drivers.findIndex(driver => !driver.bestLap || driver.bestLap > percentageMaximumCutoff)
     : -1;
   const percentageRuleLabel = Number.isInteger(percentageRule) ? String(percentageRule) : String(Number(percentageRule.toFixed(3)));
-  const isPercentageEnabled = driver => Boolean(percentageCutoff && driver.bestLap && driver.bestLap <= percentageCutoff);
+  const percentageExemptionLabel = Number.isInteger(percentageExemption) ? String(percentageExemption) : String(Number(percentageExemption.toFixed(3)));
   const requirementCountdown = formatRequirementCountdown(raceEvent?.fecha, now);
   const getDriverEligibility = driver => {
-    const missingLaps = Math.max(0, REQUIRED_LAPS - Number(driver.laps || 0));
-    const percentageMet = !percentageRuleActive || isPercentageEnabled(driver);
+    const missingLaps = Math.max(0, requiredLaps - Number(driver.laps || 0));
     const missing = [];
-    if (missingLaps > 0) missing.push(`faltan ${missingLaps} ${missingLaps === 1 ? 'vuelta' : 'vueltas'}`);
-    if (percentageRuleActive && !percentageMet) {
-      if (!bestLap) missing.push('esperando tiempo del líder');
-      else if (!driver.bestLap) missing.push('sin tiempo registrado');
-      else missing.push(`debe bajar ${(Math.max(0, driver.bestLap - percentageCutoff) / 1000000000).toFixed(3)} s`);
+    if (!percentageRuleActive) {
+      if (missingLaps > 0) missing.push(`faltan ${missingLaps} ${missingLaps === 1 ? 'vuelta' : 'vueltas'}`);
+      return { enabled: missingLaps === 0, missing, status: missingLaps === 0 ? 'laps-complete' : 'laps-required' };
     }
+
+    if (!bestLap) return { enabled: false, missing: ['esperando tiempo del líder'], status: 'no-leader' };
+    if (!driver.bestLap) return { enabled: false, missing: ['sin tiempo registrado'], status: 'no-time' };
+    if (driver.bestLap > percentageMaximumCutoff) {
+      missing.push(`supera el ${percentageRuleLabel}% · debe bajar ${((driver.bestLap - percentageMaximumCutoff) / 1000000000).toFixed(3)} s`);
+      return { enabled: false, missing, status: 'outside-maximum' };
+    }
+    if (driver.bestLap <= percentageExemptionCutoff) return { enabled: true, missing, status: 'percentage-exempt' };
+    if (missingLaps > 0) missing.push(`faltan ${missingLaps} ${missingLaps === 1 ? 'vuelta' : 'vueltas'}`);
     return {
-      enabled: missingLaps === 0 && percentageMet,
+      enabled: missingLaps === 0,
       missing,
+      status: missingLaps === 0 ? 'laps-complete' : 'laps-required',
     };
   };
 
@@ -561,8 +585,8 @@ export default function LiveTiming() {
         const ruleText = qualifyingSession
           ? `Sesión de clasificación  |  Tiempo restante: ${formatSessionRemaining(timing, now)}`
           : percentageRuleActive
-          ? `Requisitos: ${REQUIRED_LAPS} vueltas y ${percentageRuleLabel}% del líder  |  Líder: ${formatLapTime(bestLap)}  |  Límite: ${formatLapTime(percentageCutoff)}  |  Cierre: ${deadlineText} H`
-          : `Requisito: ${REQUIRED_LAPS} vueltas mínimas  |  Regla porcentual desactivada`;
+          ? `Hasta ${percentageExemptionLabel}%: sin vueltas mínimas  |  Entre ${percentageExemptionLabel}% y ${percentageRuleLabel}%: ${requiredLaps} vueltas  |  Más de ${percentageRuleLabel}%: no habilitado  |  Cierre: ${deadlineText} H`
+          : `Requisito: ${requiredLaps} vueltas mínimas  |  Regla porcentual desactivada`;
         pdf.text(pdf.splitTextToSize(ruleText, pageWidth - (margin * 2)), margin, 40, { lineHeightFactor: 1.05 });
       };
 
@@ -827,10 +851,11 @@ export default function LiveTiming() {
         )}
 
         {!serviceUnavailable && !noAvailableDates && !isRaceSession(timing?.session) && <>
-          {percentageRuleActive && !qualifyingSession && <section className="mb-3 grid overflow-hidden border border-cyan-400/35 bg-cyan-400/10 md:grid-cols-[1.15fr_auto_auto_auto] md:items-stretch">
-            <div className="flex items-center gap-3 border-b border-cyan-400/20 px-4 py-3 md:border-b-0 md:border-r"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-cyan-400 font-racing text-lg font-bold text-black">%</span><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Regla de habilitación</p><p className="font-racing text-xl font-bold uppercase text-white">Dentro del {percentageRuleLabel}% del líder</p><p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">También debe completar {REQUIRED_LAPS} vueltas</p></div></div>
+          {percentageRuleActive && !qualifyingSession && <section className="mb-3 grid overflow-hidden border border-cyan-400/35 bg-cyan-400/10 md:grid-cols-2 xl:grid-cols-[1.25fr_repeat(4,auto)] md:items-stretch">
+            <div className="flex items-center gap-3 border-b border-cyan-400/20 px-4 py-3 md:border-r xl:border-b-0"><span className="flex h-10 w-10 shrink-0 items-center justify-center bg-cyan-400 font-racing text-lg font-bold text-black">%</span><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300">Regla de habilitación</p><p className="font-racing text-lg font-bold uppercase text-white">≤ {percentageExemptionLabel}% sin vueltas</p><p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Hasta {percentageRuleLabel}% exige {requiredLaps} vueltas · Superarlo inhabilita</p></div></div>
             <div className="border-b border-cyan-400/20 px-5 py-3 md:min-w-44 md:border-b-0 md:border-r"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Tiempo del líder</p><p className="mt-1 font-racing text-2xl font-bold tabular-nums text-white">{formatLapTime(bestLap)}</p></div>
-            <div className="border-b border-cyan-400/20 px-5 py-3 md:min-w-52 md:border-b-0 md:border-r"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Tiempo para cumplir</p><p className="mt-1 font-racing text-2xl font-bold tabular-nums text-cyan-300">{formatLapTime(percentageCutoff)}</p></div>
+            <div className="border-b border-cyan-400/20 px-5 py-3 md:min-w-48 md:border-r xl:border-b-0"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Sin vueltas hasta {percentageExemptionLabel}%</p><p className="mt-1 font-racing text-2xl font-bold tabular-nums text-green-300">{formatLapTime(percentageExemptionCutoff)}</p></div>
+            <div className="border-b border-cyan-400/20 px-5 py-3 md:min-w-48 md:border-b-0 md:border-r"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Tiempo máximo {percentageRuleLabel}%</p><p className="mt-1 font-racing text-2xl font-bold tabular-nums text-red-300">{formatLapTime(percentageMaximumCutoff)}</p></div>
             <div className="px-5 py-3 md:min-w-64"><p className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Cierra 20 minutos antes de clasificación</p><p className={`mt-1 font-racing text-xl font-bold uppercase ${requirementCountdown === 'Período finalizado' ? 'text-red-300' : 'text-yellow-200'}`}>{requirementCountdown || '--'}</p></div>
           </section>}
 
@@ -857,13 +882,14 @@ export default function LiveTiming() {
 
                 return (
                   <Fragment key={`mobile-${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}>
-                  {!qualifyingSession && index === percentageDividerIndex ? <div className="my-3 !border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent px-3 py-2 text-center">
+                  {!qualifyingSession && index === lapsRequirementDividerIndex && lapsRequirementDividerIndex !== exclusionDividerIndex ? <div className="my-3 !border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent px-3 py-2 text-center">
                     <div className="flex items-center gap-3">
-                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-transparent to-red-400/70" />
-                      <div className="shrink-0"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-300">Debajo del requisito porcentual</p><p className="mt-0.5 font-racing text-base font-bold uppercase text-white">Tiempo máximo <span className="text-cyan-300">{formatLapTime(percentageCutoff)}</span></p></div>
-                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-red-400/70 to-transparent" />
+                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-transparent to-yellow-300/70" />
+                      <div className="shrink-0"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-yellow-200">Fuera del {percentageExemptionLabel}%</p><p className="mt-0.5 font-racing text-base font-bold uppercase text-white">Debe completar <span className="text-yellow-200">{requiredLaps} vueltas</span></p></div>
+                      <span className="h-px min-w-5 flex-1 bg-gradient-to-r from-yellow-300/70 to-transparent" />
                     </div>
                   </div> : null}
+                  {!qualifyingSession && index === exclusionDividerIndex ? <div className="my-3 !border-x-0 !border-b-0 !border-t !border-red-400/70 bg-transparent px-3 py-2 text-center"><div className="flex items-center gap-3"><span className="h-px min-w-5 flex-1 bg-gradient-to-r from-transparent to-red-400/80"/><div className="shrink-0"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-red-300">Fuera del {percentageRuleLabel}%</p><p className="mt-0.5 font-racing text-base font-bold uppercase text-white">No puede participar · Máximo <span className="text-red-300">{formatLapTime(percentageMaximumCutoff)}</span></p></div><span className="h-px min-w-5 flex-1 bg-gradient-to-r from-red-400/80 to-transparent"/></div></div> : null}
                   <article
                     className={`timing-driver-row relative px-2.5 py-2 ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                     style={{ '--row-shift': `${positionChange * 150}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}
@@ -916,16 +942,17 @@ export default function LiveTiming() {
 
                     return (
                       <Fragment key={`${driverKey}-${positionChange ? timing?.updatedAt : 'stable'}`}>
-                      {!qualifyingSession && index === percentageDividerIndex ? <tr className="!border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent">
+                      {!qualifyingSession && index === lapsRequirementDividerIndex && lapsRequirementDividerIndex !== exclusionDividerIndex ? <tr className="!border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent">
                         <td colSpan={9} className="!border-x-0 !border-b-0 !border-t !border-racing-border/70 bg-transparent px-5 py-4">
                           <div className="flex items-center gap-5">
-                            <span className="h-px flex-1 bg-gradient-to-r from-transparent to-red-400/70" />
-                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">Pilotos debajo del requisito</span>
-                            <span className="shrink-0 font-racing text-lg font-bold uppercase text-white">Tiempo máximo <strong className="ml-2 text-cyan-300">{formatLapTime(percentageCutoff)}</strong></span>
-                            <span className="h-px flex-1 bg-gradient-to-r from-red-400/70 to-transparent" />
+                            <span className="h-px flex-1 bg-gradient-to-r from-transparent to-yellow-300/70" />
+                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-yellow-200">Fuera del {percentageExemptionLabel}%</span>
+                            <span className="shrink-0 font-racing text-lg font-bold uppercase text-white">Debe completar <strong className="ml-2 text-yellow-200">{requiredLaps} vueltas</strong></span>
+                            <span className="h-px flex-1 bg-gradient-to-r from-yellow-300/70 to-transparent" />
                           </div>
                         </td>
                       </tr> : null}
+                      {!qualifyingSession && index === exclusionDividerIndex ? <tr className="!border-x-0 !border-b-0 !border-t !border-red-400/70 bg-transparent"><td colSpan={9} className="!border-x-0 !border-b-0 !border-t !border-red-400/70 bg-transparent px-5 py-4"><div className="flex items-center gap-5"><span className="h-px flex-1 bg-gradient-to-r from-transparent to-red-400/80"/><span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-red-300">Fuera del {percentageRuleLabel}%</span><span className="shrink-0 font-racing text-lg font-bold uppercase text-white">No puede participar · Tiempo máximo <strong className="ml-2 text-red-300">{formatLapTime(percentageMaximumCutoff)}</strong></span><span className="h-px flex-1 bg-gradient-to-r from-red-400/80 to-transparent"/></div></td></tr> : null}
                       <tr
                         className={`timing-driver-row ${qualifyingSession ? 'timing-driver-row-compact' : ''} ${animationClass} ${qualifyingSession ? '' : eligibility.enabled ? 'timing-driver-row-enabled' : 'timing-driver-row-disabled'}`}
                         style={{ '--row-shift': `${positionChange * 54}px`, animationDelay: !hasRenderedRowsRef.current ? `${Math.min(index * 45, 700)}ms` : '0ms' }}

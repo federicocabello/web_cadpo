@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDaysIcon, CheckBadgeIcon, CheckCircleIcon, ChevronDownIcon, ChevronUpIcon, ClockIcon, FlagIcon, TrophyIcon, UserGroupIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { useSearchParams } from 'react-router-dom';
 import { championshipsApi, eventsApi, resultsApi } from '../services/api';
@@ -319,14 +320,14 @@ export default function Results() {
   const openAppealVideo = (appeal, button) => {
     const rect = button.getBoundingClientRect();
     const width = Math.min(520, window.innerWidth - 24);
-    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    const left = window.scrollX + Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
     const roomBelow = window.innerHeight - rect.bottom;
+    const placement = roomBelow >= 330 ? 'below' : 'above';
     setActiveAppealVideo({
       ...appeal,
-      placement: roomBelow >= 330 ? 'below' : 'above',
+      placement,
       left,
-      top: rect.bottom + 8,
-      bottom: window.innerHeight - rect.top + 8,
+      top: window.scrollY + (placement === 'below' ? rect.bottom + 8 : rect.top - 8),
       width,
     });
   };
@@ -619,15 +620,13 @@ export default function Results() {
           </div> : null}
         </section>
       </div>}
-      {activeAppealVideo ? <div className="fixed inset-0 z-[80]" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setActiveAppealVideo(null); }}>
-        <section role="dialog" aria-modal="false" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`} style={{ left: activeAppealVideo.left, width: activeAppealVideo.width, ...(activeAppealVideo.placement === 'below' ? { top: activeAppealVideo.top } : { bottom: activeAppealVideo.bottom }) }} className="fixed max-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border border-blue-300/35 bg-[#111827] shadow-[0_24px_80px_rgba(0,0,0,0.75)]">
+      {activeAppealVideo ? createPortal(<section role="dialog" aria-modal="false" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`} style={{ left: activeAppealVideo.left, top: activeAppealVideo.top, width: activeAppealVideo.width, transform: activeAppealVideo.placement === 'above' ? 'translateY(-100%)' : undefined }} className="absolute z-[80] max-h-[calc(100vh-24px)] overflow-hidden rounded-2xl border border-blue-300/35 bg-[#111827] shadow-[0_24px_80px_rgba(0,0,0,0.75)]">
           <header className="flex items-center justify-between gap-3 border-b border-blue-300/20 bg-blue-400/[0.08] px-4 py-3">
             <span className="inline-flex min-w-0 items-center gap-2"><img src="/corredor.png" alt="" className="h-6 w-6 shrink-0 object-contain"/><strong className="truncate text-sm text-white">{activeAppealVideo.piloto}</strong></span><AppealStatusBadge status={activeAppealVideo.estado}/>
             <button type="button" onClick={() => setActiveAppealVideo(null)} aria-label="Cerrar video" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-xl leading-none text-gray-300 transition hover:border-white/35 hover:text-white">×</button>
           </header>
-          <div className="overflow-y-auto p-3 sm:p-4"><p className="mb-3 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{activeAppealVideo.motivo}</span></p><video src={activeAppealVideo.video} controls autoPlay preload="metadata" className="max-h-[42vh] w-full rounded-lg bg-black" aria-label={`Video de la apelación de ${activeAppealVideo.piloto}`}>Tu navegador no puede reproducir este video.</video></div>
-        </section>
-      </div> : null}
+          <div className="overflow-y-auto p-3 sm:p-4"><p className="mb-3 break-words text-xs leading-relaxed text-gray-300 sm:text-sm"><strong className="font-bold text-blue-200">MOTIVO:</strong> <span className="whitespace-pre-wrap">{activeAppealVideo.motivo}</span></p><video src={activeAppealVideo.video} controls autoPlay muted preload="metadata" onLoadedMetadata={event => { event.currentTarget.muted = true; event.currentTarget.volume = 0; }} onVolumeChange={event => { if (!event.currentTarget.muted || event.currentTarget.volume !== 0) { event.currentTarget.muted = true; event.currentTarget.volume = 0; } }} className="max-h-[42vh] w-full rounded-lg bg-black" aria-label={`Video sin sonido de la apelación de ${activeAppealVideo.piloto}`}>Tu navegador no puede reproducir este video.</video></div>
+        </section>, document.body) : null}
     </main>
   );
 }

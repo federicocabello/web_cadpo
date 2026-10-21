@@ -292,7 +292,7 @@ function RegistrationSection({ registration, details, images, activeImage, now, 
   const full = registration.phase === 'full';
   const closed = registration.phase === 'closed';
   const enrollmentStarted = open || full || closed;
-  const includesLiveBroadcast = Number(registration.precio || 0) > 10000;
+  const includesLiveBroadcast = Boolean(registration.transmision_en_vivo);
   const theme = registrationThemes[closed ? 'closed' : enrollmentStarted ? 'open' : 'upcoming'];
   const firstEvent = details?.calendario?.[0] || null;
   const nextCalendarEvent = [...(details?.calendario || [])]

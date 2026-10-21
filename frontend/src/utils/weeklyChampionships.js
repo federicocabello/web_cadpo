@@ -6,13 +6,6 @@ const ACTIVE_WINDOW_MS = 60 * 60 * 1000;
 // el calendario (práctica, clasificación y carreras). Esta ventana evita que
 // Tiempos en vivo salte al circuito siguiente mientras la jornada sigue activa.
 const LIVE_TIMING_ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
-const calendarDaysUntil = (value, now) => {
-  const date = parseDate(value);
-  const currentDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const eventDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-  return Math.round((eventDay - currentDay) / 86400000);
-};
-
 export const getEventPhase = (event, now = new Date()) => {
   if (!event?.fecha) return 'expired';
   const start = parseDate(event.fecha).getTime();
@@ -49,10 +42,12 @@ export const getWeeklyEvents = (events, now = new Date()) => {
 };
 
 export const getFeaturedUpcomingEvents = (events, now = new Date()) => {
+  const current = now.getTime();
   return (Array.isArray(events) ? events : [])
     .filter(event => !Number.isNaN(parseDate(event.fecha).getTime()))
     .filter(event => getEventPhase(event, now) !== 'expired')
-    .filter(event => Number(event.ronda) === 1 || calendarDaysUntil(event.fecha, now) <= 7)
+    .filter(event => Boolean(Number(event.mostrar_inicio)))
+    .filter(event => !event.mostrar_desde || (parseDate(event.mostrar_desde)?.getTime() || 0) <= current)
     .sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
 };
 

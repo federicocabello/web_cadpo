@@ -3,6 +3,7 @@ import { ArrowDownTrayIcon, CalendarDaysIcon, DocumentTextIcon, ExclamationTrian
 import { complaintsApi, replaysApi } from '../services/api';
 import { formatCalendarDate } from '../utils/calendarDate';
 import { formatComplaintCountdown } from '../utils/complaintCountdown';
+import { complaintSessionOptions } from '../utils/complaintSessions';
 
 const emptyForm = {
   idpiloto_denunciado: '',
@@ -66,6 +67,16 @@ export default function Complaints() {
   ) || context.eventos[0] || null, [context.eventos, selectedEventKey]);
   const closingCountdown = formatComplaintCountdown(selectedEvent?.cierre_denuncias, now);
   const selectedEventOpen = Boolean(selectedEvent && closingCountdown);
+  const enabledSessions = useMemo(
+    () => complaintSessionOptions.filter(option => (selectedEvent?.tandas || []).includes(option.value)),
+    [selectedEvent?.tandas]
+  );
+
+  useEffect(() => {
+    if (form.tanda && !enabledSessions.some(option => option.value === form.tanda)) {
+      setForm(current => ({ ...current, tanda: '' }));
+    }
+  }, [enabledSessions, form.tanda]);
 
   useEffect(() => {
     if (!selectedEventOpen) {
@@ -141,7 +152,7 @@ export default function Complaints() {
           <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center bg-racing-red text-white"><ExclamationTriangleIcon className="h-6 w-6" /></span><div><p className="text-[10px] font-bold uppercase tracking-widest text-racing-red">Formulario anónimo</p><h2 className="font-racing text-2xl font-bold uppercase text-white">Informar una maniobra</h2></div></div>
           <form onSubmit={submit} className="mt-6 grid gap-5 sm:grid-cols-2">
             <label className="block sm:col-span-2"><span className="text-sm text-gray-300">Piloto denunciado</span><select value={form.idpiloto_denunciado} onChange={event => setForm(current => ({ ...current, idpiloto_denunciado: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar piloto</option>{selectedEvent.pilotos.map(driver => <option key={driver.id} value={driver.id}>#{driver.numero ?? 0} · {driver.nombre}</option>)}</select><small className="mt-1 block text-xs text-gray-600">Los pilotos están ordenados alfabéticamente.</small></label>
-            <label className="block"><span className="text-sm text-gray-300">Tanda</span><select value={form.tanda} onChange={event => setForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar tanda</option><option value="SPRINT">Sprint</option><option value="FINAL">Final</option></select></label>
+            <label className="block"><span className="text-sm text-gray-300">Tanda</span><select value={form.tanda} onChange={event => setForm(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar tanda</option>{enabledSessions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <label className="block"><span className="text-sm text-gray-300">Minuto de la repetición</span><input type="text" inputMode="decimal" value={form.minuto_repeticion} onChange={event => setForm(current => ({ ...current, minuto_repeticion: event.target.value }))} onBlur={() => setForm(current => ({ ...current, minuto_repeticion: normalizeReplayMinute(current.minuto_repeticion) }))} className="input-field mt-2" placeholder="1.24" maxLength={12} required /><small className="mt-1 block text-xs text-gray-600">Ejemplo: 1.24 significa 1 minuto y 24 segundos. También podés escribir 1,24 o 1:24.</small></label>
             <label className="block sm:col-span-2"><span className="text-sm text-gray-300">Breve descripción de la maniobra <span className="text-gray-600">(opcional)</span></span><textarea value={form.descripcion} onChange={event => setForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-32 resize-y" maxLength={1000} placeholder="Contanos brevemente qué ocurrió..." /><small className="mt-1 block text-right text-xs text-gray-600">{form.descripcion.length}/1000</small></label>
             <div className="sm:col-span-2"><button type="submit" disabled={saving || !selectedEvent.pilotos.length} className="inline-flex w-full items-center justify-center gap-2 bg-racing-red px-6 py-3.5 font-racing text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-racing-red-dark disabled:cursor-not-allowed disabled:opacity-50">{saving ? 'Enviando denuncia...' : 'Enviar denuncia anónima'}</button>{message ? <p className="mt-4 border border-green-400/35 bg-green-500/10 p-4 text-center text-sm font-semibold text-green-300">{message}</p> : null}{error ? <p className="mt-4 border border-red-400/35 bg-red-500/10 p-4 text-center text-sm text-red-200">{error}</p> : null}</div>

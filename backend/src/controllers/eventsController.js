@@ -5,6 +5,7 @@ const pool = require('../config/db');
 const publicDir = require('../utils/publicDir');
 const slugify = require('../utils/slugify');
 const ensureEventMultipliers = require('../utils/ensureEventMultipliers');
+const ensureEventHomeVisibility = require('../utils/ensureEventHomeVisibility');
 const { ensureCircuitNotesSchema, attachCircuitNotes } = require('./circuitsController');
 
 const eventBannerExtensions = new Set(['.avif', '.webp', '.jpg', '.jpeg', '.png']);
@@ -88,7 +89,7 @@ const moveEventGallery = async (oldChampionshipId, oldRound, newChampionshipId, 
 
 const baseSelect = `
   SELECT cal.idcampeonato, cal.ronda, cal.fecha, cal.especial,
-         cal.especialidad, cal.coronacion, cal.transmision,
+         cal.especialidad, cal.coronacion, cal.transmision, cal.mostrar_inicio, cal.mostrar_desde,
          cal.multiplicador_sprint, cal.multiplicador_final,
          cal.resultados_visibles, cal.limite_apelaciones, cal.resultados_confirmados,
          CONCAT(cal.idcampeonato, '-', cal.ronda) AS id,
@@ -109,6 +110,7 @@ const baseSelect = `
 const getAll = async (req, res, next) => {
   try {
     await ensureEventMultipliers();
+    await ensureEventHomeVisibility();
     await ensureCircuitNotesSchema();
     const { idcampeonato, status } = req.query;
     const params = [];
@@ -134,6 +136,7 @@ const getAll = async (req, res, next) => {
 const getUpcoming = async (req, res, next) => {
   try {
     await ensureEventMultipliers();
+    await ensureEventHomeVisibility();
     await ensureCircuitNotesSchema();
     const [rows] = await pool.query(`${baseSelect} WHERE cal.fecha >= NOW() ORDER BY cal.fecha ASC LIMIT 10`);
     res.json({ data: await attachCircuitNotes(await attachEventBanners(rows)), total: rows.length });
@@ -164,6 +167,33 @@ const normalizeSpecialty = (especial, especialidad) => {
 };
 
 const normalizeTransmissionUrl = value => String(value || '').trim();
+
+const updateHomeVisibility = async (req, res, next) => {
+  try {
+    await ensureEventHomeVisibility();
+    const championshipId = Number(req.params.idcampeonato);
+    const round = Number(req.params.ronda);
+    const visible = req.body.visible === true || Number(req.body.visible) === 1;
+    const showFrom = String(req.body.mostrar_desde || '').trim().replace('T', ' ') || null;
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(round) || round < 1) {
+      return res.status(400).json({ error: 'Campeonato o fecha inválidos' });
+    }
+    if (visible && showFrom && Number.isNaN(new Date(showFrom).getTime())) {
+      return res.status(400).json({ error: 'La fecha de publicación no es válida' });
+    }
+    const [result] = await pool.query(
+      'UPDATE calendario SET mostrar_inicio = ?, mostrar_desde = ? WHERE idcampeonato = ? AND ronda = ?',
+      [visible ? 1 : 0, showFrom, championshipId, round],
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Fecha no encontrada' });
+    res.json({
+      message: visible
+        ? showFrom ? 'La fecha quedará visible en Inicio desde el momento indicado.' : 'La fecha ya puede mostrarse en Inicio.'
+        : 'La fecha fue ocultada de Inicio.',
+      data: { idcampeonato: championshipId, ronda: round, mostrar_inicio: visible ? 1 : 0, mostrar_desde: showFrom },
+    });
+  } catch (error) { next(error); }
+};
 
 const create = async (req, res, next) => {
   try {
@@ -444,4 +474,4 @@ const removeBanner = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { getAll, getUpcoming, create, createBatch, update, updateMultipliers, updateResultsVisibility, updateAppealDeadline, updateResultsConfirmation, remove, getBanners, uploadBanners, removeBanner };
+module.exports = { getAll, getUpcoming, create, createBatch, update, updateHomeVisibility, updateMultipliers, updateResultsVisibility, updateAppealDeadline, updateResultsConfirmation, remove, getBanners, uploadBanners, removeBanner };

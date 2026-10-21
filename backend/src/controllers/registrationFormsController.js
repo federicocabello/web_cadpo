@@ -263,7 +263,7 @@ const verifyFormToken = (token, championshipId) => {
 };
 
 const configSelect = `
-  SELECT cfg.idcampeonato, cfg.visible, cfg.fecha_apertura, cfg.fecha_cierre,
+  SELECT cfg.idcampeonato, cfg.visible, cfg.transmision_en_vivo, cfg.fecha_apertura, cfg.fecha_cierre,
          cfg.precio, cfg.precio_diseno, cfg.precio_pintura_oficial, cfg.setup_detalle, cfg.limite_inscriptos, cfg.limite_por_modelo, cfg.preinscriptos, cfg.autos_habilitados, cfg.planes,
          cfg.permite_personalizado, cfg.permite_diseno_liga, cfg.permite_pintura_oficial, cfg.permite_extra,
          c.temporada, c.anio, c.plataforma, c.reglamento, c.idcategoria,
@@ -294,6 +294,7 @@ const normalizeConfig = row => {
   return {
     ...row,
     visible: Number(row.visible) !== 0,
+    transmision_en_vivo: Number(row.transmision_en_vivo) !== 0,
     permite_personalizado: Boolean(row.permite_personalizado),
     permite_diseno_liga: Boolean(row.permite_diseno_liga),
     permite_pintura_oficial: Boolean(row.permite_pintura_oficial),
@@ -801,6 +802,7 @@ const saveConfig = async (req, res, next) => {
     await ensureRegistrationFormVisibility();
     const id = Number(req.params.id);
     const visible = ![false, 0, '0', 'false'].includes(req.body.visible);
+    const liveBroadcast = ![false, 0, '0', 'false', undefined, null].includes(req.body.transmision_en_vivo);
     const openAt = String(req.body.fecha_apertura || '').replace('T', ' ');
     const closeAt = String(req.body.fecha_cierre || '').replace('T', ' ');
     const price = Number(req.body.precio);
@@ -874,17 +876,17 @@ const saveConfig = async (req, res, next) => {
     ];
     await pool.query(
       `INSERT INTO inscripciones_config
-       (idcampeonato, visible, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos, limite_por_modelo,
+       (idcampeonato, visible, transmision_en_vivo, fecha_apertura, fecha_cierre, precio, precio_diseno, precio_pintura_oficial, setup_detalle, limite_inscriptos, limite_por_modelo,
         preinscriptos, autos_habilitados, planes, permite_personalizado, permite_diseno_liga, permite_pintura_oficial, permite_extra)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE visible=VALUES(visible), fecha_apertura=VALUES(fecha_apertura),
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE visible=VALUES(visible), transmision_en_vivo=VALUES(transmision_en_vivo), fecha_apertura=VALUES(fecha_apertura),
        fecha_cierre=VALUES(fecha_cierre), precio=VALUES(precio), precio_diseno=VALUES(precio_diseno),
        precio_pintura_oficial=VALUES(precio_pintura_oficial),
        setup_detalle=VALUES(setup_detalle), limite_inscriptos=VALUES(limite_inscriptos), limite_por_modelo=VALUES(limite_por_modelo), preinscriptos=VALUES(preinscriptos), autos_habilitados=VALUES(autos_habilitados), planes=VALUES(planes),
        permite_personalizado=VALUES(permite_personalizado), permite_diseno_liga=VALUES(permite_diseno_liga),
        permite_pintura_oficial=VALUES(permite_pintura_oficial),
        permite_extra=VALUES(permite_extra)`,
-      [id, visible ? 1 : 0, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
+      [id, visible ? 1 : 0, liveBroadcast ? 1 : 0, openAt, closeAt, price, designPrice, officialPaintPrice, setupDetails, registrationLimit, modelLimit, preEnrolled,
         JSON.stringify(enabledCarsPayload), JSON.stringify(normalizedPlans), ...options.map(value => value ? 1 : 0)]
     );
     res.json({ message: 'Formulario de inscripción guardado', data: await loadForm(id) });

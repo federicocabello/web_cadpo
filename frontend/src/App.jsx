@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import AyrtonChat from './components/AyrtonChat'
@@ -91,7 +91,8 @@ function App() {
           <Route path="/resultados" element={<Results />} />
           <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/replays" element={<Replays />} />
-          <Route path="/plantillas" element={<Templates />} />
+          <Route path="/pinturas" element={<Templates />} />
+          <Route path="/plantillas" element={<Navigate to="/pinturas" replace />} />
           <Route path="/denuncias" element={<Complaints />} />
           <Route path="/proyectos" element={<Projects />} />
           <Route path="/club" element={<Club />} />

@@ -9,17 +9,23 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 ### Funcionalidades
 
 - Campeonatos, categorías, calendarios y próximas fechas.
+- Publicación programada de una o varias próximas fechas en el Inicio, administrable por fecha, y configuración explícita de transmisión en vivo por formulario de campeonato.
 - Inscripciones, pilotos, autos, marcas y circuitos.
 - Resultados, posiciones de campeonato y estadísticas.
 - Consulta de tiempos en vivo desde un servidor externo.
+- Habilitación deportiva configurable por campeonato en Tiempos en vivo: porcentaje que libera el mínimo de vueltas, porcentaje máximo excluyente y cantidad mínima de vueltas para el tramo intermedio.
 - CADPO CLUB con hasta tres servidores gratuitos, enlace directo de ingreso por Content Manager y enlace independiente para consultar tanda y pilotos conectados en tiempo real.
 - Panel administrativo para gestionar el contenido.
 - Carga de imágenes, logos y reglamentos PDF.
+- Sección pública **Pinturas** con selección del campeonato más reciente, descarga permanente del ZIP de plantillas y entrega de archivos DDS, PNG o JPG por piloto inscripto. La recepción se abre al configurar una fecha futura y se cierra automáticamente al vencer, con fecha, hora y cuenta regresiva. La carga bloquea la pantalla mientras procesa, evita nombres duplicados y actualiza las miniaturas PNG/JPG y el detalle de DDS del piloto; en Administración las entregas se descargan agrupadas en un ZIP identificado por número, piloto, marca y modelo.
 - Notas de pista ordenables por circuito, con título e imágenes editables, reutilización selectiva entre variantes y visor emergente en el inicio.
 - Importador de escritorio para cargas masivas en MySQL.
 - Pantalla automática de mantenimiento cuando la API o la base de datos no están disponibles.
-- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre campeonatos actuales, anteriores y futuros, días y horarios de sus calendarios, tablas completas, resultados publicados, pilotos, CADPO CLUB, repeticiones, plantillas y proyectos, con acceso bajo demanda a las APIs en vivo.
+- Chat público con Ayrton, asistente IA conectado a Cloudflare Workers AI y alimentado mediante consultas de solo lectura sobre campeonatos actuales, anteriores y futuros, días y horarios de sus calendarios, tablas completas, resultados publicados, pilotos, CADPO CLUB, repeticiones, pinturas y proyectos, con acceso bajo demanda a las APIs en vivo.
 - Ayrton prioriza siempre los campeonatos en curso y las inscripciones abiertas, y distingue resultados en proceso, provisorios o definitivos junto con sus plazos y apelaciones visibles.
+- Las consultas de Ayrton están limitadas a 300 caracteres; los mensajes redactados principalmente en inglés, las solicitudes peligrosas, los temas ajenos a CADPO/automovilismo y los intentos de alterar sus instrucciones se bloquean localmente, incluso dentro del historial, antes de consumir recursos de Cloudflare AI.
+- Ayrton funciona exclusivamente en modo informativo y de solo lectura: no ejecuta ni confirma altas, modificaciones, eliminaciones, publicaciones o cambios solicitados por usuarios, y no incorpora como oficiales datos aportados en el chat.
+- Al alcanzar el límite diario, o cuando Cloudflare informa que agotó su asignación real de 10.000 neuronas, el consumo se sincroniza al 100% y el acceso público de Ayrton permanece visible, sin interacciones, con el estado **En entrenamiento · No disponible** hasta el reinicio.
 - Conocimiento técnico curado para que Ayrton responda consultas de puesta a punto en Assetto Corsa sobre neumáticos, alineación, suspensión, amortiguadores, frenos, diferencial, aerodinámica y relaciones de caja.
 - Referencia 2026 de categorías argentinas para Ayrton, con siglas, modelos, mecánica, tracción y comportamiento, diferenciando el parque real de los mods históricos o balanceados por CADPO.
 - Catálogo contextual de autódromos y circuitos zonales argentinos para Ayrton, incluidos trazados chicos de asfalto y tierra, variantes, estado histórico/actual, usos pasados y futuros confirmados en calendarios de CADPO, más el calendario oficial vigente de Fórmula 1 2026.
@@ -39,6 +45,7 @@ El panel de resultados permite importar tandas de Assetto Corsa, trabajar sobre 
 - lastre debut, lastre por fecha, lastre por sanciones y total proyectado antes de guardar;
 - resultados visibles u ocultos por fecha, confirmación definitiva y plazo configurable para apelaciones;
   - apelaciones por tanda y piloto, con motivo, video opcional, gestión de estado pendiente/aprobada/denegada y publicación diferenciada dentro del resultado de la fecha;
+- formulario anónimo de denuncias con tandas habilitadas por campeonato desde Administración: clasificación Sprint, Sprint, clasificación Final y Final;
 - exclusión de pilotos por campeonato sin alterar sus resultados históricos, con puntaje general anulado y omisión en las tablas de lastre;
 - sanciones de clasificación pendientes por piloto y campeonato, sin asignaciones duplicadas y con una nota opcional por piloto visible en Tiempos en vivo;
 - tabla general del campeonato, estadísticas e imágenes exportables de posiciones.
@@ -126,6 +133,7 @@ Variables adicionales admitidas:
 | Variable | Uso | Valor predeterminado |
 | --- | --- | --- |
 | `PUBLIC_DIR` | Directorio donde se leen y guardan los archivos públicos | `public_html` en hosting o `frontend/public` en local |
+| `PRIVATE_UPLOADS_DIR` | Directorio privado y persistente para las pinturas entregadas por pilotos | `backend/storage` |
 | `LIVE_TIMING_HOST` | Servidor externo de tiempos en vivo | `rh.servegame.com` |
 | `VITE_API_TARGET` | Destino del proxy de Vite durante el desarrollo | `http://localhost:3000` |
 | `CLOUDFLARE_ACCOUNT_ID` | Identificador de la cuenta que ejecuta Workers AI | Requerido para Ayrton |
@@ -306,10 +314,11 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - CADPO CLUB with up to three free servers, current session status, and live connected-driver counts.
 - Administration panel for content management.
 - Image, logo, and PDF regulation uploads.
+- Public **Paints** section with the newest championship selected by default, permanent template ZIP downloads, and private DDS, PNG or JPG submissions by enrolled drivers. Submissions are enabled per championship, close automatically with a visible countdown, and are managed from Administration.
 - Sortable per-circuit track notes with editable titles and images, selective reuse across variants, and a modal viewer on the home page.
 - Desktop importer for bulk MySQL operations.
 - Automatic maintenance screen when the API or database is unavailable.
-- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, calendar weekdays and times, full standings, published results, drivers, CADPO CLUB, replays, templates and projects, plus on-demand access to live APIs.
+- Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, calendar weekdays and times, full standings, published results, drivers, CADPO CLUB, replays, paints and projects, plus on-demand access to live APIs.
 - Ayrton always prioritizes championships in progress and open registrations, distinguishing results in progress, provisional or final together with visible appeal windows and appeals.
 - Curated technical knowledge enabling Ayrton to answer Assetto Corsa setup questions about tyres, alignment, suspension, dampers, brakes, differential, aerodynamics, and gearing.
 - A 2026 Argentine racing-category reference for Ayrton covering acronyms, models, mechanics, drivetrain, and handling while keeping real-world grids separate from CADPO's historical or balanced mods.
@@ -330,6 +339,7 @@ The results administration panel can import Assetto Corsa sessions, edit them in
 - debut ballast, event ballast, sanction ballast, and a projected total before saving;
 - per-event result visibility, definitive confirmation, and configurable appeal deadlines;
 - session- and driver-specific appeals with a reason, optional video, and public display alongside event results;
+- anonymous complaints with championship-specific session options managed from Administration;
 - championship standings, statistics, and exportable standings images.
 
 Manual corrections remain editable until the final save. Pending changes are visually identified in the worksheet.
@@ -415,6 +425,7 @@ Additional supported variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PUBLIC_DIR` | Directory used to read and store public files | `public_html` on hosting or `frontend/public` locally |
+| `PRIVATE_UPLOADS_DIR` | Private persistent directory for driver paint submissions | `backend/storage` |
 | `LIVE_TIMING_HOST` | External live timing server | `rh.servegame.com` |
 | `VITE_API_TARGET` | Vite proxy target during development | `http://localhost:3000` |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account identifier used for Workers AI | Required for Ayrton |

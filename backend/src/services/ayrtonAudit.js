@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const D1_TIMEOUT_MS = 8000;
 const SMTP_TIMEOUT_MS = 12000;
 const DEFAULT_DAILY_NEURON_LIMIT = 10_000;
+const QUOTA_SYNC_MODEL = '__cloudflare_quota_sync__';
 const MODEL_NEURON_RATES = {
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { input: 26_668, output: 204_805 },
   '@cf/meta/llama-3.1-70b-instruct-fp8-fast': { input: 26_668, output: 204_805 },
@@ -153,24 +154,25 @@ const getUsageSummary = async () => {
   const [summary, byDay, messageCount] = await Promise.all([
     queryD1(`
       SELECT
-        COUNT(*) AS requests_total,
+        COALESCE(SUM(CASE WHEN model <> '${QUOTA_SYNC_MODEL}' THEN 1 ELSE 0 END), 0) AS requests_total,
         COALESCE(SUM(input_tokens), 0) AS input_tokens_total,
         COALESCE(SUM(output_tokens), 0) AS output_tokens_total,
         COALESCE(SUM(total_tokens), 0) AS tokens_total,
         COALESCE(SUM(neurons), 0) AS neurons_total,
-        COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END), 0) AS requests_today,
+        COALESCE(SUM(CASE WHEN date(created_at) = date('now') AND model <> '${QUOTA_SYNC_MODEL}' THEN 1 ELSE 0 END), 0) AS requests_today,
         COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN input_tokens ELSE 0 END), 0) AS input_tokens_today,
         COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN output_tokens ELSE 0 END), 0) AS output_tokens_today,
         COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN total_tokens ELSE 0 END), 0) AS tokens_today,
         COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN neurons ELSE 0 END), 0) AS neurons_today,
-        COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS requests_30d,
+        COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') AND model <> '${QUOTA_SYNC_MODEL}' THEN 1 ELSE 0 END), 0) AS requests_30d,
         COALESCE(SUM(CASE WHEN created_at >= datetime('now', '-30 days') THEN total_tokens ELSE 0 END), 0) AS tokens_30d,
         MIN(created_at) AS tracking_since,
         MAX(created_at) AS last_request_at
       FROM ayrton_usage
     `),
     queryD1(`
-      SELECT date(created_at) AS day, COUNT(*) AS requests,
+      SELECT date(created_at) AS day,
+             COALESCE(SUM(CASE WHEN model <> '${QUOTA_SYNC_MODEL}' THEN 1 ELSE 0 END), 0) AS requests,
              COALESCE(SUM(total_tokens), 0) AS tokens,
              COALESCE(SUM(neurons), 0) AS neurons
       FROM ayrton_usage
@@ -271,6 +273,46 @@ const getDailyUsageStatus = async () => {
     expiresAt: Math.min(Date.now() + 30_000, nextReset.getTime()),
     value: status,
   };
+  return status;
+};
+
+const markDailyUsageLimitReached = async () => {
+  const dailyLimit = getDailyNeuronLimit();
+  const nextReset = new Date();
+  nextReset.setUTCHours(24, 0, 0, 0);
+  const status = {
+    configured: isD1Configured(),
+    allowed: false,
+    today: dailyLimit,
+    dailyLimit,
+    remainingToday: 0,
+    percentageToday: 100,
+    resetAt: nextReset.toISOString(),
+  };
+
+  dailyUsageCache = { expiresAt: nextReset.getTime(), value: status };
+  if (!isD1Configured()) return status;
+
+  try {
+    await ensureUsageTable();
+    await queryD1(`
+      INSERT INTO ayrton_usage
+        (session_id, model, input_tokens, output_tokens, total_tokens, neurons, created_at)
+      SELECT NULL, ?, 0, 0, 0, MAX(0, ? - used_neurons), datetime('now')
+      FROM (
+        SELECT COALESCE(SUM(neurons), 0) AS used_neurons
+        FROM ayrton_usage
+        WHERE date(created_at) = date('now')
+      )
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ayrton_usage
+        WHERE model = ? AND date(created_at) = date('now')
+      )
+    `, [QUOTA_SYNC_MODEL, dailyLimit, QUOTA_SYNC_MODEL]);
+  } catch (error) {
+    console.error('[Ayrton] No se pudo persistir el límite real de Cloudflare:', error.message);
+  }
+
   return status;
 };
 
@@ -450,6 +492,7 @@ module.exports = {
   notificationsEnabled,
   notifyInteraction,
   notifyInteractionError,
+  markDailyUsageLimitReached,
   queryD1,
   saveInteraction,
   saveUsage,

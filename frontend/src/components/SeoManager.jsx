@@ -40,10 +40,10 @@ const pageSeo = {
     description: 'Descargá repeticiones de clasificación, sprint y final organizadas por campeonato, fecha y circuito.',
     keywords: 'repeticiones CADPO, replays Assetto Corsa, descargar repetición carrera, simracing Argentina',
   },
-  '/plantillas': {
-    title: 'CADPO TORNEOS • Plantillas',
-    description: 'Descargá las plantillas oficiales disponibles para crear los diseños de los autos de cada campeonato CADPO.',
-    keywords: 'plantillas CADPO, templates Assetto Corsa, diseño autos simracing, skins Assetto Corsa',
+  '/pinturas': {
+    title: 'CADPO TORNEOS • Pinturas',
+    description: 'Descargá las plantillas oficiales y entregá los archivos de pintura de tu auto para cada campeonato CADPO.',
+    keywords: 'pinturas CADPO, plantillas Assetto Corsa, diseño autos simracing, skins Assetto Corsa',
   },
   '/denuncias': {
     title: 'CADPO TORNEOS • Denuncias',
@@ -75,6 +75,7 @@ const pageSeo = {
 const canonicalAliases = {
   '/eventos': '/proximas-fechas',
   '/proximos-campeonatos': '/campeonatos',
+  '/plantillas': '/pinturas',
 };
 
 const setMetaContent = (selector, content) => {

@@ -18,6 +18,7 @@ import {
   FlagIcon,
   MagnifyingGlassIcon,
   PhotoIcon,
+  PaintBrushIcon,
   PlusIcon,
   PlayCircleIcon,
   FireIcon,
@@ -43,6 +44,7 @@ import { circuitCountries, driverCountries, getCountryName, normalizeCountryCode
 import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../utils/calendarDate';
 import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 import { formatPrice } from '../utils/currency';
+import { complaintSessionOptions } from '../utils/complaintSessions';
 import { aggregateAssettoSanctions, assettoSessionOptions, buildAssettoSanctionLabel, emptyAssettoSanction, getAssettoSanctionItems, normalizeAssettoDriverName, orderAssettoResults, parseAssettoResultJson } from '../utils/assettoResults';
 import GearRatioCalculator from '../components/GearRatioCalculator';
 import EnginePowerCalculator from '../components/EnginePowerCalculator';
@@ -87,7 +89,7 @@ const adminSections = [
   { id: 'marcas', label: 'MARCAS', icon: TagIcon },
   { id: 'monitoreo', label: 'MONITOREO', icon: BellAlertIcon },
   { id: 'pilotos', label: 'PILOTOS', icon: UsersIcon },
-  { id: 'plantillas', label: 'PLANTILLAS', icon: ArchiveBoxIcon },
+  { id: 'plantillas', label: 'PINTURAS', icon: PaintBrushIcon },
   { id: 'proyectos', label: 'PROYECTOS', icon: RectangleStackIcon },
   { id: 'relaciones-caja', label: 'PUESTA A PUNTO', icon: WrenchScrewdriverIcon },
   { id: 'replays', label: 'REPETICIONES', icon: ArrowDownTrayIcon },
@@ -152,6 +154,12 @@ const getResultSpreadsheetColumnWidth = column => {
   if (column.type === 'integer' || column.type === 'decimal') return 'w-12 min-w-12 max-w-12';
   if (column.type === 'signed') return 'w-14 min-w-14 max-w-14';
   return 'w-14 min-w-14 max-w-14';
+};
+
+const formatFileSize = bytes => {
+  const size = Number(bytes || 0);
+  if (size >= 1024 ** 2) return `${(size / 1024 ** 2).toLocaleString('es-AR', { maximumFractionDigits: 1 })} MB`;
+  return `${Math.ceil(size / 1024).toLocaleString('es-AR')} KB`;
 };
 const resultScoringFields = [
   { positionField: 'pos_qualy_sprint', pointsField: 'pts_qualy_sprint', label: 'Clasificación Sprint', shortLabel: 'QS', integer: true },
@@ -324,7 +332,9 @@ const emptyChampionshipForm = {
   puerto: '',
   n_server: '',
   servidor: '',
-  regla_porcentaje: '0',
+  regla_porcentaje: '108',
+  regla_porcentaje_libre: '101',
+  vueltas_minimas: '25',
 };
 const createEmptyPrize = position => ({ posicion: String(position || ''), efectivo: false, inscripcion: false, trofeo: false });
 
@@ -397,6 +407,7 @@ const emptyOfficialCarForm = { id: '', idmarca: '', idauto: '', numero: '', desc
 
 const emptyRegistrationConfig = {
   visible: true,
+  transmision_en_vivo: false,
   fecha_apertura: '',
   fecha_cierre: '',
   precio: '0',
@@ -873,6 +884,11 @@ export default function Admin() {
   const [templateMessage, setTemplateMessage] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateUploadProgress, setTemplateUploadProgress] = useState(0);
+  const [paintingChampionships, setPaintingChampionships] = useState([]);
+  const [paintingFiles, setPaintingFiles] = useState([]);
+  const [paintingMessage, setPaintingMessage] = useState('');
+  const [savingPaintingAccess, setSavingPaintingAccess] = useState(false);
+  const [paintingDeadline, setPaintingDeadline] = useState('');
   const [sponsors, setSponsors] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [complaintChampionshipFilter, setComplaintChampionshipFilter] = useState('');
@@ -880,6 +896,8 @@ export default function Admin() {
   const [editingComplaint, setEditingComplaint] = useState(null);
   const [complaintMessage, setComplaintMessage] = useState('');
   const [savingComplaint, setSavingComplaint] = useState(false);
+  const [complaintEnabledSessions, setComplaintEnabledSessions] = useState(['SPRINT', 'FINAL']);
+  const [savingComplaintSessions, setSavingComplaintSessions] = useState(false);
   const [sponsorForm, setSponsorForm] = useState(emptySponsorForm);
   const [sponsorLogoFile, setSponsorLogoFile] = useState(null);
   const [sponsorPhotoFiles, setSponsorPhotoFiles] = useState([]);
@@ -1054,6 +1072,8 @@ export default function Admin() {
   const [eventDateFrom, setEventDateFrom] = useState('');
   const [eventDateTo, setEventDateTo] = useState('');
   const [eventPage, setEventPage] = useState(1);
+  const [savingHomeEventKey, setSavingHomeEventKey] = useState('');
+  const [homeEventMessage, setHomeEventMessage] = useState('');
   const [eventSort, setEventSort] = useState('fecha');
   const [eventSortDirection, setEventSortDirection] = useState('desc');
   const [driverForm, setDriverForm] = useState(emptyDriverForm);
@@ -1068,6 +1088,23 @@ export default function Admin() {
   useEffect(() => {
     window.localStorage.setItem(adminSectionStorageKey, activeSection);
   }, [activeSection]);
+
+  useEffect(() => {
+    if (!authorized || !templateChampionshipId) {
+      setPaintingFiles([]);
+      return;
+    }
+    let active = true;
+    templatesApi.getAdminPaintings({ idcampeonato: templateChampionshipId })
+      .then(response => { if (active) setPaintingFiles(response.data.data || []); })
+      .catch(error => { if (active) setPaintingMessage(error.response?.data?.error || 'No se pudieron cargar las pinturas entregadas.'); });
+    return () => { active = false; };
+  }, [authorized, templateChampionshipId]);
+
+  useEffect(() => {
+    const selected = paintingChampionships.find(item => String(item.idcampeonato) === String(templateChampionshipId));
+    setPaintingDeadline(toDateTimeInputValue(selected?.fecha_cierre));
+  }, [paintingChampionships, templateChampionshipId]);
 
   const resultChampionship = useMemo(
     () => championships.find(item => String(item.id) === String(resultChampionshipId)),
@@ -1604,6 +1641,10 @@ export default function Admin() {
     );
   }, [championships, events]);
 
+  const upcomingEventsForHome = useMemo(() => [...events]
+    .filter(event => (parseCalendarDate(event.fecha)?.getTime() || 0) >= Date.now())
+    .sort((a, b) => (parseCalendarDate(a.fecha)?.getTime() || 0) - (parseCalendarDate(b.fecha)?.getTime() || 0)), [events]);
+
   const displayedCars = useMemo(() => {
     const search = carSearch.trim().toLocaleLowerCase('es-AR');
 
@@ -1861,7 +1902,7 @@ export default function Admin() {
     const fetchAdminData = async () => {
       setLoading(true);
       try {
-        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes, sponsorsRes, complaintsRes, projectsRes] = await Promise.all([
+        const [eventsRes, driversRes, circuitsRes, categoriesRes, championshipsRes, carBrandsRes, carsRes, registrationsRes, monitorRes, registrationConfigsRes, replaysRes, templatesRes, paintingChampionshipsRes, sponsorsRes, complaintsRes, projectsRes] = await Promise.all([
           eventsApi.getAll(),
           driversApi.getAll(),
           circuitsApi.getAll(),
@@ -1874,6 +1915,7 @@ export default function Admin() {
           registrationFormsApi.getAdminAll(),
           replaysApi.getAll(),
           templatesApi.getAll(),
+          templatesApi.getChampionships(),
           sponsorsApi.getAdminAll(),
           complaintsApi.getAdminAll(),
           projectsApi.getAdminAll(),
@@ -1894,10 +1936,13 @@ export default function Admin() {
         setRegistrationConfigs(registrationConfigsRes.data.data ?? []);
         setReplays(replaysRes.data.data ?? []);
         setTemplates(templatesRes.data.data ?? []);
+        setPaintingChampionships(paintingChampionshipsRes.data.data ?? []);
         setSponsors(sponsorsRes.data.data ?? []);
         setComplaints(complaintsRes.data.data ?? []);
         setProjects(projectsRes.data.data ?? []);
         setResultChampionshipId(current => current || String(championshipsRes.data.data?.[0]?.id ?? ''));
+        const latestChampionship = (championshipsRes.data.data || []).reduce((latest, item) => !latest || Number(item.id) > Number(latest.id) ? item : latest, null);
+        setTemplateChampionshipId(current => current || String(latestChampionship?.id || ''));
       } catch (err) {
         console.error('Error cargando administración:', err);
         setResultMessage('No se pudieron cargar los datos de administración.');
@@ -1912,6 +1957,7 @@ export default function Admin() {
   useEffect(() => {
     if (!complaintChampionshipFilter) {
       setComplaintRoundFilter('');
+      setComplaintEnabledSessions(['SPRINT', 'FINAL']);
       return;
     }
     const championshipEvents = events
@@ -1925,6 +1971,15 @@ export default function Admin() {
     const selected = latestCompleted || championshipEvents[championshipEvents.length - 1];
     setComplaintRoundFilter(current => current && championshipEvents.some(item => String(item.ronda) === current) ? current : String(selected.ronda));
   }, [complaintChampionshipFilter, events]);
+
+  useEffect(() => {
+    if (!authorized || !complaintChampionshipFilter) return;
+    let active = true;
+    complaintsApi.getAdminConfig(complaintChampionshipFilter)
+      .then(response => { if (active) setComplaintEnabledSessions(response.data.data?.tandas || ['SPRINT', 'FINAL']); })
+      .catch(error => { if (active) setComplaintMessage(error.response?.data?.error || 'No se pudo cargar la configuración de tandas.'); });
+    return () => { active = false; };
+  }, [authorized, complaintChampionshipFilter]);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -2057,6 +2112,7 @@ export default function Admin() {
     }
     setRegistrationConfig(existing ? {
       visible: existing.visible !== false,
+      transmision_en_vivo: Boolean(existing.transmision_en_vivo),
       fecha_apertura: toDateTimeInputValue(existing.fecha_apertura),
       fecha_cierre: toDateTimeInputValue(existing.fecha_cierre),
       precio: String(existing.precio ?? 0),
@@ -2156,7 +2212,25 @@ export default function Admin() {
       setRegistrationConfigs(current => [saved, ...current.filter(item => String(item.idcampeonato) !== String(saved.idcampeonato))]);
       setRegistrationConfigMessage(response.data.message);
       setFreeDriversMessage(freeDriversResponse.data.message || 'Pilotos con inscripción gratuita actualizados.');
-      await loadRegistrationGallery(registrationConfigChampionshipId);
+      if (registrationImageFiles.length) {
+        setSavingRegistrationImages(true);
+        try {
+          const data = new FormData();
+          registrationImageFiles.forEach(file => data.append('images', file));
+          const imagesResponse = await registrationFormsApi.uploadImages(registrationConfigChampionshipId, data);
+          setRegistrationGallery(imagesResponse.data.data || []);
+          setRegistrationGalleryPath(imagesResponse.data.path || '');
+          setRegistrationGalleryMessage(imagesResponse.data.message || 'Fotos cargadas correctamente.');
+          setRegistrationImageFiles([]);
+          if (registrationImagesInputRef.current) registrationImagesInputRef.current.value = '';
+        } catch (imageError) {
+          setRegistrationGalleryMessage(`El formulario se guardó, pero las fotos no pudieron cargarse: ${imageError.response?.data?.error || imageError.message}`);
+        } finally {
+          setSavingRegistrationImages(false);
+        }
+      } else {
+        await loadRegistrationGallery(registrationConfigChampionshipId);
+      }
       await loadOfficialCars(registrationConfigChampionshipId);
     } catch (error) {
       setRegistrationConfigMessage(error.response?.data?.error || 'No se pudo guardar el formulario.');
@@ -5049,6 +5123,37 @@ export default function Admin() {
     setRegistrationDriverDetailsMessage('');
   };
 
+  const updateUpcomingEventDraft = (eventItem, field, value) => {
+    setEvents(current => current.map(item => (
+      String(item.idcampeonato) === String(eventItem.idcampeonato) && String(item.ronda) === String(eventItem.ronda)
+        ? { ...item, [field]: value }
+        : item
+    )));
+  };
+
+  const saveUpcomingEventVisibility = async eventItem => {
+    const key = `${eventItem.idcampeonato}-${eventItem.ronda}`;
+    setSavingHomeEventKey(key);
+    setHomeEventMessage('');
+    try {
+      const response = await eventsApi.updateHomeVisibility(eventItem.idcampeonato, eventItem.ronda, {
+        visible: Boolean(Number(eventItem.mostrar_inicio)),
+        mostrar_desde: eventItem.mostrar_desde ? toMySqlDateTime(toDateTimeInputValue(eventItem.mostrar_desde)) : '',
+      });
+      const saved = response.data.data;
+      setEvents(current => current.map(item => (
+        String(item.idcampeonato) === String(saved.idcampeonato) && String(item.ronda) === String(saved.ronda)
+          ? { ...item, mostrar_inicio: saved.mostrar_inicio, mostrar_desde: saved.mostrar_desde }
+          : item
+      )));
+      setHomeEventMessage(response.data.message);
+    } catch (error) {
+      setHomeEventMessage(error.response?.data?.error || 'No se pudo actualizar la publicación de la fecha.');
+    } finally {
+      setSavingHomeEventKey('');
+    }
+  };
+
   const handleAddCircuitNote = async () => {
     if (!editingCircuitId) {
       setCircuitMessage('Primero guardá el circuito y luego agregá sus notas de pista.');
@@ -5539,6 +5644,8 @@ export default function Admin() {
       n_server: championship.n_server ?? '',
       servidor: championship.servidor || '',
       regla_porcentaje: String(championship.regla_porcentaje ?? 0),
+      regla_porcentaje_libre: String(championship.regla_porcentaje_libre ?? 101),
+      vueltas_minimas: String(championship.vueltas_minimas ?? 25),
     });
     setChampionshipRulesFile(null);
     if (championshipRulesInputRef.current) championshipRulesInputRef.current.value = '';
@@ -5739,6 +5846,55 @@ export default function Admin() {
     }
   };
 
+  const savePaintingSettings = async () => {
+    if (!templateChampionshipId || savingPaintingAccess) return;
+    setSavingPaintingAccess(true);
+    setPaintingMessage('');
+    try {
+      const response = await templatesApi.setPaintingsDeadline(templateChampionshipId, paintingDeadline);
+      setPaintingChampionships(current => current.map(item => String(item.idcampeonato) === String(templateChampionshipId)
+        ? { ...item, ...response.data.data }
+        : item));
+      setPaintingMessage(response.data.message || 'Configuración actualizada.');
+    } catch (error) {
+      setPaintingMessage(error.response?.data?.error || 'No se pudo actualizar la entrega de pinturas.');
+    } finally {
+      setSavingPaintingAccess(false);
+    }
+  };
+
+  const deletePaintingFile = async file => {
+    if (!window.confirm(`¿Eliminar ${file.nombre_original} de ${file.piloto}?`)) return;
+    setPaintingMessage('');
+    try {
+      const response = await templatesApi.removePainting(file.id);
+      setPaintingFiles(current => current.filter(item => item.id !== file.id));
+      setPaintingMessage(response.data.message || 'Archivo eliminado correctamente.');
+    } catch (error) {
+      setPaintingMessage(error.response?.data?.error || 'No se pudo eliminar el archivo.');
+    }
+  };
+
+  const downloadPaintingFilesZip = async group => {
+    setPaintingMessage('');
+    try {
+      const response = await templatesApi.downloadPilotPaintings(templateChampionshipId, group.idpiloto);
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      const filenameParts = [group.piloto, `#${group.numero ?? 0}`, group.marca, group.modelo]
+        .filter(value => value !== null && value !== undefined && String(value).trim())
+        .map(value => String(value).replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim());
+      anchor.download = `${filenameParts.join(' - ')}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setPaintingMessage(error.response?.data?.error || 'No se pudo descargar el ZIP de pinturas.');
+    }
+  };
+
   const resetProjectForm = () => {
     setProjectForm(emptyProjectForm);
     setProjectPhotoFiles([]);
@@ -5931,6 +6087,27 @@ export default function Admin() {
     }
   };
 
+  const toggleComplaintSession = session => {
+    setComplaintEnabledSessions(current => current.includes(session)
+      ? current.filter(item => item !== session)
+      : complaintSessionOptions.map(option => option.value).filter(item => [...current, session].includes(item)));
+  };
+
+  const saveComplaintSessions = async () => {
+    if (!complaintChampionshipFilter || savingComplaintSessions) return;
+    setSavingComplaintSessions(true);
+    setComplaintMessage('');
+    try {
+      const response = await complaintsApi.updateAdminConfig(complaintChampionshipFilter, complaintEnabledSessions);
+      setComplaintEnabledSessions(response.data.data?.tandas || []);
+      setComplaintMessage(response.data.message || 'Tandas actualizadas correctamente.');
+    } catch (error) {
+      setComplaintMessage(error.response?.data?.error || 'No se pudieron actualizar las tandas del formulario.');
+    } finally {
+      setSavingComplaintSessions(false);
+    }
+  };
+
   const renderSection = () => {
     if (activeSection === 'ayrton') return <AyrtonMemoryAdmin />;
     if (activeSection === 'club') return <ClubAdmin categories={categories} circuits={circuits} cars={cars} />;
@@ -5948,9 +6125,10 @@ export default function Admin() {
         const [minutes = 0, seconds = 0] = String(value || '0').replace(',', '.').replace(':', '.').split('.').map(Number);
         return (Number(minutes) * 60) + Number(seconds);
       };
-      const complaintsBySession = ['SPRINT', 'FINAL'].map(session => ({
-        session,
-        items: filteredComplaints.filter(item => item.tanda === session).sort((a, b) => complaintMinute(a.minuto_repeticion) - complaintMinute(b.minuto_repeticion) || Number(a.id) - Number(b.id)),
+      const complaintsBySession = complaintSessionOptions.map(option => ({
+        label: option.label,
+        session: option.value,
+        items: filteredComplaints.filter(item => item.tanda === option.value).sort((a, b) => complaintMinute(a.minuto_repeticion) - complaintMinute(b.minuto_repeticion) || Number(a.id) - Number(b.id)),
       }));
       const editingRounds = editingComplaint
         ? events.filter(item => String(item.idcampeonato) === String(editingComplaint.idcampeonato)).sort((a, b) => Number(a.ronda) - Number(b.ronda))
@@ -5965,6 +6143,8 @@ export default function Admin() {
             <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto"><label className="w-full lg:w-80"><span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Campeonato</span><select value={complaintChampionshipFilter} onChange={event => { setComplaintChampionshipFilter(event.target.value); setComplaintRoundFilter(''); }} className="input-field mt-1.5 py-2.5"><option value="">Todos los campeonatos</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label><label className="w-full lg:w-72"><span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Fecha</span><select value={complaintRoundFilter} onChange={event => setComplaintRoundFilter(event.target.value)} disabled={!complaintChampionshipFilter} className="input-field mt-1.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-40"><option value="">Todas las fechas</option>{complaintRounds.map(item => <option key={`${item.idcampeonato}-${item.ronda}`} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label></div>
           </header>
 
+          {complaintChampionshipFilter ? <section className="border border-racing-border bg-racing-card p-4 sm:p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-racing-red">Formulario público</p><h3 className="mt-1 font-racing text-xl font-bold uppercase text-white">Tandas habilitadas para denunciar</h3><p className="mt-1 text-xs text-gray-500">Estas serán las únicas opciones disponibles para este campeonato.</p></div><div className="flex flex-wrap items-center gap-2">{complaintSessionOptions.map(option => <button key={option.value} type="button" onClick={() => toggleComplaintSession(option.value)} className={`inline-flex min-h-9 items-center gap-2 border px-3 text-[10px] font-bold uppercase transition ${complaintEnabledSessions.includes(option.value) ? 'border-racing-red bg-racing-red text-white' : 'border-racing-border bg-black/20 text-gray-500 hover:border-gray-400 hover:text-white'}`}><span className={`h-3 w-3 border ${complaintEnabledSessions.includes(option.value) ? 'border-white bg-white' : 'border-gray-600'}`}/>{option.label}</button>)}<button type="button" onClick={saveComplaintSessions} disabled={savingComplaintSessions || !complaintEnabledSessions.length} className="min-h-9 bg-white px-4 font-racing text-[10px] font-bold uppercase text-black transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40">{savingComplaintSessions ? 'Guardando…' : 'Guardar tandas'}</button></div></div></section> : null}
+
           {complaintMessage ? <p className="border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{complaintMessage}</p> : null}
 
           {editingComplaint ? <section className="border border-racing-red/35 bg-racing-card p-5 sm:p-6">
@@ -5973,7 +6153,7 @@ export default function Admin() {
               <label><span className="text-sm text-gray-300">Campeonato</span><select value={editingComplaint.idcampeonato} onChange={event => setEditingComplaint(current => ({ ...current, idcampeonato: event.target.value, ronda: '', idpiloto_denunciado: '' }))} className="input-field mt-2" required>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
               <label><span className="text-sm text-gray-300">Fecha</span><select value={editingComplaint.ronda} onChange={event => setEditingComplaint(current => ({ ...current, ronda: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar fecha</option>{editingRounds.map(item => <option key={item.id} value={item.ronda}>Fecha {item.ronda} · {item.circuito}</option>)}</select></label>
               <label><span className="text-sm text-gray-300">Piloto denunciado</span><select value={editingComplaint.idpiloto_denunciado} onChange={event => setEditingComplaint(current => ({ ...current, idpiloto_denunciado: event.target.value }))} className="input-field mt-2" required><option value="">Seleccionar piloto</option>{editingDrivers.map(item => <option key={item.idpiloto} value={item.idpiloto}>{item.nombre}</option>)}</select></label>
-              <label><span className="text-sm text-gray-300">Tanda</span><select value={editingComplaint.tanda} onChange={event => setEditingComplaint(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required><option value="SPRINT">Sprint</option><option value="FINAL">Final</option></select></label>
+              <label><span className="text-sm text-gray-300">Tanda</span><select value={editingComplaint.tanda} onChange={event => setEditingComplaint(current => ({ ...current, tanda: event.target.value }))} className="input-field mt-2" required>{complaintSessionOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label><span className="text-sm text-gray-300">Minuto</span><input value={editingComplaint.minuto_repeticion} onChange={event => setEditingComplaint(current => ({ ...current, minuto_repeticion: event.target.value }))} className="input-field mt-2" placeholder="1.24" required /></label>
               <label className="md:col-span-2 xl:col-span-3"><span className="text-sm text-gray-300">Descripción</span><input value={editingComplaint.descripcion} onChange={event => setEditingComplaint(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2" maxLength={1000} /></label>
               <div className="flex gap-2 md:col-span-2 xl:col-span-4"><button type="submit" disabled={savingComplaint} className="bg-racing-red px-6 py-3 font-racing text-xs font-bold uppercase text-white hover:bg-racing-red-dark disabled:opacity-50">{savingComplaint ? 'Guardando...' : 'Guardar cambios'}</button><button type="button" onClick={() => setEditingComplaint(null)} className="border border-racing-border px-5 py-3 font-racing text-xs font-bold uppercase text-gray-300 hover:border-white">Cancelar</button></div>
@@ -5981,7 +6161,7 @@ export default function Admin() {
           </section> : null}
 
           <section className="space-y-6">
-            {complaintsBySession.map(group => group.items.length ? <div key={group.session} className="overflow-hidden border border-racing-border bg-racing-card"><div className="flex items-center justify-between border-b border-racing-border bg-black/30 px-4 py-3"><h3 className="font-racing text-xl font-bold uppercase text-white">{group.session}</h3><span className="rounded-full bg-racing-red/15 px-3 py-1 text-xs font-bold text-racing-red">{group.items.length}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-racing-border text-[9px] font-bold uppercase tracking-widest text-gray-500"><th className="w-16 px-3 py-2 text-center">Vista</th><th className="w-20 px-3 py-2">Minuto</th><th className="w-56 px-3 py-2">Piloto</th><th className="px-3 py-2">Descripción</th><th className="w-24 px-3 py-2 text-right">Acciones</th></tr></thead><tbody>{group.items.map(complaint => <tr key={complaint.id} className={`border-b border-racing-border/70 last:border-b-0 ${complaint.visto ? 'bg-black/10 text-gray-500' : 'bg-racing-red/[0.06] text-gray-200'}`}><td className="px-3 py-2 text-center"><input type="checkbox" checked={Boolean(complaint.visto)} onChange={() => toggleComplaintSeen(complaint)} className="h-4 w-4 cursor-pointer accent-violet-500" aria-label={`Marcar denuncia contra ${complaint.piloto} como ${complaint.visto ? 'pendiente' : 'vista'}`}/></td><td className="px-3 py-2 font-racing text-lg font-bold text-yellow-200">{complaint.minuto_repeticion}</td><td className="px-3 py-2"><strong className="block whitespace-nowrap text-sm text-white">{complaint.piloto}</strong></td><td className="px-3 py-2"><p className="text-sm leading-relaxed text-gray-300">{complaint.descripcion || <span className="italic text-gray-600">Sin descripción adicional.</span>}</p></td><td className="px-3 py-2"><div className="flex justify-end gap-1.5"><button type="button" onClick={() => editComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white" aria-label="Editar denuncia"><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar denuncia"><TrashIcon className="h-4 w-4"/></button></div></td></tr>)}</tbody></table></div></div> : null)}
+            {complaintsBySession.map(group => group.items.length ? <div key={group.session} className="overflow-hidden border border-racing-border bg-racing-card"><div className="flex items-center justify-between border-b border-racing-border bg-black/30 px-4 py-3"><h3 className="font-racing text-xl font-bold uppercase text-white">{group.label}</h3><span className="rounded-full bg-racing-red/15 px-3 py-1 text-xs font-bold text-racing-red">{group.items.length}</span></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-racing-border text-[9px] font-bold uppercase tracking-widest text-gray-500"><th className="w-16 px-3 py-2 text-center">Vista</th><th className="w-20 px-3 py-2">Minuto</th><th className="w-56 px-3 py-2">Piloto</th><th className="px-3 py-2">Descripción</th><th className="w-24 px-3 py-2 text-right">Acciones</th></tr></thead><tbody>{group.items.map(complaint => <tr key={complaint.id} className={`border-b border-racing-border/70 last:border-b-0 ${complaint.visto ? 'bg-black/10 text-gray-500' : 'bg-racing-red/[0.06] text-gray-200'}`}><td className="px-3 py-2 text-center"><input type="checkbox" checked={Boolean(complaint.visto)} onChange={() => toggleComplaintSeen(complaint)} className="h-4 w-4 cursor-pointer accent-violet-500" aria-label={`Marcar denuncia contra ${complaint.piloto} como ${complaint.visto ? 'pendiente' : 'vista'}`}/></td><td className="px-3 py-2 font-racing text-lg font-bold text-yellow-200">{complaint.minuto_repeticion}</td><td className="px-3 py-2"><strong className="block whitespace-nowrap text-sm text-white">{complaint.piloto}</strong></td><td className="px-3 py-2"><p className="text-sm leading-relaxed text-gray-300">{complaint.descripcion || <span className="italic text-gray-600">Sin descripción adicional.</span>}</p></td><td className="px-3 py-2"><div className="flex justify-end gap-1.5"><button type="button" onClick={() => editComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-300 hover:border-racing-red hover:text-white" aria-label="Editar denuncia"><PencilSquareIcon className="h-4 w-4"/></button><button type="button" onClick={() => deleteComplaint(complaint)} className="inline-flex h-8 w-8 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar denuncia"><TrashIcon className="h-4 w-4"/></button></div></td></tr>)}</tbody></table></div></div> : null)}
             {!filteredComplaints.length ? <div className="border border-dashed border-racing-border py-20 text-center"><ExclamationTriangleIcon className="mx-auto h-12 w-12 text-gray-700"/><p className="mt-3 text-sm text-gray-500">No hay denuncias registradas para este filtro.</p></div> : null}
           </section>
         </div>
@@ -6048,14 +6228,32 @@ export default function Admin() {
 
     if (activeSection === 'plantillas') {
       const existingTemplate = templates.find(item => String(item.idcampeonato) === String(templateChampionshipId));
+      const selectedPaintingChampionship = paintingChampionships.find(item => String(item.idcampeonato) === String(templateChampionshipId));
+      const deliveryOpen = Boolean(selectedPaintingChampionship?.entrega_abierta);
+      const paintingFilesByDriver = [...paintingFiles.reduce((groups, file) => {
+        const key = String(file.idpiloto);
+        if (!groups.has(key)) groups.set(key, { idpiloto: file.idpiloto, piloto: file.piloto, numero: file.numero, marca: file.marca, modelo: file.modelo, files: [] });
+        groups.get(key).files.push(file);
+        return groups;
+      }, new Map()).values()];
       return (
-        <div className="grid gap-8 xl:grid-cols-[420px_1fr]">
+        <div className="space-y-6">
+          <section className="card-glass p-5 sm:p-6">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)_auto] lg:items-end">
+              <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Campeonato</span><select value={templateChampionshipId} onChange={event => { setTemplateChampionshipId(event.target.value); setTemplateMessage(''); setPaintingMessage(''); }} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
+              <label className="block"><span className="text-xs font-bold uppercase tracking-wider text-gray-500">Cierre automático</span><input type="datetime-local" value={paintingDeadline} onChange={event => setPaintingDeadline(event.target.value)} className="input-field mt-2"/></label>
+              <button type="button" onClick={savePaintingSettings} disabled={!templateChampionshipId || savingPaintingAccess} className="inline-flex min-h-12 items-center justify-center border border-cyan-300/50 px-5 font-racing text-[10px] font-bold uppercase text-cyan-200 transition hover:bg-cyan-300 hover:text-black disabled:opacity-40">{savingPaintingAccess ? 'Guardando…' : 'Guardar fecha'}</button>
+            </div>
+            <p className={`mt-3 text-xs ${!deliveryOpen ? 'text-yellow-300' : 'text-gray-500'}`}>{deliveryOpen ? 'La recepción está abierta y se cerrará automáticamente en la fecha indicada.' : 'La entrega está cerrada. Definí una fecha futura para abrirla.'}</p>
+            {paintingMessage ? <p className="mt-3 border border-racing-border bg-black/25 p-3 text-sm text-gray-300">{paintingMessage}</p> : null}
+          </section>
+
+          <div className="grid gap-6 xl:grid-cols-[400px_minmax(0,1fr)]">
           <section className="card-glass self-start p-6">
-            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Archivos descargables</p>
-            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar plantilla</h2>
-            <p className="mt-2 text-sm text-gray-400">Subí un archivo ZIP para el campeonato. Solo puede haber una plantilla activa por campeonato.</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Archivos para pilotos</p>
+            <h2 className="mt-2 font-racing text-2xl font-bold">Publicar plantillas</h2>
+            <p className="mt-2 text-sm text-gray-400">Subí el ZIP descargable del campeonato. Solo puede haber uno activo por campeonato.</p>
             <form onSubmit={uploadTemplate} className="mt-6 space-y-4">
-              <label className="block"><span className="text-sm text-gray-300">Campeonato</span><select value={templateChampionshipId} onChange={event => { setTemplateChampionshipId(event.target.value); setTemplateMessage(''); }} className="input-field mt-2" required><option value="">Seleccionar campeonato</option>{championships.map(item => <option key={item.id} value={item.id}>{item.categoria} · T{item.temporada} · {item.anio}</option>)}</select></label>
               {existingTemplate ? <p className="border border-yellow-400/30 bg-yellow-400/10 p-3 text-xs text-yellow-200">Este campeonato ya tiene una plantilla. Al publicar el nuevo ZIP se reemplazará el archivo actual.</p> : null}
               <label className="block"><span className="text-sm text-gray-300">Archivo ZIP</span><span className="mt-2 flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center transition hover:border-cyan-300"><ArrowUpTrayIcon className="h-7 w-7 text-cyan-300"/><span className="mt-2 break-all text-sm text-gray-300">{templateFile?.name || 'Seleccionar plantilla'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">Formato ZIP</span></span><input ref={templateInputRef} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={event => setTemplateFile(event.target.files?.[0] || null)} className="sr-only" required/></label>
               <button type="submit" disabled={savingTemplate || !templateFile || !templateChampionshipId} className="inline-flex w-full items-center justify-center gap-2 bg-cyan-300 px-5 py-3 font-racing text-sm font-bold uppercase text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50">{savingTemplate ? 'Subiendo plantilla...' : existingTemplate ? 'Reemplazar plantilla' : 'Publicar plantilla'}</button>
@@ -6071,10 +6269,18 @@ export default function Admin() {
             </div>
           </div> : null}
 
-          <section className="card-glass overflow-hidden">
-            <header className="border-b border-racing-border bg-racing-gray px-6 py-5"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Biblioteca</p><h2 className="mt-1 font-racing text-2xl font-bold">Plantillas publicadas</h2></header>
-            <div className="divide-y divide-racing-border">{templates.map(template => <article key={template.id} className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{template.categoria_logo ? <img src={template.categoria_logo} alt="" className="h-12 w-14 shrink-0 object-contain"/> : <ArchiveBoxIcon className="h-9 w-9 shrink-0 text-cyan-300"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-cyan-300">{template.categoria}</p><h3 className="truncate font-racing text-lg font-bold text-white">Temporada {template.temporada} · {template.anio}</h3><p className="truncate text-xs text-gray-500">{template.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={`/api/templates/${template.id}/download`} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label="Descargar plantilla"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteTemplate(template)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar plantilla"><TrashIcon className="h-5 w-5"/></button></div></article>)}{!templates.length ? <div className="py-20 text-center text-gray-500"><ArchiveBoxIcon className="mx-auto h-12 w-12"/><p className="mt-3">Todavía no hay plantillas publicadas.</p></div> : null}</div>
+          <section className="space-y-6">
+            <div className="card-glass overflow-hidden">
+              <header className="border-b border-racing-border bg-racing-gray px-5 py-4"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Entregas recibidas</p><h2 className="mt-1 font-racing text-2xl font-bold">Pinturas de pilotos</h2><p className="mt-1 text-xs text-gray-500">{paintingFiles.length} archivo{paintingFiles.length === 1 ? '' : 's'} · {paintingFilesByDriver.length} piloto{paintingFilesByDriver.length === 1 ? '' : 's'}</p></header>
+              <div className="divide-y divide-racing-border">{paintingFilesByDriver.map(group => <article key={group.idpiloto} className="p-4 sm:p-5"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><span className="font-racing text-lg font-bold text-cyan-300">#{group.numero ?? 0}</span><div className="min-w-0"><h3 className="truncate font-racing text-lg font-bold uppercase text-white">{group.piloto}</h3>{group.marca || group.modelo ? <p className="text-[10px] uppercase text-gray-500">{[group.marca, group.modelo].filter(Boolean).join(' ')}</p> : null}</div></div><button type="button" onClick={() => downloadPaintingFilesZip(group)} className="inline-flex h-9 items-center justify-center gap-2 border border-cyan-300/40 px-3 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-300 hover:text-black" aria-label={`Descargar pinturas de ${group.piloto} en ZIP`}><ArrowDownTrayIcon className="h-4 w-4"/>Descargar ZIP</button></div><div className="space-y-2">{group.files.map(file => <div key={file.id} className="flex min-w-0 items-center justify-between gap-3 border border-racing-border bg-black/20 px-3 py-2"><div className="min-w-0"><p className="truncate text-sm text-gray-200">{file.nombre_original}</p><p className="text-[10px] uppercase text-gray-600">{file.extension.replace('.', '')} · {formatFileSize(file.tamano)}</p></div><button type="button" onClick={() => deletePaintingFile(file)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${file.nombre_original}`}><TrashIcon className="h-4 w-4"/></button></div>)}</div></article>)}{!paintingFilesByDriver.length ? <div className="py-14 text-center text-gray-500"><ArchiveBoxIcon className="mx-auto h-11 w-11"/><p className="mt-3">Todavía no se recibieron pinturas para este campeonato.</p></div> : null}</div>
+            </div>
+
+            <div className="card-glass overflow-hidden">
+              <header className="border-b border-racing-border bg-racing-gray px-5 py-4"><p className="text-xs font-semibold uppercase tracking-widest text-gray-500">ZIP publicado</p><h2 className="mt-1 font-racing text-xl font-bold">Plantilla del campeonato</h2></header>
+              {existingTemplate ? <article className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3">{existingTemplate.categoria_logo ? <img src={existingTemplate.categoria_logo} alt="" className="h-12 w-14 shrink-0 object-contain"/> : <ArchiveBoxIcon className="h-9 w-9 shrink-0 text-cyan-300"/>}<div className="min-w-0"><p className="truncate text-xs font-bold uppercase text-cyan-300">{existingTemplate.categoria}</p><h3 className="truncate font-racing text-lg font-bold text-white">Temporada {existingTemplate.temporada} · {existingTemplate.anio}</h3><p className="truncate text-xs text-gray-500">{existingTemplate.nombre_original}</p></div></div><div className="flex shrink-0 gap-2"><a href={`/api/templates/${existingTemplate.id}/download`} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-300 hover:border-cyan-300 hover:text-cyan-300" aria-label="Descargar plantilla"><ArrowDownTrayIcon className="h-5 w-5"/></a><button type="button" onClick={() => deleteTemplate(existingTemplate)} className="inline-flex h-10 w-10 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label="Eliminar plantilla"><TrashIcon className="h-5 w-5"/></button></div></article> : <div className="py-10 text-center text-sm text-gray-500">No hay una plantilla publicada para este campeonato.</div>}
+            </div>
           </section>
+          </div>
         </div>
       );
     }
@@ -6158,7 +6364,7 @@ export default function Admin() {
 
           <section className="card-glass p-6">
             {!championship ? <div className="py-20 text-center text-gray-500"><ClipboardDocumentListIcon className="mx-auto h-12 w-12"/><p className="mt-3">Seleccioná un campeonato para configurar su formulario.</p></div> : <form onSubmit={saveRegistrationConfig} className="space-y-6">
-              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div><label className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-xs font-bold uppercase transition ${registrationConfig.visible ? 'border-green-400/40 bg-green-500/10 text-green-300' : 'border-racing-border bg-black/20 text-gray-500'}`}><input name="visible" type="checkbox" checked={registrationConfig.visible} onChange={handleRegistrationConfigChange} className="h-4 w-4 accent-green-500"/>Mostrar en el inicio</label></div>
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase text-racing-red">{editingRegistrationConfig ? 'Modificar formulario' : 'Nuevo formulario'}</p><h2 className="mt-1 font-racing text-3xl font-bold">{championship.categoria}</h2><p className="text-gray-400">Temporada {championship.temporada} · {championship.anio}</p></div><div className="flex flex-wrap gap-2"><label className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-xs font-bold uppercase transition ${registrationConfig.transmision_en_vivo ? 'border-red-400/50 bg-red-500/10 text-red-300' : 'border-racing-border bg-black/20 text-gray-500'}`}><input name="transmision_en_vivo" type="checkbox" checked={registrationConfig.transmision_en_vivo} onChange={handleRegistrationConfigChange} className="h-4 w-4 accent-red-500"/>Transmisión en vivo</label><label className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-xs font-bold uppercase transition ${registrationConfig.visible ? 'border-green-400/40 bg-green-500/10 text-green-300' : 'border-racing-border bg-black/20 text-gray-500'}`}><input name="visible" type="checkbox" checked={registrationConfig.visible} onChange={handleRegistrationConfigChange} className="h-4 w-4 accent-green-500"/>Mostrar en el inicio</label></div></div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label><span className="text-sm text-gray-300">Apertura automática</span><input name="fecha_apertura" type="datetime-local" value={registrationConfig.fecha_apertura} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
                 <label><span className="text-sm text-gray-300">Cierre automático</span><input name="fecha_cierre" type="datetime-local" value={registrationConfig.fecha_cierre} onChange={handleRegistrationConfigChange} className="input-field mt-2" required/></label>
@@ -6171,15 +6377,16 @@ export default function Admin() {
               <section className="overflow-hidden border border-yellow-400/25 bg-yellow-400/5">
                 <button type="button" onClick={() => setRegistrationFormCollapsed(current => ({ ...current, backgrounds: !current.backgrounds }))} className="flex w-full items-center justify-between gap-4 p-5 text-left transition hover:bg-yellow-400/[0.06]" aria-expanded={!registrationFormCollapsed.backgrounds}>
                   <span className="flex min-w-0 items-center gap-3"><PhotoIcon className="h-6 w-6 shrink-0 text-yellow-300"/><span><span className="block font-racing text-xl font-bold text-white">Fondos del campeonato</span><span className="block text-xs text-gray-500">Estas fotos se muestran aleatoriamente en el Inicio.</span></span></span>
-                  <span className="flex shrink-0 items-center gap-3"><span className="text-xs font-bold uppercase text-gray-500">{registrationGallery.length} foto{registrationGallery.length === 1 ? '' : 's'}</span><ChevronDownIcon className={`h-5 w-5 text-yellow-300 transition-transform duration-500 ${registrationFormCollapsed.backgrounds ? '-rotate-90' : ''}`}/></span>
+                  <span className="flex shrink-0 items-center gap-3"><span className="text-xs font-bold uppercase text-gray-500">{registrationGallery.length + registrationImageFiles.length} foto{registrationGallery.length + registrationImageFiles.length === 1 ? '' : 's'}</span><ChevronDownIcon className={`h-5 w-5 text-yellow-300 transition-transform duration-500 ${registrationFormCollapsed.backgrounds ? '-rotate-90' : ''}`}/></span>
                 </button>
                 <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-in-out ${registrationFormCollapsed.backgrounds ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}><div className="min-h-0 overflow-hidden"><div className="border-t border-yellow-400/20 p-5">
-                  {!editingRegistrationConfig ? <p className="border border-dashed border-racing-border p-4 text-center text-sm text-gray-400">Primero creá el formulario. Después podrás cargar sus fotos.</p> : <>
-                    <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label><span className="text-sm text-gray-300">Seleccionar fotos</span><input ref={registrationImagesInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setRegistrationImageFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 fotos por carga, 8 MB cada una.</small></label><button type="button" onClick={uploadRegistrationGallery} disabled={!registrationImageFiles.length || savingRegistrationImages} className="inline-flex min-h-12 items-center justify-center gap-2 border border-yellow-300 bg-yellow-400 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingRegistrationImages ? 'Subiendo...' : `Subir ${registrationImageFiles.length || ''} foto${registrationImageFiles.length === 1 ? '' : 's'}`}</button></div>
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label><span className="text-sm text-gray-300">Seleccionar fotos</span><input ref={registrationImagesInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setRegistrationImageFiles(Array.from(event.target.files || []).slice(0, 10))} className="input-field mt-2 file:mr-4 file:border-0 file:bg-yellow-400 file:px-4 file:py-2 file:font-semibold file:text-black"/><small className="mt-1 block text-gray-500">Hasta 10 fotos por carga, 8 MB cada una.{!editingRegistrationConfig ? ' Se subirán al crear el formulario.' : ''}</small></label>{editingRegistrationConfig ? <button type="button" onClick={uploadRegistrationGallery} disabled={!registrationImageFiles.length || savingRegistrationImages} className="inline-flex min-h-12 items-center justify-center gap-2 border border-yellow-300 bg-yellow-400 px-5 font-racing text-sm font-bold uppercase text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"><PhotoIcon className="h-5 w-5"/>{savingRegistrationImages ? 'Subiendo...' : `Subir ${registrationImageFiles.length || ''} foto${registrationImageFiles.length === 1 ? '' : 's'}`}</button> : <span className="inline-flex min-h-12 items-center justify-center border border-yellow-400/30 bg-yellow-400/10 px-5 text-center text-xs font-bold uppercase text-yellow-200">Se cargan al guardar</span>}</div>
+                    {registrationImageFiles.length ? <div className="mt-3 flex flex-wrap gap-2">{registrationImageFiles.map(file => <span key={`${file.name}-${file.lastModified}`} className="max-w-full truncate border border-yellow-400/25 bg-yellow-400/[0.06] px-2.5 py-1 text-[10px] font-semibold text-yellow-100">{file.name}</span>)}</div> : null}
                     {registrationGalleryPath ? <p className="mt-3 break-all text-xs text-gray-600">Carpeta: {registrationGalleryPath}</p> : null}
                     {registrationGalleryMessage ? <p className="mt-3 text-sm text-yellow-200">{registrationGalleryMessage}</p> : null}
                     <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">{registrationGallery.map(image => <article key={image.filename} className="group relative aspect-video overflow-hidden border border-racing-border bg-black"><img src={image.url} alt="Fondo del campeonato" className="h-full w-full object-cover"/><button type="button" onClick={() => deleteRegistrationGalleryImage(image)} className="absolute right-2 top-2 inline-flex h-9 w-9 items-center justify-center bg-black/80 text-gray-300 opacity-100 transition hover:bg-racing-red hover:text-white md:opacity-0 md:group-hover:opacity-100" aria-label="Eliminar foto"><TrashIcon className="h-4 w-4"/></button></article>)}{!registrationGallery.length ? <div className="col-span-full border border-dashed border-racing-border py-8 text-center text-sm text-gray-500">Todavía no hay fotos cargadas.</div> : null}</div>
-                  </>}
+                  </>
                 </div></div></div>
               </section>
               <section className="border border-yellow-400/30 bg-yellow-400/[0.04] p-4 sm:p-5">
@@ -8185,25 +8392,15 @@ export default function Admin() {
                 />
               </label>
 
-              <label className="block">
-                <span className="text-sm text-gray-300">Regla porcentual para habilitar pilotos</span>
-                <div className="relative mt-2">
-                  <input
-                    name="regla_porcentaje"
-                    type="number"
-                    min="0"
-                    max="999.999"
-                    step="0.1"
-                    value={championshipForm.regla_porcentaje}
-                    onChange={handleChampionshipChange}
-                    className="input-field pr-12"
-                    placeholder="105"
-                    required
-                  />
-                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-racing text-lg font-bold text-gray-500">%</span>
+              <section className="border border-cyan-400/25 bg-cyan-400/[0.04] p-4">
+                <p className="text-sm font-semibold text-gray-200">Requisitos para participar de la fecha</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label className="block"><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Sin exigir vueltas hasta</span><div className="relative mt-1"><input name="regla_porcentaje_libre" type="number" min="100" max="999.999" step="0.1" value={championshipForm.regla_porcentaje_libre} onChange={handleChampionshipChange} className="input-field pr-10" placeholder="101" required/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-racing font-bold text-cyan-300">%</span></div></label>
+                  <label className="block"><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Porcentaje máximo</span><div className="relative mt-1"><input name="regla_porcentaje" type="number" min="0" max="999.999" step="0.1" value={championshipForm.regla_porcentaje} onChange={handleChampionshipChange} className="input-field pr-10" placeholder="108" required/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-racing font-bold text-red-300">%</span></div></label>
+                  <label className="block"><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Vueltas mínimas</span><input name="vueltas_minimas" type="number" min="1" max="999" step="1" value={championshipForm.vueltas_minimas} onChange={handleChampionshipChange} className="input-field mt-1" placeholder="25" required/></label>
                 </div>
-                <small className="mt-1.5 block text-xs leading-relaxed text-gray-500">Ejemplo: 105 habilita a quienes estén dentro del 105% de la mejor vuelta. Usá 0 para desactivar esta regla.</small>
-              </label>
+                <small className="mt-2 block text-xs leading-relaxed text-gray-500">Hasta el primer porcentaje no se exigen vueltas. Entre ambos porcentajes se exige el mínimo indicado. Quien supere el porcentaje máximo no podrá participar. Usá 0 en el porcentaje máximo para desactivar la regla porcentual.</small>
+              </section>
 
               <label className="block">
                 <span className="text-sm text-gray-300">Reglamento PDF</span>
@@ -8312,7 +8509,7 @@ export default function Admin() {
                             'Sin PDF'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-300"><span className="block">:{championship.puerto || '-'} · #{championship.n_server ?? '-'}</span><span className={`mt-1 block text-[10px] font-bold uppercase ${Number(championship.regla_porcentaje || 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}`}>{Number(championship.regla_porcentaje || 0) > 0 ? `Regla ${Number(championship.regla_porcentaje)}%` : 'Sin regla porcentual'}</span></td>
+                        <td className="px-4 py-3 text-gray-300"><span className="block">:{championship.puerto || '-'} · #{championship.n_server ?? '-'}</span><span className={`mt-1 block text-[10px] font-bold uppercase ${Number(championship.regla_porcentaje || 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}`}>{Number(championship.regla_porcentaje || 0) > 0 ? `${Number(championship.regla_porcentaje_libre || 101)}% libre · ${Number(championship.regla_porcentaje)}% máx. · ${Number(championship.vueltas_minimas || 25)} vueltas` : `${Number(championship.vueltas_minimas || 25)} vueltas · sin regla porcentual`}</span></td>
                         <td className="px-4 py-3 text-gray-400">
                           {championship.servidor ? (
                             <a href={championship.servidor} target="_blank" rel="noreferrer" className="text-racing-red hover:text-white">Abrir</a>
@@ -8973,6 +9170,30 @@ export default function Admin() {
     if (activeSection === 'fechas') {
       return (
         <div className="space-y-8">
+          <section className="card-glass overflow-hidden">
+            <div className="border-b border-racing-border px-6 py-4">
+              <h2 className="font-racing text-2xl font-bold">Próximas fechas en Inicio</h2>
+              <p className="mt-1 text-sm text-gray-400">Habilitá cada fecha y elegí desde cuándo puede mostrarse. Podés publicar varias al mismo tiempo.</p>
+            </div>
+            <div className="divide-y divide-racing-border">
+              {upcomingEventsForHome.map(event => {
+                const key = `${event.idcampeonato}-${event.ronda}`;
+                const enabled = Boolean(Number(event.mostrar_inicio));
+                return <div key={key} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,300px)_auto_auto] md:items-center">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {event.categoria_logo ? <img src={event.categoria_logo} alt="" className="h-11 w-14 shrink-0 object-contain"/> : null}
+                    <div className="min-w-0"><p className="truncate font-racing text-lg font-bold uppercase text-white">{event.categoria} · Fecha {event.ronda}</p><p className="truncate text-xs text-gray-400">{event.circuito}{event.variante ? ` · ${event.variante}` : ''} · {formatEventDateTime(event.fecha)}</p></div>
+                  </div>
+                  <label><span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Mostrar desde</span><input type="datetime-local" value={toDateTimeInputValue(event.mostrar_desde)} onChange={inputEvent => updateUpcomingEventDraft(event, 'mostrar_desde', inputEvent.target.value)} disabled={!enabled} className="input-field mt-1 disabled:cursor-not-allowed disabled:opacity-35"/><small className="mt-1 block text-[10px] text-gray-600">Vacío: se muestra inmediatamente.</small></label>
+                  <label className={`inline-flex h-11 cursor-pointer items-center justify-center gap-2 border px-4 text-xs font-bold uppercase transition ${enabled ? 'border-green-400/45 bg-green-500/10 text-green-300' : 'border-racing-border bg-black/20 text-gray-500'}`}><input type="checkbox" checked={enabled} onChange={inputEvent => updateUpcomingEventDraft(event, 'mostrar_inicio', inputEvent.target.checked ? 1 : 0)} className="h-4 w-4 accent-green-500"/>{enabled ? 'Habilitada' : 'Oculta'}</label>
+                  <button type="button" onClick={() => saveUpcomingEventVisibility(event)} disabled={savingHomeEventKey === key} className="btn-secondary h-11 justify-center px-4 disabled:opacity-40">{savingHomeEventKey === key ? 'Guardando...' : 'Guardar'}</button>
+                </div>;
+              })}
+              {!upcomingEventsForHome.length ? <p className="px-6 py-10 text-center text-sm text-gray-500">No hay fechas futuras cargadas.</p> : null}
+            </div>
+            {homeEventMessage ? <p className="border-t border-racing-border px-6 py-3 text-sm text-yellow-200">{homeEventMessage}</p> : null}
+          </section>
+
           <section className="card-glass p-6">
             <h2 className="font-racing text-2xl font-bold">Crear calendario del campeonato</h2>
 

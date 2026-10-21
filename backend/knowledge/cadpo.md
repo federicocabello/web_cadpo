@@ -2,7 +2,7 @@
 
 CADPO TORNEOS es el sitio oficial de la Comunidad Argentina de Pilotos Online.
 
-Centraliza inscripciones, campeonatos, próximas fechas, resultados, estadísticas, repeticiones, plantillas, proyectos y el acceso a CADPO CLUB.
+Centraliza inscripciones, campeonatos, próximas fechas, resultados, estadísticas, repeticiones, pinturas, proyectos y el acceso a CADPO CLUB.
 
 CADPO CLUB ofrece servidores gratuitos de Assetto Corsa abiertos a la comunidad. Cada ciclo utiliza 7 minutos de clasificación y 7 minutos de carrera. Los pilotos pueden ingresar cuando el servidor no está disputando una carrera.
 

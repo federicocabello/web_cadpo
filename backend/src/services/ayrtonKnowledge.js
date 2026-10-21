@@ -45,7 +45,7 @@ const getQuestionIntents = question => {
     championships: /\b(campeonato|campeonatos|temporada|temporadas|categoria|categorias|actual|anterior|pasado|proximo|futuro)\b/.test(normalized),
     drivers: /\b(piloto|pilotos|corredor|corredores|campeon|campeones|victoria|victorias|pole|poles|podio|podios)\b/.test(normalized),
     results: /\b(resultado|resultados|posiciones|clasificacion|tabla|tabla de puntos|puntos|puntaje|ganador|ganadores|lider|campeon|campeones)\b/.test(normalized),
-    downloads: /\b(descarga|descargar|archivo|archivos|repeticion|repeticiones|replay|replays|plantilla|plantillas|template|templates)\b/.test(normalized),
+    downloads: /\b(descarga|descargar|archivo|archivos|repeticion|repeticiones|replay|replays|pintura|pinturas|plantilla|plantillas|template|templates)\b/.test(normalized),
     projects: /\b(proyecto|proyectos|desarrollo|desarrollando|proximamente)\b/.test(normalized),
     circuits: /\b(autodromo|autodromos|circuito|circuitos|trazado|trazados|formula 1|formula uno|f1|gran premio)\b/.test(normalized),
   };
@@ -584,7 +584,7 @@ const loadDownloadCatalog = async () => {
     templates: templatesResult[0].map(item => ({
       ...item,
       downloadUrl: `https://cadpotorneos.com/api/templates/${item.id}/download`,
-      sectionUrl: 'https://cadpotorneos.com/plantillas',
+      sectionUrl: 'https://cadpotorneos.com/pinturas',
     })),
   };
 };
@@ -710,7 +710,7 @@ const buildKnowledge = async question => {
       club: 'https://cadpotorneos.com/club',
       results: 'https://cadpotorneos.com/resultados',
       replays: 'https://cadpotorneos.com/replays',
-      templates: 'https://cadpotorneos.com/plantillas',
+      templates: 'https://cadpotorneos.com/pinturas',
       projects: 'https://cadpotorneos.com/proyectos',
     },
   };

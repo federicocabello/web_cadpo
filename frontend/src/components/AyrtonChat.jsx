@@ -3,6 +3,7 @@ import { ArrowUpIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { ayrtonApi } from '../services/api'
 
 const radioLevels = [28, 46, 62, 74, 56, 82, 68, 92, 64, 48, 72, 100, 78, 58, 88, 70, 52, 76, 60, 44, 30]
+const maxQuestionLength = 300
 
 const initialMessage = {
   role: 'assistant',
@@ -60,6 +61,7 @@ function AyrtonChat() {
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const [configured, setConfigured] = useState(false)
+  const [available, setAvailable] = useState(false)
   const [messages, setMessages] = useState([initialMessage])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -80,10 +82,12 @@ function AyrtonChat() {
     try {
       const response = await ayrtonApi.getStatus()
       const statusData = response.data?.data || {}
-      const available = Boolean(statusData.configured && statusData.available !== false)
-      setConfigured(available)
+      const serviceConfigured = Boolean(statusData.configured)
+      const serviceAvailable = Boolean(serviceConfigured && statusData.available !== false)
+      setConfigured(serviceConfigured)
+      setAvailable(serviceAvailable)
 
-      if (!available) {
+      if (!serviceAvailable) {
         clearTimeout(closeTimerRef.current)
         setOpen(false)
         setClosing(false)
@@ -101,6 +105,7 @@ function AyrtonChat() {
       availabilityTimerRef.current = setTimeout(refreshAvailability, nextCheckMs)
     } catch {
       setConfigured(false)
+      setAvailable(false)
       availabilityTimerRef.current = setTimeout(refreshAvailability, 60_000)
     }
   }, [])
@@ -216,7 +221,17 @@ function AyrtonChat() {
   return (
     <div className="ayrton-radio-shell fixed bottom-4 right-3 z-[70] sm:bottom-6 sm:right-6">
       <audio ref={radioAudioRef} src="/radio.mp3" preload="auto" loop />
-      {open ? (
+      {!available ? (
+        <div className="ayrton-radio-unavailable w-[13.5rem] border border-amber-300/30 bg-[#17191f]/[0.98] px-3.5 py-3 text-left shadow-[0_14px_45px_rgba(0,0,0,0.72)] backdrop-blur sm:w-[16rem] sm:px-4" role="status" aria-label="Ayrton en entrenamiento, no disponible">
+          <span className="flex items-center justify-center gap-2 text-[10px] font-bold uppercase italic tracking-[0.12em] sm:text-xs">
+            <HeadphonesIcon className="h-4 w-4 shrink-0 text-amber-300" />
+            <span className="text-[#20f4d0]">CADPO TEAM</span>
+            <span className="text-white">RADIO</span>
+          </span>
+          <span className="mt-2 block border-t border-amber-300/20 pt-2 text-center text-[9px] font-bold uppercase leading-relaxed tracking-[0.14em] text-amber-200 sm:text-[10px]">En entrenamiento</span>
+          <span className="mt-0.5 block text-center text-[7px] font-semibold uppercase tracking-[0.16em] text-gray-500 sm:text-[8px]">No disponible</span>
+        </div>
+      ) : open ? (
         <section
           className={`ayrton-radio-panel ${closing ? 'ayrton-radio-panel--closing' : 'ayrton-radio-panel--opening'} flex h-[min(39rem,calc(100dvh-1.5rem))] w-[calc(100vw-1.5rem)] max-w-[25rem] flex-col overflow-hidden border border-[#2b3038] bg-[#15171d]/[0.98] shadow-[0_24px_80px_rgba(0,0,0,0.78)] backdrop-blur-xl`}
           aria-label="Chat con Ayrton"
@@ -270,7 +285,7 @@ function AyrtonChat() {
               <textarea
                 ref={inputRef}
                 value={input}
-                onChange={event => setInput(event.target.value.slice(0, 700))}
+                onChange={event => setInput(event.target.value.slice(0, maxQuestionLength))}
                 onKeyDown={event => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
@@ -278,6 +293,7 @@ function AyrtonChat() {
                   }
                 }}
                 rows={1}
+                maxLength={maxQuestionLength}
                 placeholder="Preguntale algo a Ayrton..."
                 className="max-h-24 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-xs text-white outline-none placeholder:text-[#666c75]"
                 disabled={sending}

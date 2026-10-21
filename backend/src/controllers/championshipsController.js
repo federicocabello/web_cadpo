@@ -18,6 +18,15 @@ const ensurePercentageRuleColumn = () => {
           if (error.errno !== 1060) throw error;
         }
       }
+      const [exemptionColumns] = await pool.query("SHOW COLUMNS FROM campeonatos LIKE 'regla_porcentaje_libre'");
+      if (!exemptionColumns.length) {
+        await pool.query('ALTER TABLE campeonatos ADD COLUMN regla_porcentaje_libre DECIMAL(6,3) UNSIGNED NOT NULL DEFAULT 101 AFTER regla_porcentaje');
+        await pool.query('UPDATE campeonatos SET regla_porcentaje_libre = CASE WHEN regla_porcentaje BETWEEN 100 AND 101 THEN regla_porcentaje ELSE 101 END');
+      }
+      const [minimumLapColumns] = await pool.query("SHOW COLUMNS FROM campeonatos LIKE 'vueltas_minimas'");
+      if (!minimumLapColumns.length) {
+        await pool.query('ALTER TABLE campeonatos ADD COLUMN vueltas_minimas SMALLINT UNSIGNED NOT NULL DEFAULT 25 AFTER regla_porcentaje_libre');
+      }
     })().catch(error => {
       percentageRuleColumnPromise = null;
       throw error;
@@ -54,6 +63,11 @@ const normalizePercentageRule = value => {
   const percentage = Number(value || 0);
   if (!Number.isFinite(percentage) || percentage < 0 || (percentage > 0 && percentage < 100) || percentage > 999.999) return null;
   return Math.round(percentage * 1000) / 1000;
+};
+
+const normalizeMinimumLaps = value => {
+  const laps = Number(value ?? 25);
+  return Number.isInteger(laps) && laps >= 1 && laps <= 999 ? laps : null;
 };
 
 const scoringFields = ['pts_qualy_sprint', 'pts_sprint', 'pts_qualy_final', 'pts_final'];
@@ -191,7 +205,8 @@ const normalizePlatform = value => {
 };
 
 const championshipSelect = `
-  SELECT c.id, c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor, c.regla_porcentaje,
+  SELECT c.id, c.temporada, c.anio, c.plataforma, c.reglamento, c.puerto, c.n_server, c.servidor,
+         c.regla_porcentaje, c.regla_porcentaje_libre, c.vueltas_minimas,
          cat.id AS idcategoria, cat.categoria, cat.logo AS categoria_logo,
          MIN(cal.fecha) AS primera_fecha,
          MAX(cal.fecha) AS ultima_fecha,
@@ -759,18 +774,23 @@ const create = async (req, res, next) => {
     const plataforma = normalizePlatform(req.body.plataforma);
     const parsedAnio = Number(anio);
     const percentageRule = normalizePercentageRule(req.body.regla_porcentaje);
+    const exemptionPercentage = normalizePercentageRule(req.body.regla_porcentaje_libre ?? 101);
+    const minimumLaps = normalizeMinimumLaps(req.body.vueltas_minimas);
     if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
     if (percentageRule === null) return res.status(400).json({ error: 'La regla debe ser 0 para desactivarla o un porcentaje igual o mayor a 100' });
+    if (exemptionPercentage === null || exemptionPercentage === 0) return res.status(400).json({ error: 'El porcentaje que libera las vueltas debe ser igual o mayor a 100' });
+    if (percentageRule > 0 && exemptionPercentage > percentageRule) return res.status(400).json({ error: 'El porcentaje que libera las vueltas no puede superar el porcentaje máximo' });
+    if (minimumLaps === null) return res.status(400).json({ error: 'Las vueltas mínimas deben ser un número entero entre 1 y 999' });
 
     const reglamento = toPublicRulesPath(req.file);
     const [result] = await pool.query(
-      'INSERT INTO campeonatos (idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [idcategoria, temporada, parsedAnio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule]
+      'INSERT INTO campeonatos (idcategoria, temporada, anio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje, regla_porcentaje_libre, vueltas_minimas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento, optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule, exemptionPercentage, minimumLaps]
     );
 
-    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule }, message: 'Campeonato creado' });
+    res.status(201).json({ data: { id: result.insertId, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule, regla_porcentaje_libre: exemptionPercentage, vueltas_minimas: minimumLaps }, message: 'Campeonato creado' });
   } catch (err) {
     next(err);
   }
@@ -783,22 +803,27 @@ const update = async (req, res, next) => {
     const plataforma = normalizePlatform(req.body.plataforma);
     const parsedAnio = Number(anio);
     const percentageRule = normalizePercentageRule(req.body.regla_porcentaje);
+    const exemptionPercentage = normalizePercentageRule(req.body.regla_porcentaje_libre ?? 101);
+    const minimumLaps = normalizeMinimumLaps(req.body.vueltas_minimas);
     if (!idcategoria || !temporada || !parsedAnio || !plataforma) {
       return res.status(400).json({ error: 'Categoría, temporada, año y plataforma son requeridos' });
     }
     if (percentageRule === null) return res.status(400).json({ error: 'La regla debe ser 0 para desactivarla o un porcentaje igual o mayor a 100' });
+    if (exemptionPercentage === null || exemptionPercentage === 0) return res.status(400).json({ error: 'El porcentaje que libera las vueltas debe ser igual o mayor a 100' });
+    if (percentageRule > 0 && exemptionPercentage > percentageRule) return res.status(400).json({ error: 'El porcentaje que libera las vueltas no puede superar el porcentaje máximo' });
+    if (minimumLaps === null) return res.status(400).json({ error: 'Las vueltas mínimas deben ser un número entero entre 1 y 999' });
 
     const [[current]] = await pool.query('SELECT reglamento FROM campeonatos WHERE id = ?', [req.params.id]);
     if (!current) return res.status(404).json({ error: 'Campeonato no encontrado' });
 
     const reglamento = req.file ? toPublicRulesPath(req.file) : current.reglamento;
     const [result] = await pool.query(
-      'UPDATE campeonatos SET idcategoria=?, temporada=?, anio=?, plataforma=?, reglamento=?, puerto=?, n_server=?, servidor=?, regla_porcentaje=? WHERE id=?',
-      [idcategoria, temporada, parsedAnio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule, req.params.id]
+      'UPDATE campeonatos SET idcategoria=?, temporada=?, anio=?, plataforma=?, reglamento=?, puerto=?, n_server=?, servidor=?, regla_porcentaje=?, regla_porcentaje_libre=?, vueltas_minimas=? WHERE id=?',
+      [idcategoria, temporada, parsedAnio, plataforma, reglamento || '', optionalNumber(puerto), optionalNumber(n_server), normalizeServerUrl(servidor), percentageRule, exemptionPercentage, minimumLaps, req.params.id]
     );
 
     if (!result.affectedRows) return res.status(404).json({ error: 'Campeonato no encontrado' });
-    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule } });
+    res.json({ message: 'Campeonato actualizado', data: { id: req.params.id, idcategoria, temporada, anio: parsedAnio, plataforma, reglamento, puerto, n_server, servidor, regla_porcentaje: percentageRule, regla_porcentaje_libre: exemptionPercentage, vueltas_minimas: minimumLaps } });
   } catch (err) {
     next(err);
   }

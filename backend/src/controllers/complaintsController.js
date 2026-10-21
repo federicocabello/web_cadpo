@@ -5,6 +5,8 @@ const developmentComplaintsEnabled = String(process.env.NODE_ENV || '').toLowerC
 const complaintClosingExpression = developmentComplaintsEnabled
   ? "TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '23:45:00')"
   : "TIMESTAMP(DATE_ADD(DATE(cal.fecha), INTERVAL 1 DAY), '23:45:00')";
+const complaintSessionOptions = ['QUALY_SPRINT', 'SPRINT', 'QUALY_FINAL', 'FINAL'];
+const defaultComplaintSessions = ['SPRINT', 'FINAL'];
 
 let schemaPromise;
 const ensureSchema = () => {
@@ -25,6 +27,14 @@ const ensureSchema = () => {
           PRIMARY KEY (id),
           KEY idx_denuncias_campeonato_fecha (idcampeonato, ronda),
           KEY idx_denuncias_piloto (idpiloto_denunciado)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS denuncias_config (
+          idcampeonato INT NOT NULL,
+          tandas TEXT NOT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (idcampeonato)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       const [columns] = await pool.query("SHOW COLUMNS FROM denuncias LIKE 'visto'");
@@ -49,8 +59,33 @@ const eventSelect = `
 `;
 
 const normalizeSession = value => {
-  const session = String(value || '').trim().toLocaleUpperCase('es-AR');
-  return session === 'SPRINT' || session === 'FINAL' ? session : '';
+  const session = String(value || '').trim().toLocaleUpperCase('es-AR')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s-]+/g, '_');
+  const aliases = {
+    CLASIFICACION_SPRINT: 'QUALY_SPRINT',
+    QUALY_SPRINT: 'QUALY_SPRINT',
+    SPRINT: 'SPRINT',
+    CLASIFICACION_FINAL: 'QUALY_FINAL',
+    QUALY_FINAL: 'QUALY_FINAL',
+    FINAL: 'FINAL',
+  };
+  return aliases[session] || '';
+};
+
+const parseSessions = value => {
+  let sessions = value;
+  if (typeof sessions === 'string') {
+    try { sessions = JSON.parse(sessions); } catch { sessions = sessions.split(','); }
+  }
+  const normalized = [...new Set((Array.isArray(sessions) ? sessions : []).map(normalizeSession).filter(Boolean))];
+  return complaintSessionOptions.filter(session => normalized.includes(session));
+};
+
+const loadConfiguredSessions = async idcampeonato => {
+  const [[config]] = await pool.query('SELECT tandas FROM denuncias_config WHERE idcampeonato = ? LIMIT 1', [idcampeonato]);
+  if (!config) return defaultComplaintSessions;
+  return parseSessions(config.tandas);
 };
 
 const normalizeReplayMinute = value => {
@@ -101,10 +136,13 @@ const getContext = async (req, res, next) => {
       ORDER BY cal.fecha ASC
       LIMIT 1
     `);
-    const events = await Promise.all(openEvents.map(async event => ({
-      ...event,
-      pilotos: await loadDrivers(event.idcampeonato),
-    })));
+    const events = await Promise.all(openEvents.map(async event => {
+      const [pilotos, tandas] = await Promise.all([
+        loadDrivers(event.idcampeonato),
+        loadConfiguredSessions(event.idcampeonato),
+      ]);
+      return { ...event, pilotos, tandas };
+    }));
     res.json({ data: { eventos: events, proxima: nextEvents[0] || null } });
   } catch (error) {
     next(error);
@@ -133,6 +171,11 @@ const create = async (req, res, next) => {
       LIMIT 1
     `, [idcampeonato, ronda]);
     if (!event) return res.status(409).json({ error: 'El período para realizar denuncias está cerrado' });
+
+    const configuredSessions = await loadConfiguredSessions(idcampeonato);
+    if (!configuredSessions.includes(tanda)) {
+      return res.status(400).json({ error: 'La tanda seleccionada no está habilitada para este campeonato' });
+    }
 
     const [[driver]] = await pool.query(
       'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
@@ -180,6 +223,40 @@ const getAdmin = async (req, res, next) => {
     }
     const [rows] = await pool.query(`${adminSelect}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY d.creado DESC, d.id DESC`, params);
     res.json({ data: rows.map(row => ({ ...row, visto: Boolean(row.visto) })), total: rows.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getAdminConfig = async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const championshipId = Number(req.params.idcampeonato);
+    if (!Number.isInteger(championshipId) || championshipId < 1) return res.status(400).json({ error: 'Campeonato inválido' });
+    const [[championship]] = await pool.query('SELECT id FROM campeonatos WHERE id = ? LIMIT 1', [championshipId]);
+    if (!championship) return res.status(404).json({ error: 'Campeonato no encontrado' });
+    const tandas = await loadConfiguredSessions(championshipId);
+    res.json({ data: { idcampeonato: championshipId, tandas } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const updateAdminConfig = async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const championshipId = Number(req.params.idcampeonato);
+    if (!Number.isInteger(championshipId) || championshipId < 1) return res.status(400).json({ error: 'Campeonato inválido' });
+    const tandas = parseSessions(req.body.tandas);
+    if (!tandas.length) return res.status(400).json({ error: 'Habilitá al menos una tanda para las denuncias' });
+    const [[championship]] = await pool.query('SELECT id FROM campeonatos WHERE id = ? LIMIT 1', [championshipId]);
+    if (!championship) return res.status(404).json({ error: 'Campeonato no encontrado' });
+    await pool.query(
+      `INSERT INTO denuncias_config (idcampeonato, tandas) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE tandas = VALUES(tandas)`,
+      [championshipId, JSON.stringify(tandas)]
+    );
+    res.json({ data: { idcampeonato: championshipId, tandas }, message: 'Tandas del formulario actualizadas correctamente' });
   } catch (error) {
     next(error);
   }
@@ -237,4 +314,4 @@ const markSeen = async (req, res, next) => {
   }
 };
 
-module.exports = { create, getAdmin, getContext, markSeen, remove, update };
+module.exports = { create, getAdmin, getAdminConfig, getContext, markSeen, remove, update, updateAdminConfig };

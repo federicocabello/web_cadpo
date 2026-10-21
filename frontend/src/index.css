@@ -575,7 +575,8 @@
 
 /* Ayrton Team Radio */
 .ayrton-radio-panel,
-.ayrton-radio-launcher {
+.ayrton-radio-launcher,
+.ayrton-radio-unavailable {
   position: relative;
   isolation: isolate;
   font-family: 'Formula1', 'Rajdhani', sans-serif;
@@ -713,7 +714,8 @@
 }
 
 .ayrton-radio-panel::before,
-.ayrton-radio-launcher::before {
+.ayrton-radio-launcher::before,
+.ayrton-radio-unavailable::before {
   content: '';
   position: absolute;
   inset: 0;
