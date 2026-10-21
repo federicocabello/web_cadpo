@@ -8,6 +8,7 @@ require('dotenv').config({
 const express = require('express');
 const cors = require('cors');
 const pool = require('./config/db');
+const publicDir = require('./utils/publicDir');
 
 const eventsRouter = require('./routes/events');
 const championshipsRouter = require('./routes/championships');
@@ -104,7 +105,7 @@ app.use('/api/ayrton', ayrtonRouter);
 const hostingerPublicPath = path.join(__dirname, '../../public_html');
 const bundledPublicPath = path.join(__dirname, '../public');
 const localDistPath = path.join(__dirname, '../../frontend/dist');
-const staticPaths = [hostingerPublicPath, bundledPublicPath, localDistPath]
+const staticPaths = [publicDir, hostingerPublicPath, bundledPublicPath, localDistPath]
   .filter((candidate, index, paths) => fs.existsSync(candidate) && paths.indexOf(candidate) === index);
 const indexPath = staticPaths
   .map(candidate => path.join(candidate, 'index.html'))

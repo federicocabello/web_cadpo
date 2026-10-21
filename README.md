@@ -132,7 +132,7 @@ Variables adicionales admitidas:
 
 | Variable | Uso | Valor predeterminado |
 | --- | --- | --- |
-| `PUBLIC_DIR` | Directorio donde se leen y guardan los archivos públicos | `public_html` en hosting o `frontend/public` en local |
+| `PUBLIC_DIR` | Directorio persistente donde se leen y guardan los archivos públicos subidos; en hosting debe quedar fuera de `hbuilds` y `public_html` | `frontend/public` en local |
 | `PRIVATE_UPLOADS_DIR` | Directorio privado y persistente para las pinturas entregadas por pilotos | `backend/storage` |
 | `LIVE_TIMING_HOST` | Servidor externo de tiempos en vivo | `rh.servegame.com` |
 | `VITE_API_TARGET` | Destino del proxy de Vite durante el desarrollo | `http://localhost:3000` |
@@ -424,7 +424,7 @@ Additional supported variables:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `PUBLIC_DIR` | Directory used to read and store public files | `public_html` on hosting or `frontend/public` locally |
+| `PUBLIC_DIR` | Persistent directory used for uploaded public files; on hosting it must remain outside `hbuilds` and `public_html` | `frontend/public` locally |
 | `PRIVATE_UPLOADS_DIR` | Private persistent directory for driver paint submissions | `backend/storage` |
 | `LIVE_TIMING_HOST` | External live timing server | `rh.servegame.com` |
 | `VITE_API_TARGET` | Vite proxy target during development | `http://localhost:3000` |

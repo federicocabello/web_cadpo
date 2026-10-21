@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "node --watch src/index.js",
     "test": "echo \"No tests configured yet\" && exit 0"
   },
   "keywords": [
@@ -23,11 +23,8 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-validator": "^7.3.2",
-    "multer": "^2.2.0",
+    "multer": "^2.4.0",
     "mysql2": "^3.22.5",
     "nodemailer": "^10.0.9"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
   }
 }
