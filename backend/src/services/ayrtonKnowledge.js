@@ -46,6 +46,7 @@ const getQuestionIntents = question => {
     drivers: /\b(piloto|pilotos|corredor|corredores|campeon|campeones|victoria|victorias|pole|poles|podio|podios)\b/.test(normalized),
     results: /\b(resultado|resultados|posiciones|clasificacion|tabla|tabla de puntos|puntos|puntaje|ganador|ganadores|lider|campeon|campeones)\b/.test(normalized),
     downloads: /\b(descarga|descargar|archivo|archivos|repeticion|repeticiones|replay|replays|pintura|pinturas|plantilla|plantillas|template|templates)\b/.test(normalized),
+    setupDocuments: /\b(setup|puesta a punto|suspension|amortiguador|freno|frenos|camber|neumatico|neumaticos|relacion de caja|relaciones de caja)\b/.test(normalized),
     projects: /\b(proyecto|proyectos|desarrollo|desarrollando|proximamente)\b/.test(normalized),
     circuits: /\b(autodromo|autodromos|circuito|circuitos|trazado|trazados|formula 1|formula uno|f1|gran premio)\b/.test(normalized),
   };
@@ -163,7 +164,7 @@ const loadBaseKnowledge = async () => {
     pool.query(`
       SELECT cfg.idcampeonato, cat.categoria, c.temporada, c.anio,
              cfg.fecha_apertura, cfg.fecha_cierre, cfg.precio,
-             cfg.limite_inscriptos, cfg.preinscriptos,
+             cfg.setup_detalle, cfg.limite_inscriptos, cfg.preinscriptos,
              (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) AS inscriptos_confirmados,
              CASE WHEN NOW() < cfg.fecha_apertura THEN 'próxima'
                   WHEN NOW() >= cfg.fecha_cierre THEN 'cerrada'
@@ -293,6 +294,7 @@ const loadStandings = async championshipIds => {
     let position = 0;
     return items
       .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || Number(b.campeon) - Number(a.campeon)
         || Number(b.puntos) - Number(a.puntos)
         || String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' }))
       .map(item => ({ ...item, posicion: Number(item.excluido) ? null : ++position }));
@@ -362,7 +364,15 @@ const loadDriverHistory = async driverIds => {
   const [rows] = await pool.query(`
     SELECT i.idpiloto, i.idcampeonato, cat.categoria, c.temporada, c.anio,
            i.numero, a.modelo, am.marca,
-           t.posicion,
+           CASE
+             WHEN COALESCE(t.campeon, 0) = 1 OR EXISTS(
+               SELECT 1 FROM resultados champion_result
+               WHERE champion_result.idcampeonato = i.idcampeonato
+                 AND champion_result.idpiloto = i.idpiloto
+                 AND champion_result.campeon = 1
+             ) THEN 1
+             ELSE t.posicion
+           END AS posicion,
            COALESCE(t.puntos, (
              SELECT ROUND(SUM(
                COALESCE(rr.presentismo, 0) + COALESCE(rr.pts_qualy_sprint, 0) + COALESCE(rr.pts_sprint, 0)
@@ -371,7 +381,13 @@ const loadDriverHistory = async driverIds => {
              FROM resultados rr
              WHERE rr.idcampeonato = i.idcampeonato AND rr.idpiloto = i.idpiloto
            )) AS puntos,
-           t.victorias, t.apercibimientos, t.campeon
+           t.victorias, t.apercibimientos,
+           GREATEST(COALESCE(t.campeon, 0), EXISTS(
+             SELECT 1 FROM resultados champion_result
+             WHERE champion_result.idcampeonato = i.idcampeonato
+               AND champion_result.idpiloto = i.idpiloto
+               AND champion_result.campeon = 1
+           )) AS campeon
     FROM inscriptos i
     JOIN campeonatos c ON c.id = i.idcampeonato
     JOIN categorias cat ON cat.id = c.idcategoria
@@ -380,6 +396,37 @@ const loadDriverHistory = async driverIds => {
     LEFT JOIN tablas t ON t.idcampeonato = i.idcampeonato AND t.idpiloto = i.idpiloto
     WHERE i.idpiloto IN (?)
     ORDER BY c.anio DESC, c.temporada DESC, c.id DESC
+  `, [driverIds]);
+  return rows;
+};
+
+const loadDriverSanctions = async driverIds => {
+  if (!driverIds.length) return [];
+  const [rows] = await pool.query(`
+    SELECT r.idpiloto, p.nombre AS piloto, r.idcampeonato, r.ronda, r.fecha,
+           cat.categoria, c.temporada, c.anio,
+           ci.nombre AS circuito, ci.localidad,
+           r.desc_sancion_qualy_sprint, r.desc_sancion_sprint,
+           r.desc_sancion_qualy_final, r.desc_sancion_final,
+           r.sanciones_detalle,
+           cal.resultados_confirmados
+    FROM resultados r
+    JOIN pilotos p ON p.id = r.idpiloto
+    JOIN campeonatos c ON c.id = r.idcampeonato
+    JOIN categorias cat ON cat.id = c.idcategoria
+    JOIN calendario cal ON cal.idcampeonato = r.idcampeonato AND cal.ronda = r.ronda
+    LEFT JOIN circuitos ci ON ci.id = r.idcircuito
+    WHERE r.idpiloto IN (?)
+      AND cal.resultados_visibles = 1
+      AND (
+        TRIM(COALESCE(r.desc_sancion_qualy_sprint, '')) <> ''
+        OR TRIM(COALESCE(r.desc_sancion_sprint, '')) <> ''
+        OR TRIM(COALESCE(r.desc_sancion_qualy_final, '')) <> ''
+        OR TRIM(COALESCE(r.desc_sancion_final, '')) <> ''
+        OR (r.sanciones_detalle IS NOT NULL AND TRIM(r.sanciones_detalle) NOT IN ('', '{}'))
+      )
+    ORDER BY r.fecha DESC, r.ronda DESC, r.id DESC
+    LIMIT 80
   `, [driverIds]);
   return rows;
 };
@@ -589,6 +636,20 @@ const loadDownloadCatalog = async () => {
   };
 };
 
+const loadSetupDocumentsKnowledge = async () => {
+  const [rows] = await pool.query(`
+    SELECT id, titulo, descripcion, nombre_original, tamano, creado, actualizado
+    FROM documentos_puesta_a_punto
+    WHERE visible = 1
+    ORDER BY orden ASC, creado DESC, id DESC
+    LIMIT 30
+  `);
+  return rows.map(row => ({
+    ...row,
+    sectionUrl: 'https://cadpotorneos.com/puesta-a-punto',
+  }));
+};
+
 const loadProjectsKnowledge = async () => {
   const [rows] = await pool.query(`
     SELECT pr.id, pr.tipo, pr.titulo, pr.descripcion, pr.creado, pr.actualizado,
@@ -660,7 +721,7 @@ const buildKnowledge = async question => {
   const categoryIds = [...new Set(contextualChampionships.map(item => Number(item.idcategoria)).filter(Boolean))];
   const intents = getQuestionIntents(question);
   const liveTimingRequested = wantsLiveTiming(question) && !intents.club;
-  const [standings, drivers, championshipCalendars, categoryCars, recentResults, championshipActivity, liveTiming, club, resultsCatalog, downloads, projects, circuits] = await Promise.all([
+  const [standings, drivers, championshipCalendars, categoryCars, recentResults, championshipActivity, liveTiming, club, resultsCatalog, downloads, projects, circuits, setupDocuments] = await Promise.all([
     loadStandings(ids),
     loadDriverKnowledge(question),
     loadChampionshipCalendars(ids),
@@ -673,8 +734,13 @@ const buildKnowledge = async question => {
     intents.downloads ? safeOptionalKnowledge(loadDownloadCatalog) : Promise.resolve(null),
     (intents.projects || intents.circuits) ? safeOptionalKnowledge(loadProjectsKnowledge) : Promise.resolve(null),
     intents.circuits ? safeOptionalKnowledge(loadCircuitsKnowledge) : Promise.resolve(null),
+    intents.setupDocuments ? safeOptionalKnowledge(loadSetupDocumentsKnowledge) : Promise.resolve(null),
   ]);
-  const driverHistory = await loadDriverHistory(drivers.map(driver => Number(driver.id)).filter(Boolean));
+  const matchingDriverIds = drivers.map(driver => Number(driver.id)).filter(Boolean);
+  const [driverHistory, driverSanctions] = await Promise.all([
+    loadDriverHistory(matchingDriverIds),
+    loadDriverSanctions(matchingDriverIds),
+  ]);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -692,6 +758,7 @@ const buildKnowledge = async question => {
     standings,
     matchingDrivers: drivers,
     matchingDriverHistory: driverHistory,
+    matchingDriverSanctions: driverSanctions,
     latestResults: recentResults,
     championshipActivity,
     liveTiming: {
@@ -705,6 +772,7 @@ const buildKnowledge = async question => {
       downloads,
       projects,
       circuits,
+      setupDocuments,
     },
     siteSections: {
       club: 'https://cadpotorneos.com/club',
@@ -712,6 +780,7 @@ const buildKnowledge = async question => {
       replays: 'https://cadpotorneos.com/replays',
       templates: 'https://cadpotorneos.com/pinturas',
       projects: 'https://cadpotorneos.com/proyectos',
+      setupDocuments: 'https://cadpotorneos.com/puesta-a-punto',
     },
   };
 };

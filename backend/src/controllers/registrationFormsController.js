@@ -218,26 +218,32 @@ const getPreviousSeasonRanking = async (championshipId, database = pool) => {
   if (!previousChampionship) return { championshipId: null, positions: new Map() };
 
   const [officialStandings] = await database.query(
-    `SELECT idpiloto, posicion
-     FROM tablas
-     WHERE idcampeonato = ? AND posicion BETWEEN 1 AND 255
-     ORDER BY posicion ASC`,
+    `SELECT t.idpiloto, t.posicion,
+            GREATEST(COALESCE(t.campeon, 0), EXISTS(
+              SELECT 1 FROM resultados r
+              WHERE r.idcampeonato = t.idcampeonato
+                AND r.idpiloto = t.idpiloto AND r.campeon = 1
+            )) AS campeon
+     FROM tablas t
+     WHERE t.idcampeonato = ? AND t.posicion BETWEEN 1 AND 255
+     ORDER BY campeon DESC, t.posicion ASC`,
     [previousChampionship.id]
   );
   if (officialStandings.length) {
     return {
       championshipId: previousChampionship.id,
-      positions: new Map(officialStandings.map(row => [Number(row.idpiloto), Number(row.posicion)])),
+      positions: new Map(officialStandings.slice(0, 255).map((row, index) => [Number(row.idpiloto), index + 1])),
     };
   }
 
   const [calculatedStandings] = await database.query(
-    `SELECT r.idpiloto, p.nombre, ROUND(SUM(${resultPointsExpression('r')}), 2) AS puntos
+    `SELECT r.idpiloto, p.nombre, ROUND(SUM(${resultPointsExpression('r')}), 2) AS puntos,
+            MAX(COALESCE(r.campeon, 0)) AS campeon
      FROM resultados r
      JOIN pilotos p ON p.id = r.idpiloto
      WHERE r.idcampeonato = ?
      GROUP BY r.idpiloto, p.nombre
-     ORDER BY puntos DESC, p.nombre ASC`,
+     ORDER BY campeon DESC, puntos DESC, p.nombre ASC`,
     [previousChampionship.id]
   );
   return {

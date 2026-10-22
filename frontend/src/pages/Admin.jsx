@@ -37,6 +37,7 @@ import {
   XCircleIcon,
   VideoCameraIcon,
   ChatBubbleLeftRightIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { carBrandsApi, carsApi, categoriesApi, championshipsApi, circuitsApi, complaintsApi, driversApi, eventsApi, monitorApi, projectsApi, registrationFormsApi, registrationsApi, replaysApi, resultsApi, sponsorsApi, templatesApi } from '../services/api';
 import { CountryFlag, CountrySelect } from '../components/CountryFlag';
@@ -54,6 +55,7 @@ import CadpoImporter from '../components/CadpoImporter';
 import PollsAdmin from '../components/PollsAdmin';
 import ClubAdmin from '../components/ClubAdmin';
 import AyrtonMemoryAdmin from '../components/AyrtonMemoryAdmin';
+import SetupDocumentsAdmin from '../components/SetupDocumentsAdmin';
 
 const toMySqlDateTime = value => {
   if (!value) return '';
@@ -82,6 +84,7 @@ const adminSections = [
   { id: 'circuitos', label: 'CIRCUITOS', icon: FlagIcon },
   { id: 'club', label: 'CLUB', icon: BoltIcon },
   { id: 'denuncias', label: 'DENUNCIAS', icon: ExclamationTriangleIcon },
+  { id: 'documentos', label: 'DOCUMENTOS', icon: DocumentTextIcon },
   { id: 'fechas', label: 'FECHAS', icon: CalendarDaysIcon },
   { id: 'formularios', label: 'FORMULARIOS', icon: ClipboardDocumentListIcon },
   { id: 'importador', label: 'IMPORTADOR', icon: ArrowUpTrayIcon },
@@ -1359,6 +1362,7 @@ export default function Admin() {
     return [...byDriver.values()]
       .map(standing => ({ ...standing, rawTotal: standing.total, total: standing.excluido ? 0 : standing.total }))
       .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || Number(b.campeon) - Number(a.campeon)
         || b.total - a.total
         || String(a.piloto || '').localeCompare(String(b.piloto || ''), 'es-AR', { sensitivity: 'base' }))
       .map(standing => ({ ...standing, position: standing.excluido ? null : ++classifiedPosition }));
@@ -6113,6 +6117,7 @@ export default function Admin() {
     if (activeSection === 'club') return <ClubAdmin categories={categories} circuits={circuits} cars={cars} />;
     if (activeSection === 'votaciones') return <PollsAdmin />;
     if (activeSection === 'relaciones-caja') return <div className="space-y-12"><GearRatioCalculator/><EnginePowerCalculator/><BrakesCalculator/><TyresCalculator/></div>;
+    if (activeSection === 'documentos') return <SetupDocumentsAdmin />;
 
     if (activeSection === 'denuncias') {
       const filteredComplaints = complaints.filter(item =>
@@ -9834,7 +9839,7 @@ export default function Admin() {
           </div>
         ) : (
           <>
-            <nav className="mb-5 w-full" aria-label="Secciones de administración">
+            <nav className="mb-4 w-full" aria-label="Secciones de administración">
               <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-4 md:grid-cols-7 lg:grid-cols-11">
                 {adminSections.map(section => {
                   const Icon = section.icon;
@@ -9844,9 +9849,9 @@ export default function Admin() {
                       key={section.id}
                       type="button"
                       onClick={() => setActiveSection(section.id)}
-                      className={`inline-flex min-h-11 min-w-0 items-center justify-center gap-2 border px-2 py-2 text-center font-racing text-[10px] font-semibold leading-tight transition-colors ${isActive
+                      className={`inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 border px-2 py-1.5 text-center font-racing text-[11px] font-bold leading-none transition-colors ${isActive
                         ? 'border-racing-red bg-racing-red text-white'
-                        : 'border-transparent bg-racing-card/70 text-gray-400 hover:border-racing-border hover:bg-racing-card hover:text-white'
+                        : 'border-transparent bg-racing-card/70 text-gray-200 hover:border-racing-border hover:bg-racing-card hover:text-white'
                         }`}
                       aria-current={isActive ? 'page' : undefined}
                     >

@@ -2,7 +2,19 @@
 
 En CADPO, los términos "setup" y "puesta a punto" se usan como sinónimos. Cuando una consulta menciona el setup de un auto, se refiere a la configuración mecánica y dinámica del vehículo, salvo que se indique expresamente otro significado.
 
-Este documento es conocimiento técnico de referencia para Ayrton. Se aplica principalmente a simulación y Assetto Corsa. Una puesta a punto nunca es universal: depende del auto, tipo de tracción, neumático, circuito, temperatura, combustible y conducción. No dar números exactos sin esos datos. Partir del setup base, calentar neumáticos, cambiar una sola variable por vez y comparar varias vueltas limpias.
+Este contenido es una referencia interna para que Ayrton elabore respuestas; no es un artículo, manual o archivo publicado para los usuarios. Ayrton debe responder directamente y nunca decir que CADPO subió este contenido ni indicar que el usuario debe leerlo, abrirlo o descargarlo.
+
+Se aplica principalmente a simulación y Assetto Corsa. Una puesta a punto nunca es universal: depende del auto, tipo de tracción, neumático, circuito, temperatura, combustible y conducción. No dar números exactos sin esos datos. Partir del setup base, calentar neumáticos, cambiar una sola variable por vez y comparar varias vueltas limpias.
+
+## Alcance en campeonatos CADPO
+
+En la mayoría de los mods oficiales utilizados en campeonatos CADPO la puesta a punto es fija. Normalmente solo se permite modificar:
+
+- Presión de freno.
+- Reparto o distribución de frenada.
+- Relaciones de la caja de cambios.
+
+Generalmente no se liberan más ajustes. Si la pregunta se refiere a un campeonato concreto, consultar primero su `setup_detalle` y no recomendar suspensión, camber, amortiguadores, diferencial, neumáticos o aerodinámica salvo que la configuración oficial indique expresamente que esos controles están habilitados. El resto de esta referencia solo debe aplicarse a consultas generales o a autos que efectivamente permitan esos ajustes.
 
 ## Método de diagnóstico
 
@@ -124,7 +136,9 @@ Assetto Corsa y Assetto Corsa Competizione no comparten necesariamente el mismo 
 
 Responder breve y práctico: explicar causa probable, proponer entre uno y tres cambios en orden, indicar el efecto secundario y pedir datos solo si son imprescindibles (auto, tracción, circuito, fase de curva y temperaturas/presiones). No prometer que un cambio siempre bajará el tiempo. Para autos reales, aclarar que es orientación conceptual de competición y que prevalecen fabricante e ingeniero; no dar valores peligrosos de presión, montaje o seguridad.
 
-## Fuentes técnicas base
+## Fuentes técnicas internas
+
+Estas fuentes se utilizaron para elaborar el conocimiento interno. No presentarlas como artículos o archivos subidos a CADPO ni remitir al usuario a ellas, salvo que solicite expresamente fuentes externas.
 
 - Kunos Simulazioni / Assetto Corsa Competizione, notas oficiales de física v1.9: https://assettocorsa.gg/wp-content/uploads/ACCv19-physics_notes.pdf
 - Öhlins Racing, manual TPX/TTX44 sobre compresión, rebote y ajustes de baja/alta velocidad: https://ohlins.com/storage/2A8B753854E036FD880C1FB3E4C6D8199C69ED0EF83D810B95D2C760D50A820A/3b2ca8fc14d34827b61f1148cc714ddf/pdf/media/8d8df7ceb5224d9db91ae83c153c2cc8/OM_07440-02_TPX_TTX44.pdf

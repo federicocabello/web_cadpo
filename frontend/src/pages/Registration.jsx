@@ -430,6 +430,12 @@ export default function Registration() {
                   <div className="min-w-0"><p className={clsx('mb-2', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-[0.24em]', 'text-yellow-300', 'sm:text-xs', 'sm:tracking-[0.3em]')}>Temporada {config.temporada}</p><h2 className={clsx('break-words', 'font-racing', 'text-4xl', 'font-bold', 'uppercase', 'leading-[0.92]', 'text-white', 'drop-shadow-[0_7px_25px_rgba(0,0,0,0.95)]', '[overflow-wrap:anywhere]', 'sm:text-6xl', 'lg:text-7xl')}>{config.categoria}</h2></div>
                 </div>
                 <p className={clsx('mt-5', 'max-w-3xl', 'text-sm', 'leading-relaxed', 'text-gray-200', 'sm:mt-7', 'sm:text-base')}><strong className="text-white">Setup:</strong> {config.setup_detalle}</p>
+                <div className={clsx('mt-4', 'grid', 'w-full', 'max-w-3xl', 'gap-2', 'border', 'border-yellow-300/35', 'bg-black/65', 'p-3', 'backdrop-blur-md', 'sm:grid-cols-[auto_1fr_1fr_1fr]', 'sm:items-center', 'sm:gap-4', 'sm:p-4')}>
+                  <span className={clsx('flex', 'items-center', 'gap-2', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-[0.18em]', 'text-yellow-300')}><BanknotesIcon className={clsx('h-5', 'w-5', 'shrink-0')}/>Datos para transferir</span>
+                  <span className={clsx('text-xs', 'text-gray-400')}>Alias <strong className={clsx('ml-1', 'select-all', 'text-sm', 'text-white')}>fede.liga</strong></span>
+                  <span className={clsx('text-xs', 'text-gray-400')}>Cuenta <strong className={clsx('ml-1', 'text-sm', 'text-white')}>Personal Pay</strong></span>
+                  <span className={clsx('text-xs', 'text-gray-400')}>Titular <strong className={clsx('ml-1', 'text-sm', 'text-white')}>Federico Manuel</strong></span>
+                </div>
                 {config.reglamento ? <a href={config.reglamento} target="_blank" rel="noreferrer" className={clsx('mt-4', 'inline-flex', 'min-h-11', 'w-full', 'items-center', 'justify-center', 'gap-2', 'border', 'border-yellow-300/45', 'bg-black/55', 'px-4', 'py-2.5', 'text-xs', 'font-bold', 'uppercase', 'tracking-wider', 'text-yellow-300', 'backdrop-blur-sm', 'transition-colors', 'hover:border-yellow-300', 'hover:bg-yellow-400', 'hover:text-black', 'min-[420px]:w-auto')}><DocumentTextIcon className={clsx('h-5', 'w-5', 'shrink-0')}/>Ver reglamento del campeonato</a> : null}
               </div>
 

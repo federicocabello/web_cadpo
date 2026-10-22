@@ -13,6 +13,7 @@ import {
   PlayCircleIcon,
   TrophyIcon,
   RectangleStackIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline'
 import { authApi, championshipsApi, clubApi, eventsApi, pollsApi, projectsApi } from '../services/api'
 import { getLiveTimingEvents } from '../utils/weeklyChampionships'
@@ -88,6 +89,13 @@ const resourceLinks = [
     Icon: PlayCircleIcon,
     target: '_blank',
     className: 'border-yellow-300/65 bg-yellow-400/15 text-yellow-200 hover:border-yellow-200 hover:bg-yellow-300 hover:text-black hover:shadow-[0_0_24px_rgba(250,204,21,0.28)]',
+  },
+  {
+    href: '/puesta-a-punto',
+    label: 'Ver documentos de puesta a punto',
+    shortLabel: 'PUESTA A PUNTO',
+    Icon: DocumentTextIcon,
+    className: 'border-fuchsia-300/65 bg-fuchsia-400/15 text-fuchsia-200 hover:border-fuchsia-200 hover:bg-fuchsia-300 hover:text-black hover:shadow-[0_0_24px_rgba(232,121,249,0.28)]',
   },
 ]
 

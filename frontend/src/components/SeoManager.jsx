@@ -45,6 +45,11 @@ const pageSeo = {
     description: 'Descargá las plantillas oficiales y entregá los archivos de pintura de tu auto para cada campeonato CADPO.',
     keywords: 'pinturas CADPO, plantillas Assetto Corsa, diseño autos simracing, skins Assetto Corsa',
   },
+  '/puesta-a-punto': {
+    title: 'CADPO TORNEOS • Puesta a Punto',
+    description: 'Consultá documentos técnicos de CADPO sobre puesta a punto y configuración de autos de competición.',
+    keywords: 'puesta a punto autos de competición, setup Assetto Corsa, documentos técnicos simracing, configuración auto de carrera',
+  },
   '/denuncias': {
     title: 'CADPO TORNEOS • Denuncias',
     description: 'Accedé al formulario de denuncias deportivas habilitado para las fechas de los campeonatos CADPO.',

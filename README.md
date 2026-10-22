@@ -9,7 +9,7 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 ### Funcionalidades
 
 - Campeonatos, categorías, calendarios y próximas fechas.
-- Publicación programada de una o varias próximas fechas en el Inicio, administrable por fecha, y configuración explícita de transmisión en vivo por formulario de campeonato.
+- Publicación programada de una o varias próximas fechas en el Inicio, administrable por fecha y compartida con Tiempos en vivo para priorizar el mismo campeonato, circuito y horario; configuración explícita de transmisión en vivo por formulario de campeonato.
 - Inscripciones, pilotos, autos, marcas y circuitos.
 - Resultados, posiciones de campeonato y estadísticas.
 - Consulta de tiempos en vivo desde un servidor externo.
@@ -26,7 +26,8 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Las consultas de Ayrton están limitadas a 300 caracteres; los mensajes redactados principalmente en inglés, las solicitudes peligrosas, los temas ajenos a CADPO/automovilismo y los intentos de alterar sus instrucciones se bloquean localmente, incluso dentro del historial, antes de consumir recursos de Cloudflare AI.
 - Ayrton funciona exclusivamente en modo informativo y de solo lectura: no ejecuta ni confirma altas, modificaciones, eliminaciones, publicaciones o cambios solicitados por usuarios, y no incorpora como oficiales datos aportados en el chat.
 - Al alcanzar el límite diario, o cuando Cloudflare informa que agotó su asignación real de 10.000 neuronas, el consumo se sincroniza al 100% y el acceso público de Ayrton permanece visible, sin interacciones, con el estado **En entrenamiento · No disponible** hasta el reinicio.
-- Conocimiento técnico curado para que Ayrton responda consultas de puesta a punto en Assetto Corsa sobre neumáticos, alineación, suspensión, amortiguadores, frenos, diferencial, aerodinámica y relaciones de caja.
+- Conocimiento técnico interno para que Ayrton responda directamente consultas de puesta a punto en Assetto Corsa sin inventar artículos o manuales publicados. En campeonatos CADPO prioriza la configuración real y parte de que la mayoría de los mods oficiales tienen setup fijo, normalmente limitado a presión de freno, reparto de frenada y relaciones de caja.
+- Biblioteca pública de documentos PDF sobre puesta a punto de autos de competición, con carga, reemplazo, visibilidad, orden y eliminación desde Administración.
 - Referencia 2026 de categorías argentinas para Ayrton, con siglas, modelos, mecánica, tracción y comportamiento, diferenciando el parque real de los mods históricos o balanceados por CADPO.
 - Catálogo contextual de autódromos y circuitos zonales argentinos para Ayrton, incluidos trazados chicos de asfalto y tierra, variantes, estado histórico/actual, usos pasados y futuros confirmados en calendarios de CADPO, más el calendario oficial vigente de Fórmula 1 2026.
 - Historial de consultas y respuestas de Ayrton en Cloudflare D1, con aviso por correo mediante el SMTP del sitio.
@@ -308,6 +309,7 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 ### Features
 
 - Championships, categories, calendars, and upcoming events.
+- Scheduled upcoming events shared by the Home and Live Timing views so both prioritize the same championship, circuit, and start time.
 - Registrations, drivers, cars, manufacturers, and circuits.
 - Results, championship standings, and statistics.
 - Live timing retrieved from an external server.
@@ -320,7 +322,8 @@ Web platform for managing and publishing CADPO sim racing championships. The rep
 - Automatic maintenance screen when the API or database is unavailable.
 - Public Ayrton AI chat connected to Cloudflare Workers AI, with read-only access to current, previous and future championships, calendar weekdays and times, full standings, published results, drivers, CADPO CLUB, replays, paints and projects, plus on-demand access to live APIs.
 - Ayrton always prioritizes championships in progress and open registrations, distinguishing results in progress, provisional or final together with visible appeal windows and appeals.
-- Curated technical knowledge enabling Ayrton to answer Assetto Corsa setup questions about tyres, alignment, suspension, dampers, brakes, differential, aerodynamics, and gearing.
+- Internal technical knowledge enabling Ayrton to answer Assetto Corsa setup questions directly without inventing published articles or manuals. For CADPO championships it prioritizes the actual configuration and assumes most official mods use a fixed setup, normally limited to brake pressure, brake bias, and gearbox ratios.
+- Public PDF library for race-car setup documents, including upload, replacement, visibility, ordering, and deletion controls in Administration.
 - A 2026 Argentine racing-category reference for Ayrton covering acronyms, models, mechanics, drivetrain, and handling while keeping real-world grids separate from CADPO's historical or balanced mods.
 - Contextual Argentine circuit knowledge for Ayrton, including smaller asphalt and dirt venues, layouts, historical/current status, confirmed past and future CADPO usage, and the current official 2026 Formula 1 calendar.
 - Ayrton question and answer history in Cloudflare D1, with email notifications through the website SMTP service.

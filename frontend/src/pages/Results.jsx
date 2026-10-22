@@ -407,6 +407,7 @@ export default function Results() {
     return [...totals.values()]
       .map(standing => ({ ...standing, puntosOriginales: standing.puntos, puntos: standing.excluido ? 0 : standing.puntos }))
       .sort((a, b) => Number(a.excluido) - Number(b.excluido)
+        || Number(b.campeon) - Number(a.campeon)
         || b.puntos - a.puntos
         || String(a.piloto).localeCompare(String(b.piloto), 'es-AR', { sensitivity: 'base' }))
       .map(standing => ({ ...standing, posicion: standing.excluido ? null : ++classifiedPosition }));

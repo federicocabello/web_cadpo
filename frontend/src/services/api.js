@@ -226,6 +226,14 @@ export const projectsApi = {
   remove: id => api.delete(`/projects/admin/${id}`),
 };
 
+export const setupDocumentsApi = {
+  getAll: () => api.get('/setup-documents'),
+  getAdminAll: () => api.get('/setup-documents/admin'),
+  create: data => api.post('/setup-documents/admin', data, { timeout: 0 }),
+  update: (id, data) => api.put(`/setup-documents/admin/${id}`, data, { timeout: 0 }),
+  remove: id => api.delete(`/setup-documents/admin/${id}`),
+};
+
 export const pollsApi = {
   getAll: () => api.get('/polls'),
   vote: (id, idopciones) => api.post(`/polls/${id}/vote`, { idopciones }),

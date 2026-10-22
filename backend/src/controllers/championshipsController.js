@@ -268,7 +268,13 @@ const getStandings = async (req, res, next) => {
     await ensureChampionshipExclusions();
     const [rows] = await pool.query(
       `SELECT t.posicion, t.puntos, t.victorias, t.apercibimientos,
-              t.expulsado, t.campeon,
+              t.expulsado,
+              GREATEST(COALESCE(t.campeon, 0), EXISTS(
+                SELECT 1 FROM resultados champion_result
+                WHERE champion_result.idcampeonato = t.idcampeonato
+                  AND champion_result.idpiloto = t.idpiloto
+                  AND champion_result.campeon = 1
+              )) AS campeon,
               p.id AS idpiloto, p.nombre, p.localidad, p.ig,
               CASE WHEN exclusion.idpiloto IS NULL THEN 0 ELSE 1 END AS excluido
        FROM tablas t
@@ -276,10 +282,14 @@ const getStandings = async (req, res, next) => {
        LEFT JOIN campeonato_pilotos_excluidos exclusion
          ON exclusion.idcampeonato = t.idcampeonato AND exclusion.idpiloto = t.idpiloto
        WHERE t.idcampeonato = ?
-       ORDER BY excluido ASC, t.posicion ASC`,
+       ORDER BY excluido ASC, campeon DESC, t.posicion ASC`,
       [req.params.id]
     );
-    res.json({ data: rows });
+    let position = 0;
+    res.json({ data: rows.map(row => ({
+      ...row,
+      posicion: Number(row.excluido) ? null : ++position,
+    })) });
   } catch (err) {
     next(err);
   }
@@ -364,6 +374,7 @@ const getLatestActiveStandings = async (req, res, next) => {
     const [standings] = await pool.query(
       `SELECT p.id AS idpiloto, p.nombre,
               am.marca, am.logo AS auto_logo,
+              MAX(COALESCE(r.campeon, 0)) AS campeon,
               SUM(
                 COALESCE(r.presentismo, 0) +
                 COALESCE(r.pts_qualy_sprint, 0) +
@@ -381,7 +392,7 @@ const getLatestActiveStandings = async (req, res, next) => {
          ON exclusion.idcampeonato = r.idcampeonato AND exclusion.idpiloto = r.idpiloto
        WHERE r.idcampeonato = ? AND exclusion.idpiloto IS NULL
        GROUP BY p.id, p.nombre, am.id, am.marca, am.logo
-       ORDER BY puntos DESC, p.nombre ASC
+       ORDER BY campeon DESC, puntos DESC, p.nombre ASC
        LIMIT 12`,
       [championship.id]
     );

@@ -13,7 +13,7 @@ import {
 import { authApi, championshipsApi, driversApi, eventsApi, liveTimingApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
-import { getLiveTimingEvents } from '../utils/weeklyChampionships';
+import { getFeaturedUpcomingEvents, getLiveTimingEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
@@ -200,9 +200,16 @@ export default function LiveTiming() {
   const previousSessionRef = useRef('');
   const hasRenderedRowsRef = useRef(false);
   const timingRequestInFlightRef = useRef(false);
-  const weeklyEvents = useMemo(() => getLiveTimingEvents(calendarEvents, new Date(now)), [calendarEvents, now]);
-  const raceEvent = weeklyEvents.find(event => event.idcampeonato === selectedChampionshipId)
-    || weeklyEvents[0]
+  const liveTimingEvents = useMemo(() => {
+    const referenceDate = new Date(now);
+    const featuredEvents = getFeaturedUpcomingEvents(calendarEvents, referenceDate);
+    const featuredLiveTimingEvents = getLiveTimingEvents(featuredEvents, referenceDate);
+    return featuredLiveTimingEvents.length
+      ? featuredLiveTimingEvents
+      : getLiveTimingEvents(calendarEvents, referenceDate);
+  }, [calendarEvents, now]);
+  const raceEvent = liveTimingEvents.find(event => event.idcampeonato === selectedChampionshipId)
+    || liveTimingEvents[0]
     || null;
 
   const loadTiming = useCallback(async (manual = false) => {
@@ -314,7 +321,11 @@ export default function LiveTiming() {
       try {
         const response = await eventsApi.getAll();
         const loadedEvents = response.data.data || [];
-        const activeEvents = getLiveTimingEvents(loadedEvents);
+        const featuredEvents = getFeaturedUpcomingEvents(loadedEvents);
+        const featuredLiveTimingEvents = getLiveTimingEvents(featuredEvents);
+        const activeEvents = featuredLiveTimingEvents.length
+          ? featuredLiveTimingEvents
+          : getLiveTimingEvents(loadedEvents);
         setCalendarError(false);
         setCalendarEvents(loadedEvents);
         const priorityEvent = activeEvents[0];
@@ -337,10 +348,10 @@ export default function LiveTiming() {
   }, [requestedChampionshipId]);
 
   useEffect(() => {
-    if (weeklyEvents.length) {
-      const priorityEvent = weeklyEvents[0];
+    if (liveTimingEvents.length) {
+      const priorityEvent = liveTimingEvents[0];
       const priorityAlreadyStarted = (parseCalendarDate(priorityEvent.fecha)?.getTime() || Infinity) <= now;
-      const selectedStillAvailable = weeklyEvents.some(event => event.idcampeonato === selectedChampionshipId);
+      const selectedStillAvailable = liveTimingEvents.some(event => event.idcampeonato === selectedChampionshipId);
       if (!selectedStillAvailable || (priorityAlreadyStarted && priorityEvent.idcampeonato !== selectedChampionshipId)) {
         setSelectedChampionshipId(priorityEvent.idcampeonato);
       }
@@ -352,7 +363,7 @@ export default function LiveTiming() {
       setTiming(null);
       setLoading(false);
     }
-  }, [calendarLoaded, now, selectedChampionshipId, weeklyEvents]);
+  }, [calendarLoaded, liveTimingEvents, now, selectedChampionshipId]);
 
   useEffect(() => {
     const loadDriverCountries = async () => {
@@ -743,9 +754,9 @@ export default function LiveTiming() {
 
         <div className="relative z-10 mx-auto grid max-w-[1900px] items-center gap-5 lg:grid-cols-[1fr_420px]">
           <div className="max-w-4xl">
-            {weeklyEvents.length > 1 && (
+            {liveTimingEvents.length > 1 && (
               <div className="mb-3 flex max-w-full gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-                {weeklyEvents.map(event => (
+                {liveTimingEvents.map(event => (
                   <button
                     key={event.idcampeonato}
                     type="button"
