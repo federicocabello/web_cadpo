@@ -102,7 +102,7 @@ const create = async (req, res, next) => {
   try {
     await ensureSchema();
     const tipo = normalizeType(req.body.tipo);
-    const titulo = normalizeText(req.body.titulo);
+    const titulo = normalizeText(req.body.titulo).toLocaleUpperCase('es-AR');
     if (!tipo || !titulo) return res.status(400).json({ error: 'Seleccioná el tipo e ingresá el título del proyecto' });
     const descripcion = normalizeText(req.body.descripcion);
     const activo = req.body.activo === 'false' || req.body.activo === '0' ? 0 : 1;
@@ -119,7 +119,7 @@ const update = async (req, res, next) => {
     const [[current]] = await pool.query('SELECT id FROM proyectos WHERE id = ?', [req.params.id]);
     if (!current) return res.status(404).json({ error: 'Proyecto no encontrado' });
     const tipo = normalizeType(req.body.tipo);
-    const titulo = normalizeText(req.body.titulo);
+    const titulo = normalizeText(req.body.titulo).toLocaleUpperCase('es-AR');
     if (!tipo || !titulo) return res.status(400).json({ error: 'Seleccioná el tipo e ingresá el título del proyecto' });
     const descripcion = normalizeText(req.body.descripcion);
     const activo = req.body.activo === 'true' || req.body.activo === '1' ? 1 : 0;

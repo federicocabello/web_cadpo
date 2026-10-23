@@ -430,12 +430,6 @@ export default function Registration() {
                   <div className="min-w-0"><p className={clsx('mb-2', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-[0.24em]', 'text-yellow-300', 'sm:text-xs', 'sm:tracking-[0.3em]')}>Temporada {config.temporada}</p><h2 className={clsx('break-words', 'font-racing', 'text-4xl', 'font-bold', 'uppercase', 'leading-[0.92]', 'text-white', 'drop-shadow-[0_7px_25px_rgba(0,0,0,0.95)]', '[overflow-wrap:anywhere]', 'sm:text-6xl', 'lg:text-7xl')}>{config.categoria}</h2></div>
                 </div>
                 <p className={clsx('mt-5', 'max-w-3xl', 'text-sm', 'leading-relaxed', 'text-gray-200', 'sm:mt-7', 'sm:text-base')}><strong className="text-white">Setup:</strong> {config.setup_detalle}</p>
-                <div className={clsx('mt-4', 'grid', 'w-full', 'max-w-3xl', 'gap-2', 'border', 'border-yellow-300/35', 'bg-black/65', 'p-3', 'backdrop-blur-md', 'sm:grid-cols-[auto_1fr_1fr_1fr]', 'sm:items-center', 'sm:gap-4', 'sm:p-4')}>
-                  <span className={clsx('flex', 'items-center', 'gap-2', 'text-[10px]', 'font-bold', 'uppercase', 'tracking-[0.18em]', 'text-yellow-300')}><BanknotesIcon className={clsx('h-5', 'w-5', 'shrink-0')}/>Datos para transferir</span>
-                  <span className={clsx('text-xs', 'text-gray-400')}>Alias <strong className={clsx('ml-1', 'select-all', 'text-sm', 'text-white')}>fede.liga</strong></span>
-                  <span className={clsx('text-xs', 'text-gray-400')}>Cuenta <strong className={clsx('ml-1', 'text-sm', 'text-white')}>Personal Pay</strong></span>
-                  <span className={clsx('text-xs', 'text-gray-400')}>Titular <strong className={clsx('ml-1', 'text-sm', 'text-white')}>Federico Manuel</strong></span>
-                </div>
                 {config.reglamento ? <a href={config.reglamento} target="_blank" rel="noreferrer" className={clsx('mt-4', 'inline-flex', 'min-h-11', 'w-full', 'items-center', 'justify-center', 'gap-2', 'border', 'border-yellow-300/45', 'bg-black/55', 'px-4', 'py-2.5', 'text-xs', 'font-bold', 'uppercase', 'tracking-wider', 'text-yellow-300', 'backdrop-blur-sm', 'transition-colors', 'hover:border-yellow-300', 'hover:bg-yellow-400', 'hover:text-black', 'min-[420px]:w-auto')}><DocumentTextIcon className={clsx('h-5', 'w-5', 'shrink-0')}/>Ver reglamento del campeonato</a> : null}
               </div>
 
@@ -447,6 +441,18 @@ export default function Registration() {
               </div>
             </div>
             {galleryImages.length > 1 ? <div className={clsx('absolute', 'bottom-3', 'left-4', 'right-4', 'z-20', 'flex', 'justify-end', 'gap-1.5', 'overflow-x-auto')}>{galleryImages.map((image, index) => <button key={image} type="button" onClick={() => setActiveGalleryImage(index)} aria-label={`Mostrar imagen ${index + 1}`} className={`h-1.5 shrink-0 transition-all ${index === activeGalleryImage ? 'w-8 bg-yellow-300' : 'w-3 bg-white/40 hover:bg-white/70'}`}/>)}</div> : null}
+          </section>
+
+          <section className={clsx('mt-3', 'overflow-hidden', 'border', 'border-cyan-300/40', 'bg-gradient-to-r', 'from-cyan-500/15', 'via-sky-500/[0.08]', 'to-black/20', 'shadow-[0_12px_35px_rgba(6,182,212,0.08)]')} aria-label="Datos para transferir la inscripción">
+            <div className={clsx('grid', 'gap-4', 'p-4', 'sm:grid-cols-[auto_1fr_1fr_1fr]', 'sm:items-center', 'sm:gap-6', 'sm:p-5')}>
+              <div className={clsx('flex', 'items-center', 'gap-3')}>
+                <span className={clsx('flex', 'h-11', 'w-11', 'shrink-0', 'items-center', 'justify-center', 'bg-cyan-300', 'text-black')}><BanknotesIcon className={clsx('h-6', 'w-6')}/></span>
+                <div><p className={clsx('text-[9px]', 'font-bold', 'uppercase', 'tracking-[0.2em]', 'text-cyan-300')}>Pago de inscripción</p><h3 className={clsx('font-racing', 'text-lg', 'font-bold', 'uppercase', 'text-white')}>Datos para transferir</h3></div>
+              </div>
+              <div className={clsx('border-l-2', 'border-cyan-300/35', 'pl-3')}><p className={clsx('text-[9px]', 'font-bold', 'uppercase', 'tracking-widest', 'text-cyan-300/75')}>Alias</p><p className={clsx('mt-1', 'select-all', 'font-racing', 'text-lg', 'font-bold', 'text-white')}>fede.liga</p></div>
+              <div className={clsx('border-l-2', 'border-cyan-300/35', 'pl-3')}><p className={clsx('text-[9px]', 'font-bold', 'uppercase', 'tracking-widest', 'text-cyan-300/75')}>Cuenta</p><p className={clsx('mt-1', 'text-sm', 'font-semibold', 'text-white')}>Personal Pay</p></div>
+              <div className={clsx('border-l-2', 'border-cyan-300/35', 'pl-3')}><p className={clsx('text-[9px]', 'font-bold', 'uppercase', 'tracking-widest', 'text-cyan-300/75')}>Titular</p><p className={clsx('mt-1', 'text-sm', 'font-semibold', 'text-white')}>Federico Manuel</p></div>
+            </div>
           </section>
 
           <ChampionshipPrizes prizes={prizes} className={clsx('mt-4', 'sm:mt-6')} />

@@ -211,6 +211,7 @@ const championshipSelect = `
          MIN(cal.fecha) AS primera_fecha,
          MAX(cal.fecha) AS ultima_fecha,
          COUNT(cal.ronda) AS rondas,
+         (SELECT COUNT(*) FROM resultados result_count WHERE result_count.idcampeonato = c.id) AS resultados_cargados,
          CASE
            WHEN MIN(cal.fecha) IS NULL THEN 'upcoming'
            WHEN NOW() < MIN(cal.fecha) THEN 'upcoming'

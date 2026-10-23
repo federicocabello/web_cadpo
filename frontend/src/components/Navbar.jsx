@@ -66,7 +66,7 @@ const navLinks = [
   { to: '/proyectos', label: 'PROYECTOS', Icon: RectangleStackIcon },
 ]
 
-const newProjectDurationMs = 15 * 24 * 60 * 60 * 1000
+const newProjectDurationMs = 10 * 24 * 60 * 60 * 1000
 const parseProjectCreatedAt = value => {
   if (!value) return Number.NaN
   const timestamp = new Date(String(value).replace(' ', 'T')).getTime()

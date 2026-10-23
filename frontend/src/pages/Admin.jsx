@@ -5923,7 +5923,7 @@ export default function Admin() {
     try {
       const data = new FormData();
       data.append('tipo', projectForm.tipo);
-      data.append('titulo', projectForm.titulo.trim());
+      data.append('titulo', projectForm.titulo.trim().toLocaleUpperCase('es-AR'));
       data.append('descripcion', projectForm.descripcion.trim());
       data.append('activo', String(projectForm.activo));
       projectPhotoFiles.forEach(file => data.append('fotos', file));
@@ -6181,7 +6181,7 @@ export default function Admin() {
             <h2 className="mt-2 font-racing text-2xl font-bold">{editingProjectId ? 'Modificar proyecto' : 'Agregar proyecto'}</h2>
             <form onSubmit={saveProject} className="mt-6 space-y-4">
               <label className="block"><span className="text-sm text-gray-300">Tipo</span><select value={projectForm.tipo} onChange={event => setProjectForm(current => ({ ...current, tipo: event.target.value }))} className="input-field mt-2"><option value="categoria">Categoría</option><option value="circuito">Circuito</option></select></label>
-              <label className="block"><span className="text-sm text-gray-300">Título</span><input value={projectForm.titulo} onChange={event => setProjectForm(current => ({ ...current, titulo: event.target.value }))} className="input-field mt-2" placeholder="Nombre del proyecto" required/></label>
+              <label className="block"><span className="text-sm text-gray-300">Título</span><input value={projectForm.titulo} onChange={event => setProjectForm(current => ({ ...current, titulo: event.target.value.toLocaleUpperCase('es-AR') }))} className="input-field mt-2 uppercase" placeholder="NOMBRE DEL PROYECTO" required/></label>
               <label className="block"><span className="text-sm text-gray-300">Descripción</span><textarea value={projectForm.descripcion} onChange={event => setProjectForm(current => ({ ...current, descripcion: event.target.value }))} className="input-field mt-2 min-h-36 resize-y" placeholder="Información y estado del proyecto..."/></label>
               <label className="block"><span className="text-sm text-gray-300">Imágenes</span><input ref={projectPhotosInputRef} type="file" multiple accept="image/avif,image/webp,image/jpeg,image/png" onChange={event => setProjectPhotoFiles(Array.from(event.target.files || []).slice(0, 20))} className="input-field mt-2 file:mr-3 file:border-0 file:bg-racing-red file:px-3 file:py-2 file:font-semibold file:text-white"/><small className="mt-1 block text-gray-500">Hasta 20 imágenes nuevas por carga, 8 MB cada una.</small></label>
               <label className="flex cursor-pointer items-center justify-between gap-4 border border-racing-border bg-black/25 px-4 py-3"><span><strong className="block text-sm text-white">Visible en Proyectos</strong><span className="text-xs text-gray-500">Podés ocultarlo sin eliminarlo.</span></span><input type="checkbox" checked={projectForm.activo} onChange={event => setProjectForm(current => ({ ...current, activo: event.target.checked }))} className="h-5 w-5 accent-red-500"/></label>

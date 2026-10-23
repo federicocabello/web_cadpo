@@ -74,10 +74,12 @@ export default function ChampionshipCard({ championship, wide = false }) {
           </Link>
         ) : null}
 
-        <div className={`grid gap-2 ${wide ? '' : 'sm:grid-cols-2'}`}>
-          <Link to={`/resultados?campeonato=${championship.id}`} className="btn-primary justify-center text-center text-xs">
-            Ver resultados
-          </Link>
+        <div className={`grid gap-2 ${wide || !Number(championship.resultados_cargados) ? '' : 'sm:grid-cols-2'}`}>
+          {Number(championship.resultados_cargados) > 0 ? (
+            <Link to={`/resultados?campeonato=${championship.id}`} className="btn-primary justify-center text-center text-xs">
+              Ver resultados
+            </Link>
+          ) : null}
           {championship.reglamento ? (
             <a
               href={championship.reglamento}
