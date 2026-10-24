@@ -4,7 +4,6 @@ import { templatesApi } from '../services/api';
 
 const maxFileSize = 40 * 1024 * 1024;
 const maxFilesPerUpload = 20;
-const developmentMode = import.meta.env.DEV;
 
 const formatFileSize = bytes => {
   const size = Number(bytes || 0);
@@ -39,6 +38,29 @@ const getCountdownParts = (deadline, now) => {
     minutes ? `${minutes} MINUTO${minutes === 1 ? '' : 'S'}` : '',
   ].filter(Boolean);
 };
+
+function SelectedFilePreview({ file }) {
+  const previewable = ['image/png', 'image/jpeg'].includes(file.type)
+    || /\.(png|jpe?g)$/i.test(file.name);
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!previewable) {
+      setPreviewUrl('');
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file, previewable]);
+
+  return (
+    <article className="min-w-0 overflow-hidden border border-cyan-300/25 bg-black/25">
+      {previewUrl ? <img src={previewUrl} alt={'Vista previa de ' + file.name} className="aspect-square w-full bg-[linear-gradient(45deg,#151515_25%,transparent_25%),linear-gradient(-45deg,#151515_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#151515_75%),linear-gradient(-45deg,transparent_75%,#151515_75%)] bg-[length:16px_16px] object-contain"/> : <div className="flex aspect-square items-center justify-center bg-black/30"><div className="text-center"><ArchiveBoxIcon className="mx-auto h-9 w-9 text-cyan-300"/><strong className="mt-2 block font-racing text-base text-white">DDS</strong><span className="mt-1 block text-[9px] uppercase text-gray-600">Vista previa no disponible</span></div></div>}
+      <div className="p-2.5"><p className="truncate text-xs text-gray-200" title={file.name}>{file.name}</p><p className="mt-1 text-[9px] uppercase text-gray-600">{formatFileSize(file.size)}</p></div>
+    </article>
+  );
+}
 
 export default function Templates() {
   const inputRef = useRef(null);
@@ -87,7 +109,7 @@ export default function Templates() {
   const deadlineTime = parseDeadline(selectedChampionship?.fecha_cierre)?.getTime();
   const deliveryOpen = Boolean(Number.isFinite(deadlineTime) && deadlineTime > now);
   const countdownParts = getCountdownParts(selectedChampionship?.fecha_cierre, now);
-  const submittedDriverId = driverId || (developmentMode ? '0' : '');
+  const submittedDriverId = driverId;
 
   useEffect(() => {
     setDriverId('');
@@ -159,7 +181,7 @@ export default function Templates() {
 
   const submitPaintings = async event => {
     event.preventDefault();
-    if (!championshipId || (!driverId && !developmentMode) || !files.length || uploading) return;
+    if (!championshipId || !driverId || !files.length || uploading) return;
     setUploading(true);
     setProgress(0);
     setError('');
@@ -167,8 +189,7 @@ export default function Templates() {
     try {
       const data = new FormData();
       data.append('idcampeonato', championshipId);
-      if (driverId) data.append('idpiloto', driverId);
-      if (developmentMode && !driverId) data.append('modo_prueba', '1');
+      data.append('idpiloto', driverId);
       files.forEach(file => data.append('archivos', file));
       const response = await templatesApi.uploadPaintings(data, progressEvent => {
         const ratio = progressEvent.progress ?? (progressEvent.total ? progressEvent.loaded / progressEvent.total : 0);
@@ -216,10 +237,10 @@ export default function Templates() {
           <div className="flex items-start gap-3"><PaintBrushIcon className="mt-0.5 h-7 w-7 shrink-0 text-cyan-300"/><div><p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Entrega del piloto</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">Subir archivos de pintura</h2></div></div>
           {selectedChampionship.fecha_cierre ? <div className={`mt-5 border px-4 py-3 ${deliveryOpen ? 'border-cyan-300/40 bg-cyan-300/10' : 'border-yellow-400/30 bg-yellow-400/10'}`}><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className={`text-[10px] font-bold uppercase tracking-widest ${deliveryOpen ? 'text-cyan-300' : 'text-yellow-300'}`}>{deliveryOpen ? 'La entrega cierra en' : 'Plazo de entrega finalizado'}</p><p className="mt-1 text-xs text-gray-400">{deliveryOpen ? 'Cierra' : 'Cerró'} {formatDeadline(selectedChampionship.fecha_cierre)}</p></div>{deliveryOpen ? <div className="flex flex-wrap gap-2">{countdownParts.map(part => <span key={part} className="bg-cyan-300 px-2.5 py-1 font-racing text-sm font-bold text-black">{part}</span>)}</div> : null}</div></div> : null}
           {!deliveryOpen ? <div className="mt-6 border border-yellow-400/30 bg-yellow-400/10 p-5 text-center"><ArchiveBoxIcon className="mx-auto h-9 w-9 text-yellow-300"/><p className="mt-3 font-racing text-lg font-bold uppercase text-white">La entrega está cerrada</p></div> : <form onSubmit={submitPaintings} className="mt-6 space-y-4">
-            <label className="block"><span className="text-sm text-gray-300">Piloto inscripto</span><select value={driverId} onChange={event => setDriverId(event.target.value)} disabled={loadingDrivers} className="input-field mt-2" required={!developmentMode}><option value="">{loadingDrivers ? 'Cargando pilotos…' : developmentMode ? 'Sin piloto · prueba de desarrollo' : 'Seleccionar piloto'}</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>#{driver.numero ?? 0} · {driver.nombre}</option>)}</select><small className="mt-1 block text-gray-500">{developmentMode ? 'En desarrollo podés probar la carga sin seleccionar un piloto.' : 'Incluye inscripciones confirmadas y pendientes de pago.'}</small></label>
+            <label className="block"><span className="text-sm text-gray-300">Piloto inscripto</span><select value={driverId} onChange={event => setDriverId(event.target.value)} disabled={loadingDrivers} className="input-field mt-2" required><option value="">{loadingDrivers ? 'Cargando pilotos…' : 'Seleccionar piloto'}</option>{drivers.map(driver => <option key={driver.id} value={driver.id}>#{driver.numero ?? 0} · {driver.nombre}</option>)}</select><small className="mt-1 block text-gray-500">Seleccioná tu nombre. Incluye inscripciones confirmadas y pendientes de pago.</small></label>
             <label className="block"><span className="text-sm text-gray-300">Archivos terminados</span><span className="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center border border-dashed border-racing-border bg-black/25 px-4 text-center transition hover:border-cyan-300"><ArrowUpTrayIcon className="h-7 w-7 text-cyan-300"/><span className="mt-2 text-sm text-gray-300">{files.length ? `${files.length} archivo${files.length === 1 ? '' : 's'} seleccionado${files.length === 1 ? '' : 's'}` : 'Seleccionar archivos'}</span><span className="mt-1 text-[10px] uppercase text-gray-600">DDS, PNG o JPG · máximo 40 MB por archivo · hasta 20 por carga</span></span><input ref={inputRef} type="file" multiple accept=".dds,.png,.jpg,.jpeg,image/png,image/jpeg" onChange={selectFiles} className="sr-only" required/></label>
-            {files.length ? <ul className="max-h-32 space-y-1 overflow-y-auto border border-racing-border bg-black/20 p-3 text-xs text-gray-400">{files.map(file => <li key={`${file.name}-${file.size}`} className="flex justify-between gap-3"><span className="truncate">{file.name}</span><span className="shrink-0">{formatFileSize(file.size)}</span></li>)}</ul> : null}
-            <button type="submit" disabled={uploading || (!driverId && !developmentMode) || !files.length} className="inline-flex w-full items-center justify-center gap-2 bg-cyan-300 px-5 py-3 font-racing text-sm font-bold uppercase text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{uploading ? `Subiendo ${progress}%` : 'Enviar pinturas'}</button>
+            {files.length ? <div><div className="mb-2 flex items-center justify-between gap-3"><p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">Vista previa antes de enviar</p><span className="text-[10px] text-gray-500">{files.length} archivo{files.length === 1 ? '' : 's'}</span></div><div className="grid max-h-[32rem] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">{files.map(file => <SelectedFilePreview key={`${file.name}-${file.size}-${file.lastModified}`} file={file}/>)}</div></div> : null}
+            <button type="submit" disabled={uploading || !driverId || !files.length} className="inline-flex w-full items-center justify-center gap-2 bg-cyan-300 px-5 py-3 font-racing text-sm font-bold uppercase text-black transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40">{uploading ? `Subiendo ${progress}%` : 'Enviar pinturas'}</button>
             {uploading ? <div className="h-2 overflow-hidden bg-white/10"><div className="h-full bg-cyan-300 transition-[width]" style={{ width: `${progress}%` }}/></div> : null}
           </form>}
           {message ? <p className="mt-4 flex items-center gap-2 border border-green-400/30 bg-green-400/10 p-3 text-sm text-green-200"><CheckCircleIcon className="h-5 w-5 shrink-0"/>{message}</p> : null}

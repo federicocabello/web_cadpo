@@ -100,14 +100,11 @@ export const getLiveTimingEvents = (events, now = new Date()) =>
     };
 
     const orderedEvents = [...configuredEvents].sort(comparePriority);
-    const [weekStart, weekEnd] = getWeekBounds(parseDate(orderedEvents[0].fecha));
-    const eventsInPriorityWeek = orderedEvents.filter(event => {
-      const timestamp = parseDate(event.fecha).getTime();
-      return timestamp >= weekStart && timestamp < weekEnd;
-    });
-
     const byChampionship = new Map();
-    eventsInPriorityWeek.forEach(event => {
+    // Cada campeonato puede usar un servidor diferente aunque sus fechas no
+    // pertenezcan a la misma semana. Conservamos una sola fecha relevante por
+    // campeonato: la que está en curso o, en su defecto, la próxima.
+    orderedEvents.forEach(event => {
       if (!byChampionship.has(event.idcampeonato)) byChampionship.set(event.idcampeonato, event);
     });
 

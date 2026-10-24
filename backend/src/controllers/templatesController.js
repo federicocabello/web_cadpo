@@ -157,16 +157,12 @@ const getEnrolledDrivers = async (req, res, next) => {
 };
 
 const uploadPaintings = async (req, res, next) => {
-  const files = Array.isArray(req.files) ? req.files : [];
+    const files = Array.isArray(req.files) ? req.files : [];
   try {
     await ensureTemplateTable();
     const championshipId = Number(req.body.idcampeonato);
-    const requestedDriverId = Number(req.body.idpiloto);
-    const developmentTest = String(process.env.NODE_ENV || '').toLowerCase() === 'development'
-      && String(req.body.modo_prueba || '') === '1'
-      && (!Number.isInteger(requestedDriverId) || requestedDriverId < 1);
-    const driverId = developmentTest ? 0 : requestedDriverId;
-    if (!Number.isInteger(championshipId) || championshipId < 1 || (!developmentTest && (!Number.isInteger(driverId) || driverId < 1))) {
+    const driverId = Number(req.body.idpiloto);
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(driverId) || driverId < 1) {
       await removeUploadedFiles(files);
       return res.status(400).json({ error: 'Seleccioná un campeonato y un piloto válidos' });
     }
@@ -190,15 +186,13 @@ const uploadPaintings = async (req, res, next) => {
       await removeUploadedFiles(files);
       return res.status(403).json({ error: 'La entrega de pinturas está cerrada para este campeonato' });
     }
-    if (!developmentTest) {
-      const [[registration]] = await pool.query(
-        'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
-        [championshipId, driverId]
-      );
-      if (!registration) {
-        await removeUploadedFiles(files);
-        return res.status(403).json({ error: 'El piloto seleccionado no está inscripto en este campeonato' });
-      }
+    const [[registration]] = await pool.query(
+      'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
+      [championshipId, driverId]
+    );
+    if (!registration) {
+      await removeUploadedFiles(files);
+      return res.status(403).json({ error: 'El piloto seleccionado no está inscripto en este campeonato' });
     }
 
     const placeholders = incomingNames.map(() => '?').join(', ');
@@ -232,9 +226,7 @@ const uploadPaintings = async (req, res, next) => {
     } finally {
       connection.release();
     }
-    res.status(201).json({ message: developmentTest
-      ? `${files.length} archivo${files.length === 1 ? '' : 's'} de prueba enviado${files.length === 1 ? '' : 's'} correctamente`
-      : `${files.length} archivo${files.length === 1 ? '' : 's'} enviado${files.length === 1 ? '' : 's'} correctamente` });
+    res.status(201).json({ message: `${files.length} archivo${files.length === 1 ? '' : 's'} enviado${files.length === 1 ? '' : 's'} correctamente` });
   } catch (error) {
     await removeUploadedFiles(files).catch(() => {});
     next(error);
@@ -246,8 +238,7 @@ const getSubmittedPaintings = async (req, res, next) => {
     await ensureTemplateTable();
     const championshipId = Number(req.params.idcampeonato);
     const driverId = Number(req.params.idpiloto);
-    const developmentTest = String(process.env.NODE_ENV || '').toLowerCase() === 'development' && driverId === 0;
-    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(driverId) || (!developmentTest && driverId < 1)) {
+    if (!Number.isInteger(championshipId) || championshipId < 1 || !Number.isInteger(driverId) || driverId < 1) {
       return res.status(400).json({ error: 'Campeonato o piloto inválido' });
     }
     const [rows] = await pool.query(

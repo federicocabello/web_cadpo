@@ -13,7 +13,7 @@ import {
 import { authApi, championshipsApi, driversApi, eventsApi, liveTimingApi } from '../services/api';
 import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
-import { getFeaturedUpcomingEvents, getLiveTimingEvents } from '../utils/weeklyChampionships';
+import { getLiveTimingEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
@@ -175,8 +175,27 @@ const formatGap = (lap, leaderLap) => {
   return `+${(milliseconds / 1000).toFixed(3)}`;
 };
 
+const getSelectableLiveTimingEvents = (events, now = new Date()) => {
+  const timestamp = now.getTime();
+  const allConfiguredEvents = getLiveTimingEvents(events, now);
+  const publishedEvents = (Array.isArray(events) ? events : []).filter(event => (
+    Boolean(Number(event.mostrar_inicio))
+    && (!event.mostrar_desde || (parseCalendarDate(event.mostrar_desde)?.getTime() || 0) <= timestamp)
+  ));
+  const publishedByChampionship = new Map(
+    getLiveTimingEvents(publishedEvents, now)
+      .map(event => [String(event.idcampeonato), event]),
+  );
+
+  // La fecha elegida para Inicio define el circuito de ese campeonato, pero
+  // los otros servidores configurados siguen disponibles en el selector.
+  return allConfiguredEvents.map(event => (
+    publishedByChampionship.get(String(event.idcampeonato)) || event
+  ));
+};
+
 export default function LiveTiming() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedChampionshipId = searchParams.get('campeonato');
   const [timing, setTiming] = useState(null);
   const [calendarEvents, setCalendarEvents] = useState([]);
@@ -200,14 +219,10 @@ export default function LiveTiming() {
   const previousSessionRef = useRef('');
   const hasRenderedRowsRef = useRef(false);
   const timingRequestInFlightRef = useRef(false);
-  const liveTimingEvents = useMemo(() => {
-    const referenceDate = new Date(now);
-    const featuredEvents = getFeaturedUpcomingEvents(calendarEvents, referenceDate);
-    const featuredLiveTimingEvents = getLiveTimingEvents(featuredEvents, referenceDate);
-    return featuredLiveTimingEvents.length
-      ? featuredLiveTimingEvents
-      : getLiveTimingEvents(calendarEvents, referenceDate);
-  }, [calendarEvents, now]);
+  const liveTimingEvents = useMemo(
+    () => getSelectableLiveTimingEvents(calendarEvents, new Date(now)),
+    [calendarEvents, now],
+  );
   const raceEvent = liveTimingEvents.find(event => event.idcampeonato === selectedChampionshipId)
     || liveTimingEvents[0]
     || null;
@@ -321,19 +336,12 @@ export default function LiveTiming() {
       try {
         const response = await eventsApi.getAll();
         const loadedEvents = response.data.data || [];
-        const featuredEvents = getFeaturedUpcomingEvents(loadedEvents);
-        const featuredLiveTimingEvents = getLiveTimingEvents(featuredEvents);
-        const activeEvents = featuredLiveTimingEvents.length
-          ? featuredLiveTimingEvents
-          : getLiveTimingEvents(loadedEvents);
+        const activeEvents = getSelectableLiveTimingEvents(loadedEvents);
         setCalendarError(false);
         setCalendarEvents(loadedEvents);
         const priorityEvent = activeEvents[0];
-        const priorityAlreadyStarted = (parseCalendarDate(priorityEvent?.fecha)?.getTime() || Infinity) <= Date.now();
         const requestedEvent = activeEvents.find(event => String(event.idcampeonato) === String(requestedChampionshipId));
-        setSelectedChampionshipId(priorityAlreadyStarted
-          ? priorityEvent?.idcampeonato || null
-          : requestedEvent?.idcampeonato || priorityEvent?.idcampeonato || null);
+        setSelectedChampionshipId(requestedEvent?.idcampeonato || priorityEvent?.idcampeonato || null);
       } catch (err) {
         console.error('No se pudo cargar la fecha del calendario:', err);
         setCalendarError(true);
@@ -350,9 +358,8 @@ export default function LiveTiming() {
   useEffect(() => {
     if (liveTimingEvents.length) {
       const priorityEvent = liveTimingEvents[0];
-      const priorityAlreadyStarted = (parseCalendarDate(priorityEvent.fecha)?.getTime() || Infinity) <= now;
       const selectedStillAvailable = liveTimingEvents.some(event => event.idcampeonato === selectedChampionshipId);
-      if (!selectedStillAvailable || (priorityAlreadyStarted && priorityEvent.idcampeonato !== selectedChampionshipId)) {
+      if (!selectedStillAvailable) {
         setSelectedChampionshipId(priorityEvent.idcampeonato);
       }
       return;
@@ -754,20 +761,6 @@ export default function LiveTiming() {
 
         <div className="relative z-10 mx-auto grid max-w-[1900px] items-center gap-5 lg:grid-cols-[1fr_420px]">
           <div className="max-w-4xl">
-            {liveTimingEvents.length > 1 && (
-              <div className="mb-3 flex max-w-full gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-                {liveTimingEvents.map(event => (
-                  <button
-                    key={event.idcampeonato}
-                    type="button"
-                    onClick={() => setSelectedChampionshipId(event.idcampeonato)}
-                    className={`shrink-0 border px-3 py-1.5 font-racing text-[11px] font-bold uppercase transition-colors ${raceEvent?.idcampeonato === event.idcampeonato ? 'border-racing-red bg-racing-red text-white' : 'border-white/25 bg-black/60 text-gray-300 hover:border-racing-red'}`}
-                  >
-                    {event.categoria} · T{event.temporada}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className={`mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] ${calendarLoading ? 'text-gray-400' : calendarError || noAvailableDates ? 'text-gray-500' : 'text-racing-red'}`}>
               {calendarLoading ? (
                 <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -788,7 +781,21 @@ export default function LiveTiming() {
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-300">
               {raceEvent && (
                 <>
-                  <span className="inline-flex min-h-6 items-center font-bold uppercase leading-none text-white">{raceEvent.categoria} · Fecha {raceEvent.ronda}</span>
+                  <div className="flex max-w-full gap-1.5 overflow-x-auto py-0.5 scrollbar-hidden">
+                    {liveTimingEvents.map(event => (
+                      <button
+                        key={event.idcampeonato}
+                        type="button"
+                        onClick={() => {
+                          setSelectedChampionshipId(event.idcampeonato);
+                          setSearchParams({ campeonato: String(event.idcampeonato) }, { replace: true });
+                        }}
+                        className={`inline-flex min-h-7 shrink-0 items-center border px-2.5 font-racing text-[11px] font-bold uppercase leading-none transition-colors sm:px-3 sm:text-xs ${raceEvent.idcampeonato === event.idcampeonato ? 'border-racing-red bg-racing-red text-white' : 'border-white/25 bg-black/60 text-gray-300 hover:border-racing-red hover:text-white'}`}
+                      >
+                        {event.categoria} · Fecha {event.ronda}
+                      </button>
+                    ))}
+                  </div>
                   <span className="inline-flex min-h-6 items-center gap-1.5 capitalize leading-none"><CalendarDaysIcon className="h-4 w-4 shrink-0 text-racing-red" /> {formatEventDate(raceEvent.fecha)} H</span>
                   <span className="inline-flex min-h-6 items-center gap-2 leading-none"><CountryFlag country={raceEvent.pais} className="shrink-0 text-lg" /><MapPinIcon className="h-4 w-4 shrink-0 text-racing-red" /> {[raceEvent.localidad, raceEvent.provincia].filter(Boolean).join(', ')}</span>
                 </>
