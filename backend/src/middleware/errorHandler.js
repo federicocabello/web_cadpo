@@ -4,9 +4,9 @@ const errorHandler = (err, req, res, next) => {
   const uploadTooLarge = err.code === 'LIMIT_FILE_SIZE';
   const tooManyFiles = err.code === 'LIMIT_FILE_COUNT';
   const statusCode = uploadTooLarge || tooManyFiles ? 413 : err.statusCode || 500;
-  const message = uploadTooLarge
+  const message = err.publicMessage || (uploadTooLarge
     ? 'El bloque enviado supera el tamaño permitido'
-    : tooManyFiles ? 'Se pueden enviar hasta 20 archivos por carga' : err.message || 'Error interno del servidor';
+    : tooManyFiles ? 'Se enviaron más archivos de los permitidos' : err.message || 'Error interno del servidor');
 
   res.status(statusCode).json({
     error: message,

@@ -7,7 +7,7 @@ const uploadsRoot = process.env.PRIVATE_UPLOADS_DIR
   ? path.resolve(process.env.PRIVATE_UPLOADS_DIR)
   : path.resolve(__dirname, '../../storage');
 const paintDir = path.join(uploadsRoot, 'pinturas');
-const allowedExtensions = new Set(['.dds', '.png', '.jpg', '.jpeg']);
+const allowedExtensions = new Set(['.dds', '.png', '.jpg', '.jpeg', '.bmp', '.zip', '.rar']);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -22,10 +22,10 @@ const storage = multer.diskStorage({
 
 const uploadPaintFiles = multer({
   storage,
-  limits: { fileSize: 40 * 1024 * 1024, files: 20 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 15 },
   fileFilter: (req, file, cb) => {
     if (!allowedExtensions.has(path.extname(file.originalname).toLowerCase())) {
-      cb(new Error('Solo se permiten archivos DDS, PNG y JPG.'));
+      cb(new Error('Solo se permiten archivos DDS, PNG, JPG, BMP, ZIP y RAR.'));
       return;
     }
     cb(null, true);

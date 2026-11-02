@@ -1,9 +1,12 @@
 const fs = require('fs/promises');
 const path = require('path');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const pool = require('../config/db');
 const publicDir = require('../utils/publicDir');
 const uploadPaintFiles = require('../middleware/uploadPaintFiles');
+const normalizeCountryCode = require('../utils/countryCode');
+
+const countryDisplayNames = new Intl.DisplayNames(['es-AR'], { type: 'region' });
 
 const ensureTemplateTable = async () => {
   await pool.query(`
@@ -79,6 +82,25 @@ const sanitizeFilenamePart = value => String(value || '')
   .replace(/\s+/g, ' ')
   .trim();
 
+const getDriverSurname = fullName => {
+  const nameParts = sanitizeFilenamePart(fullName).split(' ').filter(Boolean);
+  return (nameParts.at(-1) || 'PILOTO').toLocaleUpperCase('es-AR');
+};
+
+const buildPaintingZipName = ({ numero, piloto }) => {
+  const carNumber = Number.isFinite(Number(numero)) ? String(Math.trunc(Number(numero))) : '0';
+  return `${carNumber} ${getDriverSurname(piloto)}.zip`;
+};
+
+const getDriverCountryName = value => {
+  const countryCode = normalizeCountryCode(value) || 'ar';
+  try {
+    return countryDisplayNames.of(countryCode.toUpperCase()) || 'Argentina';
+  } catch {
+    return 'Argentina';
+  }
+};
+
 const getAll = async (req, res, next) => {
   try {
     await ensureTemplateTable();
@@ -146,7 +168,7 @@ const getEnrolledDrivers = async (req, res, next) => {
       `SELECT p.id, p.nombre, i.numero, i.pago
        FROM inscriptos i
        JOIN pilotos p ON p.id = i.idpiloto
-       WHERE i.idcampeonato = ?
+       WHERE i.idcampeonato = ? AND COALESCE(i.listo, 0) = 0
        ORDER BY p.nombre ASC`,
       [championshipId]
     );
@@ -166,7 +188,7 @@ const uploadPaintings = async (req, res, next) => {
       await removeUploadedFiles(files);
       return res.status(400).json({ error: 'Seleccioná un campeonato y un piloto válidos' });
     }
-    if (!files.length) return res.status(400).json({ error: 'Seleccioná al menos un archivo DDS, PNG o JPG' });
+    if (!files.length) return res.status(400).json({ error: 'Seleccioná al menos un archivo DDS, PNG, JPG, BMP, ZIP o RAR' });
 
     const incomingNames = files.map(file => file.originalname.slice(0, 255));
     const normalizedNames = incomingNames.map(name => name.trim().toLocaleLowerCase('es-AR'));
@@ -187,12 +209,16 @@ const uploadPaintings = async (req, res, next) => {
       return res.status(403).json({ error: 'La entrega de pinturas está cerrada para este campeonato' });
     }
     const [[registration]] = await pool.query(
-      'SELECT idpiloto FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
+      'SELECT idpiloto, listo FROM inscriptos WHERE idcampeonato = ? AND idpiloto = ? LIMIT 1',
       [championshipId, driverId]
     );
     if (!registration) {
       await removeUploadedFiles(files);
       return res.status(403).json({ error: 'El piloto seleccionado no está inscripto en este campeonato' });
+    }
+    if (Number(registration.listo)) {
+      await removeUploadedFiles(files);
+      return res.status(409).json({ error: 'Este piloto ya está marcado como listo y no puede entregar más pinturas' });
     }
 
     const placeholders = incomingNames.map(() => '?').join(', ');
@@ -269,12 +295,15 @@ const previewSubmittedPainting = async (req, res, next) => {
     );
     if (!file) return res.status(404).json({ error: 'Vista previa no disponible' });
     const extension = String(file.extension || '').toLowerCase();
-    if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
+    if (!['.dds', '.png', '.jpg', '.jpeg', '.bmp'].includes(extension)) {
       return res.status(415).json({ error: 'Este formato no admite vista previa en el navegador' });
     }
     const resolvedPath = resolvePaintFile(file.archivo);
     if (!resolvedPath) return res.status(400).json({ error: 'Ruta de archivo inválida' });
-    res.type(extension === '.png' ? 'png' : 'jpg');
+    if (extension === '.png') res.type('png');
+    else if (extension === '.bmp') res.type('bmp');
+    else if (extension === '.dds') res.type('application/octet-stream');
+    else res.type('jpg');
     res.set('Cache-Control', 'private, no-store');
     return res.sendFile(resolvedPath, error => {
       if (error && !res.headersSent) next(error);
@@ -321,7 +350,7 @@ const downloadPilotPaintingsZip = async (req, res, next) => {
     }
     const [rows] = await pool.query(
       `SELECT pa.archivo, pa.nombre_original,
-              COALESCE(p.nombre, 'Prueba desarrollo') AS piloto,
+              COALESCE(p.nombre, 'Prueba desarrollo') AS piloto, p.nacionalidad,
               COALESCE(i.numero, 0) AS numero, am.marca, a.modelo
        FROM pinturas_archivos pa
        LEFT JOIN pilotos p ON p.id = pa.idpiloto
@@ -348,17 +377,25 @@ const downloadPilotPaintingsZip = async (req, res, next) => {
     if (!availableFiles.length) return res.status(404).json({ error: 'No se encontraron los archivos físicos de esta entrega' });
 
     const reference = availableFiles[0];
-    const zipName = [reference.piloto, `#${reference.numero}`, reference.marca, reference.modelo]
-      .map(sanitizeFilenamePart).filter(Boolean).join(' - ') + '.zip';
+    const zipName = buildPaintingZipName(reference);
     res.attachment(zipName);
     res.type('application/zip');
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    archive.on('warning', error => {
+      if (error.code !== 'ENOENT') archive.emit('error', error);
+    });
     archive.on('error', error => {
       if (!res.headersSent) return next(error);
       return res.destroy(error);
     });
     archive.pipe(res);
     availableFiles.forEach(file => archive.file(file.resolvedPath, { name: path.basename(file.nombre_original) }));
+    archive.append(JSON.stringify({
+      skinname: '',
+      country: getDriverCountryName(reference.nacionalidad),
+      drivername: '',
+      number: Math.trunc(Number(reference.numero) || 0),
+    }, null, 2), { name: 'ui_skin.json' });
     await archive.finalize();
   } catch (error) {
     next(error);

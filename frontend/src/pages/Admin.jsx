@@ -46,7 +46,7 @@ import { formatCalendarDate, parseCalendarDate, toDateTimeInputValue } from '../
 import { formatInstagramHandle, getInstagramUrl } from '../utils/instagram';
 import { formatPrice } from '../utils/currency';
 import { complaintSessionOptions } from '../utils/complaintSessions';
-import { aggregateAssettoSanctions, assettoSessionOptions, buildAssettoSanctionLabel, emptyAssettoSanction, getAssettoSanctionItems, normalizeAssettoDriverName, orderAssettoResults, parseAssettoResultJson } from '../utils/assettoResults';
+import { aggregateAssettoSanctions, assettoSessionOptions, buildAssettoSanctionLabel, emptyAssettoSanction, getAssettoSanctionItems, normalizeAssettoDriverName, orderAssettoResults, parseAssettoResultJson, reorderAssettoResultsIncrementally } from '../utils/assettoResults';
 import GearRatioCalculator from '../components/GearRatioCalculator';
 import EnginePowerCalculator from '../components/EnginePowerCalculator';
 import BrakesCalculator from '../components/BrakesCalculator';
@@ -163,6 +163,12 @@ const formatFileSize = bytes => {
   const size = Number(bytes || 0);
   if (size >= 1024 ** 2) return `${(size / 1024 ** 2).toLocaleString('es-AR', { maximumFractionDigits: 1 })} MB`;
   return `${Math.ceil(size / 1024).toLocaleString('es-AR')} KB`;
+};
+const getPaintingZipFilename = ({ numero, piloto }) => {
+  const carNumber = Number.isFinite(Number(numero)) ? String(Math.trunc(Number(numero))) : '0';
+  const safeName = String(piloto || 'PILOTO').replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim();
+  const surname = (safeName.split(' ').filter(Boolean).at(-1) || 'PILOTO').toLocaleUpperCase('es-AR');
+  return `${carNumber} ${surname}.zip`;
 };
 const resultScoringFields = [
   { positionField: 'pos_qualy_sprint', pointsField: 'pts_qualy_sprint', label: 'Clasificación Sprint', shortLabel: 'QS', integer: true },
@@ -891,6 +897,7 @@ export default function Admin() {
   const [paintingFiles, setPaintingFiles] = useState([]);
   const [paintingMessage, setPaintingMessage] = useState('');
   const [savingPaintingAccess, setSavingPaintingAccess] = useState(false);
+  const [downloadingPaintingDriverId, setDownloadingPaintingDriverId] = useState('');
   const [paintingDeadline, setPaintingDeadline] = useState('');
   const [sponsors, setSponsors] = useState([]);
   const [complaints, setComplaints] = useState([]);
@@ -1164,6 +1171,21 @@ export default function Admin() {
       });
     return [...byDriver.values()].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' }));
   }, [registrations, resultChampionshipId]);
+
+  const resultPendingWarningDrivers = useMemo(() => championshipWarningDrivers
+    .map(driver => ({
+      ...driver,
+      pendingSanctions: (driver.sanciones_alcanzadas || [])
+        .filter(sanction => !Number(sanction.cumplida))
+        .sort((a, b) => Number(a.cantidad) - Number(b.cantidad)),
+    }))
+    .filter(driver => driver.pendingSanctions.length > 0)
+    .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-AR', { sensitivity: 'base' })), [championshipWarningDrivers]);
+
+  const resultPendingWarningDriverIds = useMemo(
+    () => new Set(resultPendingWarningDrivers.map(driver => String(driver.idpiloto))),
+    [resultPendingWarningDrivers]
+  );
 
   const resultRoundResults = useMemo(
     () => results.filter(result => !result._delete && resultRound && Number(result.ronda) === Number(resultRound.ronda)),
@@ -2736,28 +2758,17 @@ export default function Admin() {
         ? entry.result[`_sanciones_detalle_${sessionKey}`]
         : parseResultSanctionDetails(entry.result.sanciones_detalle)?.[sessionKey];
       const items = Array.isArray(details) ? details : [];
-      const aggregate = aggregateAssettoSanctions({ items });
-      const storedBasePosition = items
-        .map(item => Number(item?._basePosition))
-        .find(position => Number.isInteger(position) && position > 0);
       const displayedPosition = parseNumericPosition(entry.result[session.positionField]) || index + 1;
       return {
         ...entry,
         items,
-        aggregate,
         displayedIndex: index,
-        claimedBasePosition: storedBasePosition || Math.max(1, displayedPosition - Math.max(0, Number(aggregate.positions) || 0)),
+        displayedPosition,
       };
     });
-    const basePositionByDriver = new Map([...preparedRows]
-      .sort((a, b) => a.claimedBasePosition - b.claimedBasePosition
-        || Number(b.aggregate.positions || 0) - Number(a.aggregate.positions || 0)
-        || a.displayedIndex - b.displayedIndex)
-      .map((entry, index) => [normalizeAssettoDriverName(entry.driverName), index + 1]));
 
     const entries = preparedRows.map(entry => {
       const driver = findRegisteredResultDriver(entry.driverName);
-      const basePosition = basePositionByDriver.get(normalizeAssettoDriverName(entry.driverName)) || entry.displayedIndex + 1;
       const positionLabel = String(entry.result[session.positionField] || (qualifying ? 'S/TIEMPO' : 'NO LARGÓ')).trim();
       const normalizedPosition = positionLabel
         .normalize('NFD')
@@ -2769,15 +2780,17 @@ export default function Admin() {
 
       return {
         key: `planilla:${sessionKey}:${driver?.id || normalizeAssettoDriverName(entry.driverName)}`,
-        sourcePosition: basePosition,
+        // A saved plan is already the confirmed order after its previous
+        // sanctions. It becomes the baseline for any later recargo.
+        sourcePosition: entry.displayedIndex + 1,
         driverName: driver?.nombre || entry.driverName,
         normalizedName: normalizeAssettoDriverName(driver?.nombre || entry.driverName),
         driverGuid: '',
         carId: '',
         carModel: [driver?.marca, driver?.modelo].filter(Boolean).join(' '),
         laps: qualifying ? 1 : (started ? (lapMatch ? Number(lapMatch[1]) : 100) : 0),
-        totalTimeMs: started ? basePosition * 1000 : null,
-        bestLapMs: hasTime ? basePosition * 1000 : null,
+        totalTimeMs: started ? entry.displayedPosition * 1000 : null,
+        bestLapMs: hasTime ? entry.displayedPosition * 1000 : null,
         automaticPenaltyMs: 0,
         serverDisqualified: normalizedPosition === 'DQ',
         raw: null,
@@ -2785,11 +2798,24 @@ export default function Admin() {
     });
 
     const sanctions = {};
+    const baselineStatusSanctions = {};
     preparedRows.forEach((entry, index) => {
       if (entry.items.length) {
         sanctions[entries[index].key] = { items: entry.items };
-        if (entry.aggregate.dq) entries[index].serverDisqualified = false;
+        if (aggregateAssettoSanctions({ items: entry.items }).dq) {
+          entries[index].serverDisqualified = false;
+          baselineStatusSanctions[entries[index].key] = { dq: true };
+        }
       }
+    });
+
+    const orderedRows = orderAssettoResults(entries, baselineStatusSanctions, sessionKey).map(entry => {
+      const sanction = aggregateAssettoSanctions(sanctions[entry.key]);
+      return {
+        ...entry,
+        sanction,
+        sanctionLabel: buildAssettoSanctionLabel(sanctions[entry.key]),
+      };
     });
 
     return {
@@ -2797,7 +2823,7 @@ export default function Admin() {
       metadata: { source: 'planilla' },
       entries,
       sanctions,
-      orderedRows: orderAssettoResults(entries, sanctions, sessionKey),
+      orderedRows,
     };
   };
 
@@ -3168,7 +3194,14 @@ export default function Admin() {
       return;
     }
 
-    const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
+    const orderedRows = reorderAssettoResultsIncrementally(
+      imported.orderedRows,
+      sanctions,
+      sessionKey,
+      entryKey,
+      { items: existingItems },
+      { items: nextItems },
+    );
     setResultImportedSessions(current => ({
       ...current,
       [sessionKey]: { ...imported, sanctions, orderedRows },
@@ -3213,7 +3246,14 @@ export default function Admin() {
       return;
     }
 
-    const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
+    const orderedRows = reorderAssettoResultsIncrementally(
+      imported.orderedRows,
+      sanctions,
+      sessionKey,
+      entryKey,
+      { items: previousItems },
+      { items },
+    );
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
     applyAssettoSessionToGrid(sessionKey, orderedRows, { preserveScoringByRow: true });
     setAssettoSanctionEdit(null);
@@ -3339,7 +3379,14 @@ export default function Admin() {
       return;
     }
 
-    const orderedRows = orderAssettoResults(imported.entries, sanctions, sessionKey);
+    const orderedRows = reorderAssettoResultsIncrementally(
+      imported.orderedRows,
+      sanctions,
+      sessionKey,
+      entryKey,
+      { items: getAssettoSanctionItems(imported.sanctions[entryKey]) },
+      { items },
+    );
     setResultImportedSessions(current => ({ ...current, [sessionKey]: { ...imported, sanctions, orderedRows } }));
     applyAssettoSessionToGrid(sessionKey, orderedRows, { preserveScoringByRow: true });
     setAssettoSanctionEdit(null);
@@ -4667,6 +4714,16 @@ export default function Admin() {
       setResults(buildEditableResultRows(savedRows));
       setSavedResults(savedRows);
       setChampionshipWarningDrivers(warningsResponse.data.data?.pilotos || []);
+      // The sanction workspace keeps the imported/base order used while editing.
+      // Once the round is saved, the database response becomes the new source of
+      // truth. Discard the old workspace so any later sanction is rebuilt from
+      // the positions and sanction details that were just confirmed.
+      setResultImportedSessions({});
+      setAssettoSanctionModal(null);
+      setAssettoSanctionDraft(emptyAssettoSanction());
+      setAssettoSanctionEdit(null);
+      setAssettoSanctionMessage('');
+      setAssettoRepositionTarget('');
       setDirtyResults({});
       setDirtyResultCells({});
       setResultCellErrors({});
@@ -5880,22 +5937,33 @@ export default function Admin() {
   };
 
   const downloadPaintingFilesZip = async group => {
+    if (downloadingPaintingDriverId) return;
     setPaintingMessage('');
+    setDownloadingPaintingDriverId(String(group.idpiloto));
     try {
       const response = await templatesApi.downloadPilotPaintings(templateChampionshipId, group.idpiloto);
+      if (!(response.data instanceof Blob) || response.data.size === 0) throw new Error('El ZIP recibido está vacío');
       const url = URL.createObjectURL(response.data);
       const anchor = document.createElement('a');
       anchor.href = url;
-      const filenameParts = [group.piloto, `#${group.numero ?? 0}`, group.marca, group.modelo]
-        .filter(value => value !== null && value !== undefined && String(value).trim())
-        .map(value => String(value).replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim());
-      anchor.download = `${filenameParts.join(' - ')}.zip`;
+      anchor.download = getPaintingZipFilename(group);
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setPaintingMessage(error.response?.data?.error || 'No se pudo descargar el ZIP de pinturas.');
+      let message = error.response?.data?.error || error.message;
+      if (error.response?.data instanceof Blob) {
+        try {
+          const payload = JSON.parse(await error.response.data.text());
+          message = payload.error || message;
+        } catch {
+          // La respuesta no contenía un error JSON legible.
+        }
+      }
+      setPaintingMessage(message || 'No se pudo descargar el ZIP de pinturas.');
+    } finally {
+      setDownloadingPaintingDriverId('');
     }
   };
 
@@ -6277,7 +6345,7 @@ export default function Admin() {
           <section className="space-y-6">
             <div className="card-glass overflow-hidden">
               <header className="border-b border-racing-border bg-racing-gray px-5 py-4"><p className="text-xs font-semibold uppercase tracking-widest text-cyan-300">Entregas recibidas</p><h2 className="mt-1 font-racing text-2xl font-bold">Pinturas de pilotos</h2><p className="mt-1 text-xs text-gray-500">{paintingFiles.length} archivo{paintingFiles.length === 1 ? '' : 's'} · {paintingFilesByDriver.length} piloto{paintingFilesByDriver.length === 1 ? '' : 's'}</p></header>
-              <div className="divide-y divide-racing-border">{paintingFilesByDriver.map(group => <article key={group.idpiloto} className="p-4 sm:p-5"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><span className="font-racing text-lg font-bold text-cyan-300">#{group.numero ?? 0}</span><div className="min-w-0"><h3 className="truncate font-racing text-lg font-bold uppercase text-white">{group.piloto}</h3>{group.marca || group.modelo ? <p className="text-[10px] uppercase text-gray-500">{[group.marca, group.modelo].filter(Boolean).join(' ')}</p> : null}</div></div><button type="button" onClick={() => downloadPaintingFilesZip(group)} className="inline-flex h-9 items-center justify-center gap-2 border border-cyan-300/40 px-3 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-300 hover:text-black" aria-label={`Descargar pinturas de ${group.piloto} en ZIP`}><ArrowDownTrayIcon className="h-4 w-4"/>Descargar ZIP</button></div><div className="space-y-2">{group.files.map(file => <div key={file.id} className="flex min-w-0 items-center justify-between gap-3 border border-racing-border bg-black/20 px-3 py-2"><div className="min-w-0"><p className="truncate text-sm text-gray-200">{file.nombre_original}</p><p className="text-[10px] uppercase text-gray-600">{file.extension.replace('.', '')} · {formatFileSize(file.tamano)}</p></div><button type="button" onClick={() => deletePaintingFile(file)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${file.nombre_original}`}><TrashIcon className="h-4 w-4"/></button></div>)}</div></article>)}{!paintingFilesByDriver.length ? <div className="py-14 text-center text-gray-500"><ArchiveBoxIcon className="mx-auto h-11 w-11"/><p className="mt-3">Todavía no se recibieron pinturas para este campeonato.</p></div> : null}</div>
+              <div className="divide-y divide-racing-border">{paintingFilesByDriver.map(group => { const downloading = String(downloadingPaintingDriverId) === String(group.idpiloto); return <article key={group.idpiloto} className="p-4 sm:p-5"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><span className="font-racing text-lg font-bold text-cyan-300">#{group.numero ?? 0}</span><div className="min-w-0"><h3 className="truncate font-racing text-lg font-bold uppercase text-white">{group.piloto}</h3>{group.marca || group.modelo ? <p className="text-[10px] uppercase text-gray-500">{[group.marca, group.modelo].filter(Boolean).join(' ')}</p> : null}</div></div><button type="button" onClick={() => downloadPaintingFilesZip(group)} disabled={Boolean(downloadingPaintingDriverId)} className="inline-flex h-9 items-center justify-center gap-2 border border-cyan-300/40 px-3 text-[10px] font-bold uppercase text-cyan-300 transition hover:bg-cyan-300 hover:text-black disabled:cursor-wait disabled:opacity-50" aria-label={`Descargar pinturas de ${group.piloto} en ZIP`}><ArrowDownTrayIcon className="h-4 w-4"/>{downloading ? 'Generando…' : 'Descargar ZIP'}</button></div><div className="space-y-2">{group.files.map(file => <div key={file.id} className="flex min-w-0 items-center justify-between gap-3 border border-racing-border bg-black/20 px-3 py-2"><div className="min-w-0"><p className="truncate text-sm text-gray-200">{file.nombre_original}</p><p className="text-[10px] uppercase text-gray-600">{file.extension.replace('.', '')} · {formatFileSize(file.tamano)}</p></div><button type="button" onClick={() => deletePaintingFile(file)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center border border-racing-border text-gray-500 hover:border-racing-red hover:text-racing-red" aria-label={`Eliminar ${file.nombre_original}`}><TrashIcon className="h-4 w-4"/></button></div>)}</div></article>; })}{!paintingFilesByDriver.length ? <div className="py-14 text-center text-gray-500"><ArchiveBoxIcon className="mx-auto h-11 w-11"/><p className="mt-3">Todavía no se recibieron pinturas para este campeonato.</p></div> : null}</div>
             </div>
 
             <div className="card-glass overflow-hidden">
@@ -7143,9 +7211,19 @@ export default function Admin() {
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                   <div className="grid gap-2 border border-red-400/20 bg-red-500/[0.04] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                    <label><span className="text-[9px] font-bold uppercase tracking-wider text-red-200">Piloto inscripto</span><select value={qualifyingBanDriverId} onChange={event => setQualifyingBanDriverId(event.target.value)} className="input-field mt-1 h-10 py-0 text-sm"><option value="">Seleccionar piloto</option>{resultRegisteredDrivers.filter(driver => !qualifyingBans.some(item => Number(item.idpiloto) === Number(driver.id))).map(driver => <option key={driver.id} value={driver.id}>{driver.numero != null ? `#${driver.numero} · ` : ''}{driver.nombre}</option>)}</select></label>
+                    <label><span className="text-[9px] font-bold uppercase tracking-wider text-red-200">Piloto inscripto</span><select value={qualifyingBanDriverId} onChange={event => setQualifyingBanDriverId(event.target.value)} className="input-field mt-1 h-10 py-0 text-sm"><option value="">Seleccionar piloto</option>{resultRegisteredDrivers.filter(driver => !qualifyingBans.some(item => Number(item.idpiloto) === Number(driver.id))).map(driver => <option key={driver.id} value={driver.id}>{resultPendingWarningDriverIds.has(String(driver.id)) ? 'AP PENDIENTE · ' : ''}{driver.numero != null ? `#${driver.numero} · ` : ''}{driver.nombre}</option>)}</select></label>
                     <button type="button" onClick={addQualifyingBan} className="h-10 border border-red-400/50 bg-red-500/10 px-4 text-[10px] font-bold uppercase text-red-200 transition hover:bg-red-500 hover:text-white">Agregar</button>
                   </div>
+                  {!loadingChampionshipWarnings && resultPendingWarningDrivers.length ? <aside className="mt-3 border border-amber-400/30 bg-amber-400/[0.05]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-400/20 px-3 py-2"><div><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-amber-300">Apercibimientos pendientes</p><p className="mt-0.5 text-[10px] text-gray-500">Referencia para definir quién no puede clasificar.</p></div><span className="bg-amber-400 px-2 py-1 font-racing text-sm font-bold text-black">{resultPendingWarningDrivers.length}</span></div>
+                    <div className="grid gap-px bg-racing-border sm:grid-cols-2">
+                      {resultPendingWarningDrivers.map(driver => {
+                        const registeredDriver = resultRegisteredDrivers.find(item => String(item.id) === String(driver.idpiloto));
+                        return <article key={driver.idpiloto} className="min-w-0 bg-racing-dark px-3 py-2.5"><div className="flex items-center justify-between gap-2"><strong className="truncate text-xs text-white">{registeredDriver?.numero != null ? `#${registeredDriver.numero} · ` : ''}{driver.nombre}</strong><span className="shrink-0 text-[10px] font-bold text-amber-300">{Number(driver.apercibimientos || 0)} AP</span></div><div className="mt-1 space-y-0.5">{driver.pendingSanctions.map(sanction => <p key={sanction.cantidad} className="truncate text-[10px] text-red-300" title={sanction.sancion}>{sanction.cantidad} AP · {sanction.sancion}</p>)}</div></article>;
+                      })}
+                    </div>
+                  </aside> : null}
+                  {loadingChampionshipWarnings ? <p className="mt-3 border border-amber-400/20 bg-amber-400/[0.04] px-3 py-2 text-[10px] uppercase tracking-wider text-amber-200">Comprobando apercibimientos pendientes...</p> : null}
                   <div className="mt-4 space-y-2">
                     {qualifyingBans.map(item => <div key={item.idpiloto} className="grid items-center gap-2 border border-racing-border bg-black/20 p-2 sm:grid-cols-[minmax(150px,0.8fr)_minmax(220px,1.2fr)_40px]">
                       <div className="min-w-0"><strong className="block truncate text-sm text-white">{item.numero != null ? `#${item.numero} · ` : ''}{item.nombre}</strong><span className="text-[9px] font-bold uppercase tracking-wider text-red-300">No puede clasificar</span></div>
@@ -7261,30 +7339,27 @@ export default function Admin() {
                   assettoSanctionEdit.index,
                 )
               : null;
-            const previewRows = orderAssettoResults(imported.entries, previewSanctions, assettoSanctionModal.sessionKey);
+            const previewRows = draftHasValue
+              ? reorderAssettoResultsIncrementally(
+                  imported.orderedRows,
+                  previewSanctions,
+                  assettoSanctionModal.sessionKey,
+                  assettoSanctionModal.entryKey,
+                  imported.sanctions[assettoSanctionModal.entryKey],
+                  previewSanctions[assettoSanctionModal.entryKey],
+                )
+              : imported.orderedRows;
             const previewSelectedEntry = previewRows.find(entry => entry.key === assettoSanctionModal.entryKey);
             const originalOrder = new Map(imported.orderedRows.map((entry, index) => [entry.key, index]));
-            const repositionBaseSanctions = {
-              ...previewSanctions,
-              [assettoSanctionModal.entryKey]: {
-                items: getAssettoSanctionItems(previewSanctions[assettoSanctionModal.entryKey]).map(sanction => ({
-                  ...sanction,
-                  positions: 0,
-                  dq: false,
-                })),
-              },
-            };
-            const repositionBaseRows = orderAssettoResults(imported.entries, repositionBaseSanctions, assettoSanctionModal.sessionKey);
+            const repositionBaseRows = imported.orderedRows;
             const repositionPilotIndex = repositionBaseRows.findIndex(entry => entry.key === assettoSanctionModal.entryKey);
             const repositionTargets = repositionPilotIndex >= 0 ? repositionBaseRows.slice(repositionPilotIndex + 1) : [];
             const applyRepositionTarget = targetKey => {
               const targetIndex = repositionBaseRows.findIndex(entry => entry.key === targetKey);
               if (repositionPilotIndex < 0 || targetIndex <= repositionPilotIndex) return;
-              const requiredTotalPositions = targetIndex - repositionPilotIndex;
-              const alreadyAppliedPositions = Math.max(0, Math.trunc(Number(accumulatedSanction.positions) || 0));
               setAssettoSanctionDraft(current => ({
                 ...current,
-                positions: Math.max(0, requiredTotalPositions - alreadyAppliedPositions),
+                positions: targetIndex - repositionPilotIndex,
                 dq: false,
                 noSanction: false,
               }));

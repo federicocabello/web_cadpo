@@ -3,7 +3,7 @@ const controller = require('../controllers/templatesController');
 const requireAdmin = require('../middleware/requireAdmin');
 const uploadTemplate = require('../middleware/uploadTemplate');
 const uploadPaintFiles = require('../middleware/uploadPaintFiles');
-const receivePaintFiles = uploadPaintFiles.array('archivos', 20);
+const receivePaintFiles = uploadPaintFiles.array('archivos', 15);
 
 router.get('/', controller.getAll);
 router.get('/championships', controller.getChampionships);
@@ -12,6 +12,8 @@ router.get('/championships/:idcampeonato/paintings/:idpiloto', controller.getSub
 router.post('/paintings', (req, res, next) => {
   receivePaintFiles(req, res, error => {
     if (!error) return controller.uploadPaintings(req, res, next);
+    if (error.code === 'LIMIT_FILE_SIZE') error.publicMessage = 'Cada archivo puede pesar hasta 100 MB';
+    if (error.code === 'LIMIT_FILE_COUNT') error.publicMessage = 'Se pueden enviar hasta 15 archivos por carga';
     return uploadPaintFiles.cleanupFiles(req.files)
       .then(() => next(error))
       .catch(next);

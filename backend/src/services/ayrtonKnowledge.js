@@ -164,11 +164,25 @@ const loadBaseKnowledge = async () => {
     pool.query(`
       SELECT cfg.idcampeonato, cat.categoria, c.temporada, c.anio,
              cfg.fecha_apertura, cfg.fecha_cierre, cfg.precio,
-             cfg.setup_detalle, cfg.limite_inscriptos, cfg.preinscriptos,
-             (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) AS inscriptos_confirmados,
+             cfg.setup_detalle, cfg.limite_inscriptos,
+             CASE WHEN NOW() < cfg.fecha_apertura THEN COALESCE(cfg.preinscriptos, 0)
+             ELSE LEAST(
+               cfg.limite_inscriptos,
+               COALESCE(cfg.preinscriptos, 0)
+               + (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1)
+             ) END AS inscriptos_publicos,
+             GREATEST(
+               0,
+               cfg.limite_inscriptos - LEAST(
+                 cfg.limite_inscriptos,
+                 COALESCE(cfg.preinscriptos, 0)
+                 + (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1)
+               )
+             ) AS lugares_disponibles,
              CASE WHEN NOW() < cfg.fecha_apertura THEN 'próxima'
                   WHEN NOW() >= cfg.fecha_cierre THEN 'cerrada'
-                  WHEN (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) >= cfg.limite_inscriptos THEN 'completa'
+                  WHEN COALESCE(cfg.preinscriptos, 0)
+                       + (SELECT COUNT(*) FROM inscriptos i WHERE i.idcampeonato = cfg.idcampeonato AND i.pago = 1) >= cfg.limite_inscriptos THEN 'completa'
                   ELSE 'abierta' END AS estado
       FROM inscripciones_config cfg
       JOIN campeonatos c ON c.id = cfg.idcampeonato
@@ -318,6 +332,17 @@ const loadChampionshipCalendars = async championshipIds => {
     LEFT JOIN circuitos ci ON ci.id = cal.idcircuito
     WHERE cal.idcampeonato IN (?)
     ORDER BY cal.idcampeonato DESC, cal.ronda ASC
+  `, [championshipIds]);
+  return rows;
+};
+
+const loadChampionshipPrizes = async championshipIds => {
+  if (!championshipIds.length) return [];
+  const [rows] = await pool.query(`
+    SELECT idcampeonato, posicion, efectivo, inscripcion, trofeo
+    FROM premios
+    WHERE idcampeonato IN (?)
+    ORDER BY idcampeonato DESC, posicion ASC
   `, [championshipIds]);
   return rows;
 };
@@ -721,10 +746,11 @@ const buildKnowledge = async question => {
   const categoryIds = [...new Set(contextualChampionships.map(item => Number(item.idcategoria)).filter(Boolean))];
   const intents = getQuestionIntents(question);
   const liveTimingRequested = wantsLiveTiming(question) && !intents.club;
-  const [standings, drivers, championshipCalendars, categoryCars, recentResults, championshipActivity, liveTiming, club, resultsCatalog, downloads, projects, circuits, setupDocuments] = await Promise.all([
+  const [standings, drivers, championshipCalendars, championshipPrizes, categoryCars, recentResults, championshipActivity, liveTiming, club, resultsCatalog, downloads, projects, circuits, setupDocuments] = await Promise.all([
     loadStandings(ids),
     loadDriverKnowledge(question),
     loadChampionshipCalendars(ids),
+    loadChampionshipPrizes(ids),
     loadCategoryCars(categoryIds),
     loadRecentResults(ids),
     safeOptionalKnowledge(() => loadChampionshipActivity(ids)),
@@ -752,6 +778,7 @@ const buildKnowledge = async question => {
       openRegistrations: openRegistrationForms,
     },
     championshipCalendars,
+    championshipPrizes,
     categoryCars,
     nearbyEvents: base.events,
     visibleRegistrationForms: base.registrationForms,
@@ -775,6 +802,7 @@ const buildKnowledge = async question => {
       setupDocuments,
     },
     siteSections: {
+      championships: 'https://cadpotorneos.com/campeonatos',
       club: 'https://cadpotorneos.com/club',
       results: 'https://cadpotorneos.com/resultados',
       replays: 'https://cadpotorneos.com/replays',

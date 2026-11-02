@@ -210,3 +210,77 @@ export const orderAssettoResults = (entries, sanctions = {}, sessionKey = '') =>
     sanctionLabel: buildAssettoSanctionLabel(entry.sanction),
   }));
 };
+
+export const reorderAssettoResultsIncrementally = (
+  currentRows,
+  sanctions,
+  sessionKey,
+  entryKey,
+  previousSanction,
+  nextSanction,
+) => {
+  const qualifying = String(sessionKey).startsWith('qualy');
+  const previous = aggregateAssettoSanctions(previousSanction);
+  const next = aggregateAssettoSanctions(nextSanction);
+  const selected = currentRows.find(entry => entry.key === entryKey);
+  if (!selected) return currentRows;
+
+  const isActive = entry => !entry.disqualified && (qualifying ? entry.bestLapMs !== null : Number(entry.laps) > 0);
+  const wasActive = isActive(selected);
+  const currentActiveIndex = currentRows.filter(isActive).findIndex(entry => entry.key === entryKey);
+  const timeDeltaMs = (toFiniteNumber(next.time) - toFiniteNumber(previous.time)) * 1000;
+  const positionsDelta = Math.trunc(toFiniteNumber(next.positions) - toFiniteNumber(previous.positions));
+  const wasDisqualified = Boolean(selected.serverDisqualified || (previous.dq && !previous.noSanction));
+  const disqualified = Boolean(selected.serverDisqualified || (next.dq && !next.noSanction));
+  const updatedSelected = {
+    ...selected,
+    sanction: next,
+    sanctionLabel: buildAssettoSanctionLabel(nextSanction),
+    disqualified,
+    finalTimeMs: Number.isFinite(selected.finalTimeMs) ? selected.finalTimeMs + timeDeltaMs : selected.finalTimeMs,
+  };
+
+  if (timeDeltaMs === 0 && positionsDelta === 0 && wasDisqualified === disqualified) {
+    return currentRows.map(entry => entry.key === entryKey ? updatedSelected : entry);
+  }
+
+  const remaining = currentRows.filter(entry => entry.key !== entryKey);
+  const active = remaining.filter(isActive);
+  const disqualifiedRows = remaining.filter(entry => entry.disqualified);
+  const withoutResult = remaining.filter(entry => !entry.disqualified && !isActive(entry));
+
+  if (disqualified) {
+    disqualifiedRows.unshift(updatedSelected);
+  } else if (!isActive(updatedSelected)) {
+    withoutResult.unshift(updatedSelected);
+  } else {
+    let insertionIndex = wasActive ? Math.max(0, currentActiveIndex) : active.length;
+    if (!wasActive || timeDeltaMs !== 0) {
+      insertionIndex = active.findIndex(entry => Number(entry.finalTimeMs) > Number(updatedSelected.finalTimeMs));
+      if (insertionIndex < 0) insertionIndex = active.length;
+    }
+    insertionIndex = Math.max(0, Math.min(active.length, insertionIndex + positionsDelta));
+    active.splice(insertionIndex, 0, updatedSelected);
+  }
+
+  const ordered = [...active, ...disqualifiedRows, ...withoutResult];
+  const leaderLaps = Math.max(0, ...ordered.map(entry => Number(entry.laps) || 0));
+  return ordered.map((entry, index) => {
+    const fullSanction = aggregateAssettoSanctions(sanctions[entry.key]);
+    return {
+      ...entry,
+      sanction: fullSanction,
+      sanctionLabel: buildAssettoSanctionLabel(sanctions[entry.key]),
+      position: index + 1,
+      positionLabel: entry.disqualified
+        ? 'DQ'
+        : qualifying
+          ? entry.bestLapMs === null ? 'S/TIEMPO' : String(index + 1)
+          : Number(entry.laps) <= 0
+            ? 'NO LARGÓ'
+            : leaderLaps && Number(entry.laps) < (leaderLaps / 2)
+              ? `(${entry.laps} V)`
+              : String(index + 1),
+    };
+  });
+};

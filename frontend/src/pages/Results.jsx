@@ -111,10 +111,14 @@ const isFulfilledWarning = value => value === true
   || Number(value) === 1
   || ['TRUE', 'CUMPLIDA', 'CUMPLIDO'].includes(String(value || '').trim().toLocaleUpperCase('es-AR'));
 
+const warningProgressionKey = (result, sessionKey, sanctionIndex) => (
+  `${result.id || `${result.idpiloto}-${result.ronda}`}:${sessionKey}:${sanctionIndex}`
+);
+
 const StopwatchIcon = ({ className = '' }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M9 2h6M12 2v3M18.4 6.6l1.4-1.4"/><circle cx="12" cy="14" r="7"/><path d="M12 10v4l2.7 1.7"/></svg>;
 const CheckeredFlagIcon = ({ className = '' }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"><path d="M5 21V4M5 5h14l-2 4 2 4H5"/><path d="M5 5h3.5v4H5zM12 5h3.5v4H12zM8.5 9H12v4H8.5zM15.5 9H19v4h-3.5z" fill="currentColor" stroke="none"/></svg>;
 
-const SessionSection = ({ title, sessionKey, items, positionField, pointsField, sanctionField, selectedPilotId, onSelectPilot }) => {
+const SessionSection = ({ title, sessionKey, items, positionField, pointsField, sanctionField, selectedPilotId, onSelectPilot, warningProgressions }) => {
   const isClassification = sessionKey.startsWith('qualy');
   const sortedItems = [...items].sort((a, b) => {
     if (!positionField) return resultOrder(a) - resultOrder(b);
@@ -152,7 +156,16 @@ const SessionSection = ({ title, sessionKey, items, positionField, pointsField, 
           const appliedSanctionCount = sanctionItems.length ? structuredSanctions.length : legacyAppliedSanctions.length;
           return <tr key={`${title}-${result.id}`} className={sanctioned ? 'bg-gradient-to-r from-red-500/20 via-red-500/[0.07] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
             {positionField ? <td className="w-20 min-w-20 whitespace-nowrap px-2 py-2 text-center sm:w-24 sm:min-w-24"><strong className={`whitespace-nowrap font-racing text-sm sm:text-base ${sanctioned ? 'text-red-400' : position === 1 ? 'text-yellow-300' : position === 2 ? 'text-gray-200' : position === 3 ? 'text-amber-600' : 'text-white'}`}>{displayPosition(result[positionField])}</strong></td> : null}
-            <td className="p-0"><button type="button" onClick={() => onSelectPilot(result.idpiloto)} aria-pressed={selected} className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left">{result.auto_logo ? <img src={result.auto_logo} alt="" className="mt-0.5 h-6 w-8 shrink-0 object-contain"/> : null}<div className="min-w-0 flex-1"><span className={`block truncate font-semibold ${sanctioned ? 'text-red-400' : 'text-gray-200'}`}>{result.piloto}</span>{selected && hasResolution ? <div className={`mt-2 border-l-2 pl-2 text-[10px] leading-relaxed ${sanctioned ? 'border-red-500' : 'border-racing-border'}`}>{sanctionItems.length ? sanctionItems.map((sanction, index) => <p key={`${result.id}-${sessionKey}-sanction-${index}`} className={`${index ? `mt-2 border-t pt-2 ${sanction.noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${sanction.noSanction ? 'text-cyan-200' : 'text-red-200'}`}>{!sanction.noSanction ? <strong className="text-red-400">Sanción {sanctionItems.slice(0, index + 1).filter(item => !item.noSanction).length}: </strong> : null}{buildAssettoSanctionLabel(sanction)}</p>) : legacySanctions.map((sanction, index) => { const noSanction = isNoSanctionText(sanction); const sanctionNumber = legacySanctions.slice(0, index + 1).filter(item => !isNoSanctionText(item)).length; return <p key={`${result.id}-${sessionKey}-legacy-${index}`} className={`${index ? `mt-2 border-t pt-2 ${noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${noSanction ? 'text-cyan-200' : 'text-red-200'}`}>{!noSanction ? <strong className="text-red-400">Sanción {sanctionNumber}: </strong> : null}{noSanction ? sanction.toLocaleUpperCase('es-AR') : sanction}</p>; })}</div> : null}</div>{sanctioned ? <span className="shrink-0 border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-red-300">{appliedSanctionCount > 1 ? `${appliedSanctionCount} sanciones` : 'Sanción'}</span> : resolvedWithoutSanction ? <span className="shrink-0 border border-cyan-300/40 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-cyan-200">Sin sanción</span> : null}</button></td>
+            <td className="p-0"><button type="button" onClick={() => onSelectPilot(result.idpiloto)} aria-pressed={selected} className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left">{result.auto_logo ? <img src={result.auto_logo} alt="" className="mt-0.5 h-6 w-8 shrink-0 object-contain"/> : null}<div className="min-w-0 flex-1"><span className={`block truncate font-semibold ${sanctioned ? 'text-red-400' : 'text-gray-200'}`}>{result.piloto}</span>{selected && hasResolution ? <div className={`mt-2 border-l-2 pl-2 text-[10px] leading-relaxed ${sanctioned ? 'border-red-500' : 'border-racing-border'}`}>{sanctionItems.length ? sanctionItems.map((sanction, index) => {
+              const progression = warningProgressions.get(warningProgressionKey(result, sessionKey, index));
+              return <div key={`${result.id}-${sessionKey}-sanction-${index}`} className={`${index ? `mt-2 border-t pt-2 ${sanction.noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${sanction.noSanction ? 'text-cyan-200' : 'text-red-200'}`}>
+                <p>{!sanction.noSanction ? <strong className="text-red-400">Sanción {sanctionItems.slice(0, index + 1).filter(item => !item.noSanction).length}: </strong> : null}{buildAssettoSanctionLabel(sanction)}</p>
+                {progression ? <div className="mt-1.5 space-y-1">
+                  <p className="font-bold uppercase tracking-wide text-amber-200">Apercibimientos: {progression.previous} → {progression.current} AP</p>
+                  {progression.reachedLevels.map(level => <p key={`${result.id}-${sessionKey}-${index}-warning-${level.cantidad}`} className="border-l-2 border-amber-300 bg-amber-300/10 px-2 py-1 font-semibold text-amber-200"><strong className="text-amber-300">Sanción al alcanzar {level.cantidad} AP:</strong> {level.sancion}</p>)}
+                </div> : null}
+              </div>;
+            }) : legacySanctions.map((sanction, index) => { const noSanction = isNoSanctionText(sanction); const sanctionNumber = legacySanctions.slice(0, index + 1).filter(item => !isNoSanctionText(item)).length; return <p key={`${result.id}-${sessionKey}-legacy-${index}`} className={`${index ? `mt-2 border-t pt-2 ${noSanction ? 'border-racing-border' : 'border-red-500/20'}` : ''} ${noSanction ? 'text-cyan-200' : 'text-red-200'}`}>{!noSanction ? <strong className="text-red-400">Sanción {sanctionNumber}: </strong> : null}{noSanction ? sanction.toLocaleUpperCase('es-AR') : sanction}</p>; })}</div> : null}</div>{sanctioned ? <span className="shrink-0 border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-red-300">{appliedSanctionCount > 1 ? `${appliedSanctionCount} sanciones` : 'Sanción'}</span> : resolvedWithoutSanction ? <span className="shrink-0 border border-cyan-300/40 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide text-cyan-200">Sin sanción</span> : null}</button></td>
             <td className={`px-3 py-2 text-right font-racing text-lg font-bold ${sanctioned ? 'text-red-300' : 'text-white'}`}>{displayPoints(result[pointsField])}</td>
           </tr>;
         })}</tbody>
@@ -194,6 +207,7 @@ export default function Results() {
   const [events, setEvents] = useState([]);
   const [selectedRound, setSelectedRound] = useState('');
   const [selectedPilotId, setSelectedPilotId] = useState(null);
+  const [warningLevels, setWarningLevels] = useState([]);
   const [warningDrivers, setWarningDrivers] = useState([]);
   const [debutBallasts, setDebutBallasts] = useState({});
   const [enrolledDrivers, setEnrolledDrivers] = useState([]);
@@ -254,6 +268,7 @@ export default function Results() {
   useEffect(() => {
     let active = true;
     if (!selectedChampionship?.id) {
+      setWarningLevels([]);
       setWarningDrivers([]);
       setDebutBallasts({});
       setEnrolledDrivers([]);
@@ -266,12 +281,13 @@ export default function Results() {
     ])
       .then(([warningsResponse, debutResponse, enrolledResponse]) => {
         if (!active) return;
+        setWarningLevels(warningsResponse.data.data?.niveles || []);
         setWarningDrivers(warningsResponse.data.data?.pilotos || []);
         setDebutBallasts(Object.fromEntries((debutResponse.data.data || []).map(row => [String(row.idpiloto), row.kilos])));
         setEnrolledDrivers(enrolledResponse.data.data || []);
       })
       .catch(() => {
-        if (active) { setWarningDrivers([]); setDebutBallasts({}); setEnrolledDrivers([]); }
+        if (active) { setWarningLevels([]); setWarningDrivers([]); setDebutBallasts({}); setEnrolledDrivers([]); }
       });
     return () => { active = false; };
   }, [selectedChampionship?.id]);
@@ -279,6 +295,60 @@ export default function Results() {
   const selectedResults = useMemo(() => selectedChampionship
     ? results.filter(result => String(result.idcampeonato) === String(selectedChampionship.id))
     : [], [results, selectedChampionship]);
+
+  const warningProgressions = useMemo(() => {
+    const progressions = new Map();
+    const accumulatedByDriver = new Map();
+    const levels = warningLevels
+      .map(level => ({ ...level, cantidad: Math.max(0, Math.trunc(Number(level.cantidad) || 0)) }))
+      .filter(level => level.cantidad > 0)
+      .sort((a, b) => a.cantidad - b.cantidad);
+    const orderedResults = [...selectedResults].sort((a, b) => {
+      const roundDifference = (Number(a.ronda) || 0) - (Number(b.ronda) || 0);
+      if (roundDifference) return roundDifference;
+      const dateDifference = (parseCalendarDate(a.fecha)?.getTime() || 0) - (parseCalendarDate(b.fecha)?.getTime() || 0);
+      if (dateDifference) return dateDifference;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+
+    orderedResults.forEach(result => {
+      const driverKey = String(result.idpiloto);
+      let accumulated = accumulatedByDriver.get(driverKey) || 0;
+      const sanctionDetails = parseSanctionDetails(result.sanciones_detalle);
+
+      [
+        { sessionKey: 'sprint', warningField: 'aps_sprint' },
+        { sessionKey: 'final', warningField: 'aps_final' },
+      ].forEach(({ sessionKey, warningField }) => {
+        const sanctions = getAssettoSanctionItems({ items: sanctionDetails?.[sessionKey] || [] });
+        let detailedWarnings = 0;
+
+        sanctions.forEach((sanction, index) => {
+          const addedWarnings = sanction.noSanction
+            ? 0
+            : Math.max(0, Math.trunc(Number(sanction.warnings) || 0));
+          if (!addedWarnings) return;
+
+          const previous = accumulated;
+          const current = previous + addedWarnings;
+          progressions.set(warningProgressionKey(result, sessionKey, index), {
+            previous,
+            current,
+            reachedLevels: levels.filter(level => level.cantidad > previous && level.cantidad <= current),
+          });
+          accumulated = current;
+          detailedWarnings += addedWarnings;
+        });
+
+        const savedWarnings = Math.max(0, Math.trunc(Number(result[warningField]) || 0));
+        if (savedWarnings > detailedWarnings) accumulated += savedWarnings - detailedWarnings;
+      });
+
+      accumulatedByDriver.set(driverKey, accumulated);
+    });
+
+    return progressions;
+  }, [selectedResults, warningLevels]);
 
   const rounds = useMemo(() => {
     const grouped = new Map();
@@ -475,7 +545,7 @@ export default function Results() {
   if (loading) return <div className="flex min-h-[65vh] items-center justify-center"><div className="h-11 w-11 animate-spin rounded-full border-2 border-racing-red border-t-transparent"/></div>;
 
   return (
-    <main className="mx-auto min-h-[70vh] w-full max-w-[1500px] animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-[70vh] w-full max-w-[1800px] animate-fade-in px-4 py-6 sm:px-6 lg:px-8">
       {error ? <div className="card-glass p-12 text-center"><TrophyIcon className="mx-auto h-14 w-14 text-gray-600"/><p className="mt-4 text-gray-400">{error}</p></div> : !championshipsWithResults.length ? (
         <div className="card-glass p-12 text-center"><TrophyIcon className="mx-auto h-14 w-14 text-racing-red"/><h1 className="mt-4 font-racing text-2xl font-bold uppercase">Todavía no hay resultados publicados</h1><p className="mt-2 text-gray-400">Cuando se guarde una fecha desde administración aparecerá automáticamente aquí.</p></div>
       ) : <div className="space-y-7">
@@ -496,7 +566,7 @@ export default function Results() {
             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-black/35"/>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30"/>
             <div className="relative z-10 flex min-h-28 items-center justify-between gap-5 sm:min-h-32">
-              <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.24em] text-racing-red">Resultado de la fecha {selectedRoundData.round}</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.9)] sm:text-3xl">{selectedRoundData.items[0].circuito}{selectedRoundData.items[0].variante ? ` · ${selectedRoundData.items[0].variante}` : ''}</h2><div className="mt-3 flex items-center gap-2 text-sm text-gray-200"><CalendarDaysIcon className="h-5 w-5 text-racing-red"/>{formatCalendarDate(selectedRoundData.items[0].fecha, { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
+              <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.24em] text-racing-red">Resultado de la fecha {selectedRoundData.round}</p><h2 className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-racing text-2xl font-bold uppercase text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.9)] sm:text-3xl"><span>{selectedRoundData.items[0].circuito}</span>{selectedRoundData.items[0].variante ? <span className="text-[10px] font-bold tracking-[0.14em] text-yellow-300 sm:text-xs">Variante {selectedRoundData.items[0].variante}</span> : null}</h2><div className="mt-3 flex items-center gap-2 text-sm text-gray-200"><CalendarDaysIcon className="h-5 w-5 text-racing-red"/>{formatCalendarDate(selectedRoundData.items[0].fecha, { day: '2-digit', month: 'long', year: 'numeric' })}</div></div>
               {selectedRoundData.items[0].circuito_trazado ? <img src={selectedRoundData.items[0].circuito_trazado} alt={`Trazado de ${selectedRoundData.items[0].circuito}`} className="h-24 w-28 shrink-0 object-contain drop-shadow-[0_12px_25px_rgba(0,0,0,0.95)] sm:h-32 sm:w-44" onError={event => { event.currentTarget.style.display = 'none'; }}/> : null}
             </div>
           </header>
@@ -513,10 +583,10 @@ export default function Results() {
           {resultDetailsVisible ? <>
             <EventBannerGallery banners={selectedEvent?.banners || []} round={selectedRoundData.round}/>
             <div className="grid gap-5 p-4 md:grid-cols-2 sm:p-5 lg:gap-6">
-              <SessionSection title="Clasificación Sprint" sessionKey="qualy_sprint" items={selectedRoundData.items} positionField="pos_qualy_sprint" pointsField="pts_qualy_sprint" sanctionField="desc_sancion_qualy_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-              <SessionSection title="Sprint" sessionKey="sprint" items={selectedRoundData.items} positionField="pos_sprint" pointsField="pts_sprint" sanctionField="desc_sancion_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-              <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
-              <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot}/>
+              <SessionSection title="Clasificación Sprint" sessionKey="qualy_sprint" items={selectedRoundData.items} positionField="pos_qualy_sprint" pointsField="pts_qualy_sprint" sanctionField="desc_sancion_qualy_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot} warningProgressions={warningProgressions}/>
+              <SessionSection title="Sprint" sessionKey="sprint" items={selectedRoundData.items} positionField="pos_sprint" pointsField="pts_sprint" sanctionField="desc_sancion_sprint" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot} warningProgressions={warningProgressions}/>
+              <SessionSection title="Clasificación Final" sessionKey="qualy_final" items={selectedRoundData.items} positionField="pos_qualy_final" pointsField="pts_qualy_final" sanctionField="desc_sancion_qualy_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot} warningProgressions={warningProgressions}/>
+              <SessionSection title="Final" sessionKey="final" items={selectedRoundData.items} positionField="pos_final" pointsField="pts_final" sanctionField="desc_sancion_final" selectedPilotId={selectedPilotId} onSelectPilot={togglePilot} warningProgressions={warningProgressions}/>
             </div>
           </> : <div className="flex min-h-64 flex-col items-center justify-center border-t border-[#3030a1]/60 bg-[linear-gradient(180deg,rgba(48,48,161,0.24),rgba(10,10,35,0.3))] px-6 py-10 text-center">
             <div className="relative flex h-28 w-28 items-center justify-center sm:h-32 sm:w-32">
@@ -531,22 +601,34 @@ export default function Results() {
 
         <section className="overflow-hidden rounded-lg border border-racing-border border-t-2 border-t-yellow-300/40 bg-racing-card">
           <header className="flex flex-wrap items-center justify-between gap-4 border-b border-racing-border bg-racing-gray px-5 py-5 sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-yellow-300">Posiciones del campeonato</p><h2 className="mt-1 font-racing text-2xl font-bold uppercase text-white">Tabla total</h2></div><div className="flex flex-wrap items-center gap-2"><span className="flex items-center gap-2 border border-white/10 bg-black/30 px-3 py-2 text-xs text-gray-400"><FlagIcon className="h-4 w-4 text-racing-red"/>{rounds.length} fecha{rounds.length === 1 ? '' : 's'} disputada{rounds.length === 1 ? '' : 's'}</span><span className={`flex items-center gap-2 border px-3 py-2 text-xs font-bold uppercase ${championshipFinished ? 'border-green-500/30 bg-green-500/10 text-green-300' : 'border-yellow-300/30 bg-yellow-300/10 text-yellow-200'}`}>{championshipFinished ? 'Campeonato finalizado' : `${remainingRounds} fecha${remainingRounds === 1 ? '' : 's'} restante${remainingRounds === 1 ? '' : 's'}`}</span><span className="flex items-center gap-2 border border-white/10 bg-black/30 px-3 py-2 text-xs text-gray-400"><UserGroupIcon className="h-4 w-4 text-racing-red"/>{standings.length} pilotos</span></div></header>
-          <div className="overflow-x-auto">
-            <table className="w-max min-w-full border-collapse text-xs">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-[10px] xl:text-xs">
+              <colgroup>
+                <col className="w-12 xl:w-14"/>
+                <col className="w-52 lg:w-64 xl:w-80 2xl:w-96"/>
+                {totalRounds.flatMap(round => [
+                  <col key={`${round.round}-col-p`}/>,
+                  <col key={`${round.round}-col-q`}/>,
+                  <col key={`${round.round}-col-s`}/>,
+                  <col key={`${round.round}-col-f`}/>,
+                ])}
+                <col className="w-20 xl:w-24"/>
+                <col className="w-20 xl:w-28"/>
+              </colgroup>
               <thead>
                 <tr className="bg-black/45 uppercase tracking-wider text-gray-500">
-                  <th rowSpan={2} className="w-16 whitespace-nowrap border border-racing-border px-2 py-3 text-center">Pos.</th>
-                  <th rowSpan={2} className="min-w-64 border border-racing-border px-4 py-3 text-left">Piloto</th>
-                  {totalRounds.map(round => <th key={round.round} colSpan={4} title={`Fecha ${round.round} · ${round.location}`} className="whitespace-nowrap border border-racing-border px-2 py-3 text-center font-racing text-sm text-gray-300"><span>Fecha {round.round} <span className="text-gray-600">•</span> {round.location}</span></th>)}
-                  <th rowSpan={2} className="min-w-24 border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-center text-cyan-300">Total</th>
-                  <th rowSpan={2} className="min-w-28 border border-racing-border px-4 py-3 text-center">Diferencia</th>
+                  <th rowSpan={2} className="whitespace-nowrap border border-racing-border px-1 py-3 text-center">Pos.</th>
+                  <th rowSpan={2} className="border border-racing-border px-3 py-3 text-left">Piloto</th>
+                  {totalRounds.map(round => <th key={round.round} colSpan={4} title={`Fecha ${round.round} · ${round.location}`} className="border border-racing-border px-1 py-2 text-center font-racing text-[10px] leading-tight text-gray-300 xl:text-xs"><span>Fecha {round.round}<span className="block truncate text-[9px] text-gray-500">{round.location}</span></span></th>)}
+                  <th rowSpan={2} className="border border-cyan-400/30 bg-cyan-400/10 px-1 py-3 text-center text-cyan-300">Total</th>
+                  <th rowSpan={2} className="border border-racing-border px-1 py-3 text-center">Diferencia</th>
                 </tr>
                 <tr className="bg-black/30 text-[10px] uppercase text-gray-500">
                   {totalRounds.flatMap(round => [
-                    <th key={`${round.round}-p`} className="min-w-11 border border-racing-border px-2 py-2" title="Presentismo">P</th>,
-                    <th key={`${round.round}-q`} className="min-w-11 border border-racing-border px-2 py-2" title="Clasificación">Q</th>,
-                    <th key={`${round.round}-s`} className="min-w-11 border border-racing-border px-2 py-2" title="Sprint">S</th>,
-                    <th key={`${round.round}-f`} className="min-w-11 border border-racing-border px-2 py-2" title="Final">F</th>,
+                    <th key={`${round.round}-p`} className="border border-racing-border px-0.5 py-2" title="Presentismo">P</th>,
+                    <th key={`${round.round}-q`} className="border border-racing-border px-0.5 py-2" title="Clasificación">Q</th>,
+                    <th key={`${round.round}-s`} className="border border-racing-border px-0.5 py-2" title="Sprint">S</th>,
+                    <th key={`${round.round}-f`} className="border border-racing-border px-0.5 py-2" title="Final">F</th>,
                   ])}
                 </tr>
               </thead>
@@ -554,24 +636,25 @@ export default function Results() {
             const difference = standing.excluido ? 0 : Math.max(0, championshipLeaderPoints - standing.puntos);
             const selected = String(selectedPilotId) === String(standing.idpiloto);
             const pendingWarnings = pendingWarningsByDriver.get(String(standing.idpiloto)) || [];
+            const activePendingWarnings = pendingWarnings.filter(sanction => !isFulfilledWarning(sanction.cumplida));
             const warningTotal = warningTotalsByDriver.get(String(standing.idpiloto)) || 0;
             const ballastTotal = ballastTotalsByDriver.get(String(standing.idpiloto)) || 0;
-            return <tr key={standing.idpiloto} className={standing.excluido ? 'bg-black text-gray-600' : pendingWarnings.length ? 'bg-gradient-to-r from-red-500/[0.09] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
+            return <tr key={standing.idpiloto} className={standing.excluido ? 'bg-black text-gray-600' : activePendingWarnings.length ? 'bg-gradient-to-r from-red-500/[0.09] to-transparent' : selected ? 'bg-gradient-to-r from-green-500/20 via-green-500/[0.08] to-transparent' : ''}>
               <td className={`border border-racing-border px-2 py-2 text-center font-racing text-xl font-bold ${standing.excluido ? 'bg-black text-gray-700' : standing.posicion === 1 ? 'bg-yellow-400/10 text-yellow-300' : standing.posicion === 2 ? 'bg-slate-300/10 text-slate-200' : standing.posicion === 3 ? 'bg-orange-700/10 text-orange-400' : 'text-gray-400'}`}>{standing.excluido ? '—' : `${standing.posicion}°`}</td>
-              <td className="border border-racing-border p-0"><button type="button" onClick={() => togglePilot(standing.idpiloto)} aria-pressed={selected} className="flex min-w-60 w-full items-center gap-3 px-3 py-2 text-left">{standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-9 w-12 shrink-0 object-contain"/> : <span className="h-9 w-12 shrink-0"/>}<div className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className={standing.excluido ? 'truncate text-gray-500' : 'truncate text-white'}>{standing.piloto}</strong>{!standing.excluido && warningTotal ? <span className="shrink-0 border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">{warningTotal} AP</span> : null}{!standing.excluido && ballastTotal ? <span className="shrink-0 border border-cyan-300/35 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-300">{formatBallast(ballastTotal)}</span> : null}{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[8px] font-bold uppercase text-black">Campeón</span> : null}</span><span className="block truncate text-[11px] uppercase tracking-wide text-gray-500">{standing.modelo || '—'}</span>{!standing.excluido && pendingWarnings.filter(sanction => !isFulfilledWarning(sanction.cumplida)).map(sanction => <span key={sanction.cantidad} className="mt-1 block text-[10px] font-bold uppercase leading-relaxed text-red-400">Sanción pendiente ({sanction.cantidad} AP): <span className="font-normal normal-case text-red-300">{sanction.sancion}</span></span>)}</div></button></td>
+              <td className="border border-racing-border p-0"><button type="button" onClick={() => togglePilot(standing.idpiloto)} aria-pressed={selected} className="flex w-full min-w-0 items-start gap-2 px-2 py-2 text-left xl:gap-3 xl:px-3">{standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="mt-0.5 h-8 w-10 shrink-0 object-contain xl:h-9 xl:w-12"/> : <span className="h-8 w-10 shrink-0 xl:h-9 xl:w-12"/>}<div className="min-w-0 flex-1"><span className="flex min-w-0 flex-wrap items-center gap-1 xl:gap-2"><strong className={standing.excluido ? 'min-w-0 text-gray-500' : 'min-w-0 text-white'}>{standing.piloto}</strong>{standing.campeon ? <span className="shrink-0 bg-yellow-400 px-2 py-0.5 text-[8px] font-bold uppercase text-black">Campeón</span> : null}</span>{!standing.excluido && (warningTotal || ballastTotal) ? <span className="mt-1 flex flex-wrap items-center gap-1.5">{warningTotal ? <span className="shrink-0 border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">{warningTotal} AP</span> : null}{ballastTotal ? <span className="shrink-0 border border-cyan-300/35 bg-cyan-300/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-300">{formatBallast(ballastTotal)}</span> : null}</span> : null}<span className="mt-1 block text-[10px] uppercase tracking-wide text-gray-500 xl:text-[11px]">{standing.modelo || '—'}</span>{!standing.excluido && activePendingWarnings.map(sanction => <span key={sanction.cantidad} className="mt-1.5 block whitespace-normal break-words text-[9px] font-bold uppercase leading-snug text-red-400 xl:text-[10px]">Sanción pendiente ({sanction.cantidad} AP): <span className="font-normal normal-case text-red-300">{sanction.sancion}</span></span>)}</div></button></td>
               {standing.excluido ? <td colSpan={(totalRounds.length * 4) + 2} className="border border-racing-border bg-black px-4 py-2 text-center"><strong className="font-racing text-sm font-bold uppercase tracking-[0.24em] text-gray-300">Excluido</strong></td> : <>{totalRounds.flatMap(round => {
                 const detail = standing.detallePorFecha[String(round.round)];
                 if (!detail || detail.points === 0) return [<td key={`${standing.idpiloto}-${round.round}-absent`} colSpan={4} className="border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-center font-racing text-[10px] font-bold tracking-[0.18em] text-red-500">AUSENTE</td>];
                 const pointCell = value => Number(value) ? formatPoints(value) : '';
                 return [
-                  <td key={`${standing.idpiloto}-${round.round}-p`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.presentismo)}</td>,
-                  <td key={`${standing.idpiloto}-${round.round}-q`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.qualy)}</td>,
-                  <td key={`${standing.idpiloto}-${round.round}-s`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.sprint)}</td>,
-                  <td key={`${standing.idpiloto}-${round.round}-f`} className="border border-racing-border px-2 py-2 text-center font-racing text-base text-white">{pointCell(detail.final)}</td>,
+                  <td key={`${standing.idpiloto}-${round.round}-p`} className="border border-racing-border px-0.5 py-2 text-center font-racing text-xs text-white xl:text-sm">{pointCell(detail.presentismo)}</td>,
+                  <td key={`${standing.idpiloto}-${round.round}-q`} className="border border-racing-border px-0.5 py-2 text-center font-racing text-xs text-white xl:text-sm">{pointCell(detail.qualy)}</td>,
+                  <td key={`${standing.idpiloto}-${round.round}-s`} className="border border-racing-border px-0.5 py-2 text-center font-racing text-xs text-white xl:text-sm">{pointCell(detail.sprint)}</td>,
+                  <td key={`${standing.idpiloto}-${round.round}-f`} className="border border-racing-border px-0.5 py-2 text-center font-racing text-xs text-white xl:text-sm">{pointCell(detail.final)}</td>,
                 ];
               })}
-              <td className="border border-cyan-400/30 bg-cyan-400/[0.08] px-4 py-2 text-center"><strong className="font-racing text-xl font-bold text-cyan-300">{formatPoints(standing.puntos)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></td>
-              <td className="border border-racing-border px-4 py-2 text-center">{difference === 0 ? null : <><strong className="font-racing text-lg font-bold text-racing-red">{formatPoints(difference)}</strong><span className="ml-1 text-[9px] uppercase text-gray-500">pts</span></>}</td></>}
+              <td className="border border-cyan-400/30 bg-cyan-400/[0.08] px-1 py-2 text-center"><strong className="font-racing text-base font-bold text-cyan-300 xl:text-xl">{formatPoints(standing.puntos)}</strong><span className="ml-0.5 text-[8px] uppercase text-gray-500 xl:text-[9px]">pts</span></td>
+              <td className="border border-racing-border px-1 py-2 text-center">{difference === 0 ? null : <><strong className="font-racing text-sm font-bold text-racing-red xl:text-lg">{formatPoints(difference)}</strong><span className="ml-0.5 text-[8px] uppercase text-gray-500 xl:text-[9px]">pts</span></>}</td></>}
             </tr>;
           })}</tbody>
             </table>

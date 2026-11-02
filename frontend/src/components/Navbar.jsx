@@ -201,19 +201,11 @@ function ChampionshipTicker() {
           : `${championship.fechas_cumplidas} ${Number(championship.fechas_cumplidas) === 1 ? 'fecha cumplida' : 'fechas cumplidas'}`}
       </span>
       <span className="text-racing-red">•</span>
-      {championship.campeon ? <>
-        <span className="flex shrink-0 items-center gap-2 whitespace-nowrap border border-yellow-300/30 bg-yellow-400/10 px-3 py-1 text-xs sm:text-sm">
-          <TrophyIcon className="h-4 w-4 text-yellow-300" />
-          <strong className="font-racing text-[10px] uppercase tracking-wider text-yellow-300 sm:text-xs">Campeón</strong>
-          {championship.campeon.auto_logo ? <img src={championship.campeon.auto_logo} alt={`Logo de ${championship.campeon.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}
-          <span className="font-semibold text-white">{championship.campeon.nombre}</span>
-        </span>
-        <span className="text-racing-red">•</span>
-      </> : null}
       {championship.standings.map((standing, index) => (
         <span key={`${copy}-${standing.idpiloto}`} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-gray-200 sm:text-sm">
-          {standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}
           <strong className={`font-racing text-base ${standing.posicion === 1 ? 'text-yellow-300' : standing.posicion === 2 ? 'text-gray-200' : standing.posicion === 3 ? 'text-amber-600' : 'text-racing-red'}`}>{standing.posicion}°</strong>
+          {standing.auto_logo ? <img src={standing.auto_logo} alt={`Logo de ${standing.marca || 'la marca'}`} className="h-5 w-7 object-contain" /> : null}
+          {Number(standing.campeon) === 1 ? <span className="inline-flex h-[18px] items-center gap-1 border border-yellow-300/55 bg-yellow-400/15 px-1.5 text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.18)]"><TrophyIcon className="h-3 w-3"/><strong className="font-racing text-[8px] uppercase leading-none tracking-wider sm:text-[9px]">Campeón</strong></span> : null}
           <span className="font-semibold text-white">{standing.nombre}</span>
           <span className="font-racing font-bold text-yellow-200">{formatTickerPoints(standing.puntos)} pts.</span>
           {index < championship.standings.length - 1 ? <span className="ml-2 text-racing-red">•</span> : null}
