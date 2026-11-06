@@ -4161,10 +4161,10 @@ export default function Admin() {
     setResults(current => current.map(item => {
       const itemKey = item._key || `id-${item.id}`;
       const isTarget = itemKey === resultKey;
-      const sameScope = field === 'campeon'
-        ? String(item.idcampeonato) === String(result.idcampeonato)
-        : String(item.ronda) === String(result.ronda);
-      if (nextValue && sameScope && Number(item[field]) !== 0) {
+      const sameChampionship = String(item.idcampeonato) === String(result.idcampeonato);
+      // Pole y ganadores no son exclusivos: una tanda puede reconocer a más
+      // de un piloto. Solamente la marca de campeón mantiene un único titular.
+      if (field === 'campeon' && nextValue && sameChampionship && Number(item[field]) !== 0) {
         dirty[itemKey] = true;
         return { ...item, [field]: 0 };
       }
