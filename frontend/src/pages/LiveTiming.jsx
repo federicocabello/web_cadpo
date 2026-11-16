@@ -15,6 +15,7 @@ import { CountryFlag } from '../components/CountryFlag';
 import ServerJoinButton from '../components/ServerJoinButton';
 import { getLiveTimingEvents } from '../utils/weeklyChampionships';
 import { formatCalendarDate, parseCalendarDate } from '../utils/calendarDate';
+import { mergeLiveTimingDrivers } from '../utils/liveTimingDrivers';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 10000;
 const QUALIFYING_REFRESH_INTERVAL_MS = 1000;
@@ -404,30 +405,7 @@ export default function LiveTiming() {
   }, []);
 
   const drivers = useMemo(() => {
-    const byDriver = new Map();
-
-    for (const driver of timing?.stored || []) {
-      if (driverNameKey(driver.name) === 'admin') continue;
-      byDriver.set(`${driver.guid}-${driver.carModel}`, driver);
-    }
-
-    for (const driver of timing?.connected || []) {
-      if (driverNameKey(driver.name) === 'admin') continue;
-      const key = `${driver.guid}-${driver.carModel}`;
-      const stored = byDriver.get(key);
-      byDriver.set(key, {
-        ...stored,
-        ...driver,
-        bestLap: driver.bestLap || stored?.bestLap || 0,
-        lastLap: driver.lastLap || stored?.lastLap || 0,
-        laps: Math.max(driver.laps || 0, stored?.laps || 0),
-        topSpeed: Math.max(driver.topSpeed || 0, stored?.topSpeed || 0),
-        bestSectors: driver.bestSectors?.length ? driver.bestSectors : stored?.bestSectors || [],
-        connected: true,
-      });
-    }
-
-    return [...byDriver.values()].map(driver => {
+    return mergeLiveTimingDrivers(timing?.stored, timing?.connected).map(driver => {
       const registration = enrolledDrivers.get(driverNameKey(driver.name));
       const registeredDriver = registeredDrivers.get(driver.guid)
         || registeredDrivers.get(driverNameKey(driver.name));

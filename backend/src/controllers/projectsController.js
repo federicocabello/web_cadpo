@@ -70,8 +70,8 @@ const loadProjects = async includeInactive => {
   `);
   if (!projects.length) return [];
   const [photos] = await pool.query(`
-    SELECT id, idproyecto, imagen, orden FROM proyecto_fotos
-    WHERE idproyecto IN (?) ORDER BY orden ASC, id ASC
+    SELECT id, idproyecto, imagen, orden, creado FROM proyecto_fotos
+    WHERE idproyecto IN (?) ORDER BY creado DESC, id DESC
   `, [projects.map(project => project.id)]);
   const grouped = photos.reduce((result, photo) => {
     const key = String(photo.idproyecto);

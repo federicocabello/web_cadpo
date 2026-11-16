@@ -67,7 +67,12 @@ const getCarTiming = driver => {
 
 const normalizeDriver = (driver, connected) => {
   const car = getCarTiming(driver);
-  const bestSectors = Object.values(car.BestLapSplits || {})
+  const carEntries = Object.entries(driver.Cars || {});
+  const lapsByCar = Object.fromEntries(carEntries.map(([model, timing]) => [model, Math.max(0, Number(timing.NumLaps) || 0)]));
+  const bestCar = carEntries.map(([, timing]) => timing)
+    .filter(timing => Number(timing.BestLap) > 0)
+    .sort((a, b) => Number(a.BestLap) - Number(b.BestLap))[0] || car;
+  const bestSectors = Object.values(bestCar.BestLapSplits || {})
     .sort((a, b) => a.SplitIndex - b.SplitIndex)
     .map(sector => ({
       index: sector.SplitIndex,
@@ -85,8 +90,9 @@ const normalizeDriver = (driver, connected) => {
     carModel: driver.CarInfo?.CarModel || '',
     raceNumber: car.RaceNumber || driver.CarInfo?.RaceNumber || 0,
     tyres: driver.CarInfo?.Tyres || car.TyreBestLap || '',
-    laps: car.NumLaps ?? driver.TotalNumLaps ?? 0,
-    bestLap: car.BestLap || 0,
+    laps: carEntries.length ? Object.values(lapsByCar).reduce((total, laps) => total + laps, 0) : driver.TotalNumLaps || 0,
+    lapsByCar,
+    bestLap: bestCar.BestLap || 0,
     lastLap: car.LastLap || 0,
     qualifyingTime: car.QualifyingTime || 0,
     bestSectors,

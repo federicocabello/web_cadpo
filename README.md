@@ -12,7 +12,7 @@ Plataforma web para la administración y publicación de campeonatos de sim raci
 - Publicación programada de una o varias próximas fechas en el Inicio, administrable por fecha y compartida con Tiempos en vivo para priorizar el mismo campeonato, circuito y horario; configuración explícita de transmisión en vivo por formulario de campeonato.
 - Inscripciones, pilotos, autos, marcas y circuitos.
 - Resultados, posiciones de campeonato y estadísticas.
-- Consulta de tiempos en vivo desde un servidor externo.
+- Consulta de tiempos en vivo desde un servidor externo, con una sola fila por piloto (Steam ID), vueltas acumuladas entre distintos modelos de auto y su mejor tiempo. Los registros conectados y guardados del mismo auto no duplican vueltas; el acumulado se utiliza también para la habilitación y la planilla PDF.
 - Habilitación deportiva configurable por campeonato en Tiempos en vivo: porcentaje que libera el mínimo de vueltas, porcentaje máximo excluyente y cantidad mínima de vueltas para el tramo intermedio.
 - CADPO CLUB con hasta tres servidores gratuitos, enlace directo de ingreso por Content Manager y enlace independiente para consultar tanda y pilotos conectados en tiempo real.
 - Panel administrativo para gestionar el contenido.
